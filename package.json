@@ -9,7 +9,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit",
-    "dist:win": "electron-vite build && electron-builder --win nsis"
+    "dist:win": "electron-vite build && electron-builder --win nsis --publish never"
   },
   "dependencies": {
     "@fontsource/dm-sans": "^5.2.6",
