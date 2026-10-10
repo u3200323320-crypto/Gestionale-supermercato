@@ -1,0 +1,59 @@
+{
+  "name": "gestionale-supermercato",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Gestionale desktop per supermercati",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "dist:win": "electron-vite build && electron-builder --win nsis"
+  },
+  "dependencies": {
+    "@fontsource/dm-sans": "^5.2.6",
+    "@fontsource/manrope": "^5.2.6",
+    "better-sqlite3": "^12.4.1",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.2",
+    "jsbarcode": "^3.12.1",
+    "lucide-react": "^0.468.0",
+    "pdfkit": "^0.17.2",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "recharts": "^2.15.4"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/jsbarcode": "^3.11.3",
+    "@types/node": "^22.18.6",
+    "@types/pdfkit": "^0.13.9",
+    "@types/react": "^19.1.16",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.4",
+    "electron": "^38.2.1",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^5.0.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.7"
+  },
+  "build": {
+    "appId": "it.gestionale.supermercato",
+    "productName": "Gestione Supermercato",
+    "directories": { "output": "release" },
+    "files": ["out/**/*", "package.json"],
+    "asar": true,
+    "npmRebuild": true,
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "artifactName": "Gestione-Supermercato-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
