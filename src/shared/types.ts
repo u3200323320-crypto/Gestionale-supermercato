@@ -1,4 +1,4 @@
-export type Section = 'home' | 'inventory' | 'cash' | 'sales' | 'statistics' | 'settings';
+export type Section = 'home' | 'inventory' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'settings';
 
 export interface Product {
   id: number;
