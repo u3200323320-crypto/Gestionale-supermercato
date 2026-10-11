@@ -253,6 +253,10 @@ app.whenReady().then(() => {
       starts_at=@starts_at, ends_at=@ends_at, application_mode=@application_mode WHERE id=@id`).run(promotion);
     if (result.changes === 0) throw new Error('Promozione non trovata.');
   });
+  ipcMain.handle('promotion:delete', (_event, id: number) => {
+    const result = database.prepare('DELETE FROM promotions WHERE id = ?').run(id);
+    if (result.changes === 0) throw new Error('Promozione non trovata.');
+  });
   ipcMain.handle('settings:save', (_event, key: string, value: string) => {
     if (!['shop_name', 'archive_folder'].includes(key)) throw new Error('Impostazione non valida.');
     setSetting(key, value);

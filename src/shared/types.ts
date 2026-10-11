@@ -72,6 +72,7 @@ declare global {
     updateStock: (productId: number, stock: number) => Promise<void>;
     checkout: (sale: { items: SaleItem[]; payment_method: string; discount: number }) => Promise<Sale>;
     savePromotion: (promotion: PromotionInput) => Promise<void>;
+    deletePromotion: (id: number) => Promise<void>;
     saveSetting: (key: 'shop_name' | 'archive_folder', value: string) => Promise<void>;
     updateSale: (sale: Pick<Sale, 'id' | 'payment_method' | 'discount'> & { items: SaleItem[] }) => Promise<void>;
     deleteSale: (id: number) => Promise<void>;
