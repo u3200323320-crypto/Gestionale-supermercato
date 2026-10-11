@@ -27,6 +27,7 @@ export interface Sale {
   created_at: string;
   payment_method: string;
   discount: number;
+  gross_total: number;
   total: number;
   item_count: number;
   items: SaleItem[];
@@ -39,10 +40,12 @@ export interface Promotion {
   category: string;
   starts_at: string;
   ends_at: string;
+  minimum_spend: number;
   application_mode: 'Automatica' | 'Manuale';
 }
 
 export type PromotionInput = Omit<Promotion, 'id'> & { id?: number };
+export type CheckoutInput = { items: SaleItem[]; payment_method: string; additional_discount: number; manual_promotion_id?: number };
 
 export interface AppState {
   products: Product[];
@@ -70,7 +73,7 @@ declare global {
     setPin: (pin: string) => Promise<void>;
     saveProduct: (product: ProductInput) => Promise<void>;
     updateStock: (productId: number, stock: number) => Promise<void>;
-    checkout: (sale: { items: SaleItem[]; payment_method: string; discount: number }) => Promise<Sale>;
+    checkout: (sale: CheckoutInput) => Promise<Sale>;
     savePromotion: (promotion: PromotionInput) => Promise<void>;
     deletePromotion: (id: number) => Promise<void>;
     saveSetting: (key: 'shop_name' | 'archive_folder', value: string) => Promise<void>;

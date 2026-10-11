@@ -4,7 +4,8 @@ import PDFDocument from 'pdfkit';
 import { randomInt, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ProductInput, PromotionInput, SaleItem } from '../shared/types';
+import { calculatePromotionDiscounts } from '../shared/promotions';
+import type { CheckoutInput, Product, ProductInput, Promotion, PromotionInput, SaleItem } from '../shared/types';
 
 let database: Database.Database;
 let mainWindow: BrowserWindow;
@@ -51,6 +52,10 @@ function saleItems(saleId: number): SaleItem[] {
   return database.prepare('SELECT product_id, name, code, quantity, unit_price, purchase_price FROM sale_items WHERE sale_id = ?').all(saleId) as SaleItem[];
 }
 
+function allPromotions(): Promotion[] {
+  return database.prepare('SELECT * FROM promotions ORDER BY starts_at DESC').all() as Promotion[];
+}
+
 function allSales(): unknown[] {
   const sales = database.prepare(`SELECT s.*, COALESCE(SUM(i.quantity), 0) AS item_count
     FROM sales s LEFT JOIN sale_items i ON i.sale_id = s.id GROUP BY s.id ORDER BY s.created_at DESC`).all() as Array<Record<string, unknown>>;
@@ -90,10 +95,23 @@ function initDatabase(): void {
     CREATE TABLE IF NOT EXISTS promotions (
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, percentage REAL NOT NULL,
       category TEXT NOT NULL, starts_at TEXT NOT NULL, ends_at TEXT NOT NULL,
+      minimum_spend REAL NOT NULL DEFAULT 0,
       application_mode TEXT NOT NULL CHECK(application_mode IN ('Automatica', 'Manuale'))
     );
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   `);
+  const saleColumns = database.prepare('PRAGMA table_info(sales)').all() as Array<{ name: string }>;
+  if (!saleColumns.some((column) => column.name === 'gross_total')) {
+    database.exec('ALTER TABLE sales ADD COLUMN gross_total REAL NOT NULL DEFAULT 0');
+    database.exec(`UPDATE sales SET gross_total = COALESCE(
+      (SELECT SUM(i.quantity * p.sale_price) FROM sale_items i JOIN products p ON p.id = i.product_id WHERE i.sale_id = sales.id),
+      total + discount
+    )`);
+  }
+  const promotionColumns = database.prepare('PRAGMA table_info(promotions)').all() as Array<{ name: string }>;
+  if (!promotionColumns.some((column) => column.name === 'minimum_spend')) {
+    database.exec('ALTER TABLE promotions ADD COLUMN minimum_spend REAL NOT NULL DEFAULT 0');
+  }
   if (!app.isPackaged && (database.prepare('SELECT COUNT(*) AS count FROM products').get() as { count: number }).count === 0) {
     const insert = database.prepare('INSERT INTO products (code, name, category, sale_price, purchase_price, stock, low_stock_threshold) VALUES (@code, @name, @category, @sale_price, @purchase_price, @stock, @low_stock_threshold)');
     database.transaction(() => seedProducts.forEach((product) => insert.run(product)))();
@@ -131,7 +149,7 @@ function archiveDay(day: string): Promise<void> {
     { name: 'Magazzino', body: () => (database.prepare('SELECT code, name, category, sale_price, purchase_price, stock FROM products ORDER BY name').all() as Array<Record<string, unknown>>).map((p) => `${p.code}\t${p.name}\t${p.category}\t${p.stock}\t${p.sale_price}\t${p.purchase_price}`).join('\n') },
     { name: 'Vendite', body: () => (database.prepare('SELECT receipt_no, created_at, payment_method, total FROM sales WHERE created_at >= ? AND created_at < ? ORDER BY created_at').all(dayStart, dayEnd) as Array<Record<string, unknown>>).map((s) => `${s.receipt_no}\t${s.created_at}\t${s.payment_method}\t${s.total}`).join('\n') },
     { name: 'Cassa', body: () => (database.prepare(`SELECT s.receipt_no, i.name, i.quantity, i.unit_price FROM sale_items i JOIN sales s ON s.id = i.sale_id WHERE s.created_at >= ? AND s.created_at < ? ORDER BY s.created_at`).all(dayStart, dayEnd) as Array<Record<string, unknown>>).map((i) => `${i.receipt_no}\t${i.name}\t${i.quantity}\t${i.unit_price}`).join('\n') },
-    { name: 'Promozioni', body: () => (database.prepare('SELECT name, percentage, category, starts_at, ends_at, application_mode FROM promotions ORDER BY starts_at').all() as Array<Record<string, unknown>>).map((p) => `${p.name}\t${p.percentage}%\t${p.category}\t${p.starts_at}\t${p.ends_at}\t${p.application_mode}`).join('\n') },
+    { name: 'Promozioni', body: () => (database.prepare('SELECT name, percentage, category, starts_at, ends_at, minimum_spend, application_mode FROM promotions ORDER BY starts_at').all() as Array<Record<string, unknown>>).map((p) => `${p.name}\t${p.percentage}%\t${p.category}\t${p.starts_at}\t${p.ends_at}\tMinimo ${p.minimum_spend} EUR\t${p.application_mode}`).join('\n') },
     { name: 'Statistiche', body: () => {
       const row = database.prepare(`SELECT COUNT(*) AS transactions, COALESCE(SUM(total), 0) AS net, COALESCE(SUM((SELECT SUM(quantity) FROM sale_items WHERE sale_id = sales.id)), 0) AS quantity FROM sales WHERE created_at >= ? AND created_at < ?`).get(dayStart, dayEnd) as { transactions: number; net: number; quantity: number };
       return `Data: ${day}\nVendite: ${row.transactions}\nNetto: ${row.net.toFixed(2)} EUR\nPezzi venduti: ${row.quantity}`;
@@ -214,15 +232,26 @@ app.whenReady().then(() => {
     const result = database.prepare('UPDATE products SET stock = ? WHERE id = ?').run(stock, productId);
     if (result.changes === 0) throw new Error('Articolo non trovato.');
   });
-  ipcMain.handle('sale:checkout', (_event, sale: { items: SaleItem[]; payment_method: string; discount: number }) => {
+  ipcMain.handle('sale:checkout', (_event, sale: CheckoutInput) => {
     if (!sale.items.length) throw new Error('Il carrello è vuoto.');
+    const products = database.prepare('SELECT * FROM products').all() as Product[];
+    const items = sale.items.map((item) => {
+      const product = products.find((candidate) => candidate.id === item.product_id);
+      if (!product) throw new Error(`Articolo non trovato: ${item.name}.`);
+      return { ...item, name: product.name, code: product.code, unit_price: product.sale_price, purchase_price: product.purchase_price };
+    });
+    const discounts = calculatePromotionDiscounts(allPromotions(), products, items, localDate(new Date()), sale.manual_promotion_id);
+    if (sale.manual_promotion_id !== undefined && !discounts.manualPromotion) {
+      throw new Error('L’offerta selezionata non è più applicabile: controlla il periodo, la categoria e la spesa minima.');
+    }
+    if (!Number.isFinite(sale.additional_discount) || sale.additional_discount < 0) throw new Error('Lo sconto aggiuntivo non è valido.');
+    const grossTotal = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+    const discount = discounts.automaticDiscount + discounts.manualDiscount + sale.additional_discount;
+    if (discount > grossTotal) throw new Error('Lo sconto supera il totale della vendita.');
     const createSale = database.transaction(() => {
-      const result = database.prepare('INSERT INTO sales (receipt_no, created_at, payment_method, discount, total) VALUES (?, ?, ?, ?, ?)')
-        .run(receiptNumber(), new Date().toISOString(), sale.payment_method, Math.max(0, sale.discount), 0);
-      replaceItems(Number(result.lastInsertRowid), sale.items);
-      const subtotal = sale.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-      const total = Math.max(0, subtotal - sale.discount);
-      database.prepare('UPDATE sales SET total = ? WHERE id = ?').run(total, result.lastInsertRowid);
+      const result = database.prepare('INSERT INTO sales (receipt_no, created_at, payment_method, discount, gross_total, total) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(receiptNumber(), new Date().toISOString(), sale.payment_method, discount, grossTotal, Math.max(0, grossTotal - discount));
+      replaceItems(Number(result.lastInsertRowid), items);
       return Number(result.lastInsertRowid);
     });
     const id = createSale();
@@ -231,8 +260,9 @@ app.whenReady().then(() => {
   ipcMain.handle('sale:update', (_event, sale: { id: number; payment_method: string; discount: number; items: SaleItem[] }) => {
     database.transaction(() => {
       replaceItems(sale.id, sale.items);
-      const subtotal = sale.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-      database.prepare('UPDATE sales SET payment_method=?, discount=?, total=? WHERE id=?').run(sale.payment_method, sale.discount, Math.max(0, subtotal - sale.discount), sale.id);
+      const grossTotal = sale.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+      database.prepare('UPDATE sales SET payment_method=?, discount=?, gross_total=?, total=? WHERE id=?')
+        .run(sale.payment_method, sale.discount, grossTotal, Math.max(0, grossTotal - sale.discount), sale.id);
     })();
   });
   ipcMain.handle('sale:delete', (_event, id: number) => {
@@ -242,15 +272,16 @@ app.whenReady().then(() => {
     })();
   });
   ipcMain.handle('promotion:save', (_event, promotion: PromotionInput) => {
-    if (!promotion.name.trim() || !Number.isFinite(promotion.percentage) || promotion.percentage < 1 || promotion.percentage > 100 || promotion.ends_at < promotion.starts_at) {
+    if (!promotion.name.trim() || !Number.isFinite(promotion.percentage) || promotion.percentage < 1 || promotion.percentage > 100
+      || !Number.isFinite(promotion.minimum_spend) || promotion.minimum_spend < 0 || promotion.ends_at < promotion.starts_at) {
       throw new Error('Controlla i dati della promozione.');
     }
     if (promotion.id === undefined) {
-      database.prepare('INSERT INTO promotions (name, percentage, category, starts_at, ends_at, application_mode) VALUES (@name, @percentage, @category, @starts_at, @ends_at, @application_mode)').run(promotion);
+      database.prepare('INSERT INTO promotions (name, percentage, category, starts_at, ends_at, minimum_spend, application_mode) VALUES (@name, @percentage, @category, @starts_at, @ends_at, @minimum_spend, @application_mode)').run(promotion);
       return;
     }
     const result = database.prepare(`UPDATE promotions SET name=@name, percentage=@percentage, category=@category,
-      starts_at=@starts_at, ends_at=@ends_at, application_mode=@application_mode WHERE id=@id`).run(promotion);
+      starts_at=@starts_at, ends_at=@ends_at, minimum_spend=@minimum_spend, application_mode=@application_mode WHERE id=@id`).run(promotion);
     if (result.changes === 0) throw new Error('Promozione non trovata.');
   });
   ipcMain.handle('promotion:delete', (_event, id: number) => {

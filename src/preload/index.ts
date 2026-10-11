@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ProductInput, PromotionInput, SaleItem } from '../shared/types';
+import type { CheckoutInput, ProductInput, PromotionInput, SaleItem } from '../shared/types';
 
 contextBridge.exposeInMainWorld('gestionale', {
   getState: () => ipcRenderer.invoke('state:get'),
@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld('gestionale', {
   setPin: (pin: string) => ipcRenderer.invoke('pin:set', pin),
   saveProduct: (product: ProductInput) => ipcRenderer.invoke('product:save', product),
   updateStock: (productId: number, stock: number) => ipcRenderer.invoke('product:stock', productId, stock),
-  checkout: (sale: { items: SaleItem[]; payment_method: string; discount: number }) => ipcRenderer.invoke('sale:checkout', sale),
+  checkout: (sale: CheckoutInput) => ipcRenderer.invoke('sale:checkout', sale),
   savePromotion: (promotion: PromotionInput) => ipcRenderer.invoke('promotion:save', promotion),
   deletePromotion: (id: number) => ipcRenderer.invoke('promotion:delete', id),
   saveSetting: (key: 'shop_name' | 'archive_folder', value: string) => ipcRenderer.invoke('settings:save', key, value),
