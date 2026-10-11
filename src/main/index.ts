@@ -207,6 +207,13 @@ app.whenReady().then(() => {
       ON CONFLICT(code) DO UPDATE SET name=excluded.name, category=excluded.category, sale_price=excluded.sale_price,
       purchase_price=excluded.purchase_price, stock=excluded.stock, low_stock_threshold=excluded.low_stock_threshold`).run(product);
   });
+  ipcMain.handle('product:stock', (_event, productId: number, stock: number) => {
+    if (!Number.isInteger(productId) || productId < 1 || !Number.isFinite(stock) || stock < 0) {
+      throw new Error('La nuova giacenza non è valida.');
+    }
+    const result = database.prepare('UPDATE products SET stock = ? WHERE id = ?').run(stock, productId);
+    if (result.changes === 0) throw new Error('Articolo non trovato.');
+  });
   ipcMain.handle('sale:checkout', (_event, sale: { items: SaleItem[]; payment_method: string; discount: number }) => {
     if (!sale.items.length) throw new Error('Il carrello è vuoto.');
     const createSale = database.transaction(() => {
@@ -251,6 +258,18 @@ app.whenReady().then(() => {
     setSetting(key, value);
   });
   ipcMain.handle('archive:choose-folder', async () => {
+    if (setting('archive_folder')) {
+      const confirmation = await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        title: 'Modifica cartella archivio',
+        message: 'Stai per modificare la cartella usata per i backup giornalieri.',
+        detail: 'I backup successivi verranno salvati nella nuova cartella. Vuoi continuare?',
+        buttons: ['Annulla', 'Continua'],
+        defaultId: 0,
+        cancelId: 0,
+      });
+      if (confirmation.response !== 1) return null;
+    }
     const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory', 'createDirectory'] });
     if (result.canceled || !result.filePaths[0]) return null;
     setSetting('archive_folder', result.filePaths[0]);

@@ -69,6 +69,7 @@ declare global {
     verifyPin: (pin: string) => Promise<boolean>;
     setPin: (pin: string) => Promise<void>;
     saveProduct: (product: ProductInput) => Promise<void>;
+    updateStock: (productId: number, stock: number) => Promise<void>;
     checkout: (sale: { items: SaleItem[]; payment_method: string; discount: number }) => Promise<Sale>;
     savePromotion: (promotion: PromotionInput) => Promise<void>;
     saveSetting: (key: 'shop_name' | 'archive_folder', value: string) => Promise<void>;

@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('gestionale', {
   verifyPin: (pin: string) => ipcRenderer.invoke('pin:verify', pin),
   setPin: (pin: string) => ipcRenderer.invoke('pin:set', pin),
   saveProduct: (product: ProductInput) => ipcRenderer.invoke('product:save', product),
+  updateStock: (productId: number, stock: number) => ipcRenderer.invoke('product:stock', productId, stock),
   checkout: (sale: { items: SaleItem[]; payment_method: string; discount: number }) => ipcRenderer.invoke('sale:checkout', sale),
   savePromotion: (promotion: PromotionInput) => ipcRenderer.invoke('promotion:save', promotion),
   saveSetting: (key: 'shop_name' | 'archive_folder', value: string) => ipcRenderer.invoke('settings:save', key, value),
