@@ -42,6 +42,8 @@ export interface Promotion {
   application_mode: 'Automatica' | 'Manuale';
 }
 
+export type PromotionInput = Omit<Promotion, 'id'> & { id?: number };
+
 export interface AppState {
   products: Product[];
   sales: Sale[];
@@ -68,7 +70,7 @@ declare global {
     setPin: (pin: string) => Promise<void>;
     saveProduct: (product: ProductInput) => Promise<void>;
     checkout: (sale: { items: SaleItem[]; payment_method: string; discount: number }) => Promise<Sale>;
-    savePromotion: (promotion: Omit<Promotion, 'id'>) => Promise<void>;
+    savePromotion: (promotion: PromotionInput) => Promise<void>;
     saveSetting: (key: 'shop_name' | 'archive_folder', value: string) => Promise<void>;
     updateSale: (sale: Pick<Sale, 'id' | 'payment_method' | 'discount'> & { items: SaleItem[] }) => Promise<void>;
     deleteSale: (id: number) => Promise<void>;

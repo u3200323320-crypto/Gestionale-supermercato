@@ -4,7 +4,7 @@ import PDFDocument from 'pdfkit';
 import { randomInt, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ProductInput, SaleItem } from '../shared/types';
+import type { ProductInput, PromotionInput, SaleItem } from '../shared/types';
 
 let database: Database.Database;
 let mainWindow: BrowserWindow;
@@ -151,6 +151,26 @@ function archiveDay(day: string): Promise<void> {
   }))).then(() => undefined);
 }
 
+async function archiveMissingDays(): Promise<void> {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const lastDay = localDate(yesterday);
+  const lastArchivedDay = setting('last_archive_day');
+  if (!lastArchivedDay) {
+    await archiveDay(lastDay);
+    setSetting('last_archive_day', lastDay);
+    return;
+  }
+  const [year, month, date] = lastArchivedDay.split('-').map(Number);
+  const nextDay = new Date(year, month - 1, date + 1);
+  while (localDate(nextDay) <= lastDay) {
+    const day = localDate(nextDay);
+    await archiveDay(day);
+    setSetting('last_archive_day', day);
+    nextDay.setDate(nextDay.getDate() + 1);
+  }
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -214,8 +234,17 @@ app.whenReady().then(() => {
       database.prepare('DELETE FROM sales WHERE id=?').run(id);
     })();
   });
-  ipcMain.handle('promotion:save', (_event, promotion) => {
-    database.prepare('INSERT INTO promotions (name, percentage, category, starts_at, ends_at, application_mode) VALUES (@name, @percentage, @category, @starts_at, @ends_at, @application_mode)').run(promotion);
+  ipcMain.handle('promotion:save', (_event, promotion: PromotionInput) => {
+    if (!promotion.name.trim() || !Number.isFinite(promotion.percentage) || promotion.percentage < 1 || promotion.percentage > 100 || promotion.ends_at < promotion.starts_at) {
+      throw new Error('Controlla i dati della promozione.');
+    }
+    if (promotion.id === undefined) {
+      database.prepare('INSERT INTO promotions (name, percentage, category, starts_at, ends_at, application_mode) VALUES (@name, @percentage, @category, @starts_at, @ends_at, @application_mode)').run(promotion);
+      return;
+    }
+    const result = database.prepare(`UPDATE promotions SET name=@name, percentage=@percentage, category=@category,
+      starts_at=@starts_at, ends_at=@ends_at, application_mode=@application_mode WHERE id=@id`).run(promotion);
+    if (result.changes === 0) throw new Error('Promozione non trovata.');
   });
   ipcMain.handle('settings:save', (_event, key: string, value: string) => {
     if (!['shop_name', 'archive_folder'].includes(key)) throw new Error('Impostazione non valida.');
@@ -232,11 +261,12 @@ app.whenReady().then(() => {
     const next = new Date();
     next.setHours(24, 0, 0, 0);
     setTimeout(() => {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      void archiveDay(localDate(yesterday)).finally(scheduleArchive);
+      void archiveMissingDays()
+        .catch((error: unknown) => console.error('Backup giornaliero non riuscito:', error))
+        .finally(scheduleArchive);
     }, next.getTime() - Date.now());
   };
+  void archiveMissingDays().catch((error: unknown) => console.error('Backup giornaliero non riuscito:', error));
   scheduleArchive();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
