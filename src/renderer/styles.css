@@ -293,8 +293,10 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .detail-row strong { color: #465249; font-size: 10px; text-align: right; }
 .drawer-footer { display: grid; gap: 8px; padding: 15px 20px; border-top: 1px solid var(--line); }
 .payment-content { display: grid; gap: 15px; padding: 17px 20px 20px; }
-.payment-total { display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: 4px; background: #f2f6f2; color: #65736a; font-size: 10px; }
+.payment-total { display: grid; gap: 8px; padding: 12px; border-radius: 4px; background: #f2f6f2; color: #65736a; font-size: 10px; }
 .payment-total strong { color: #2e5c40; font-family: 'Manrope', sans-serif; font-size: 22px; }
+.payment-total-before, .payment-total-after { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.payment-total-before strong { color: #849087; font-size: 14px; text-decoration: line-through; }
 .payment-note { display: flex; align-items: center; gap: 7px; color: #849087; font-size: 9px; }
 .payment-promotion-info { display: grid; gap: 5px; padding: 10px 12px; border: 1px solid #dce8dc; border-radius: 4px; background: #f5f8f4; color: #536b58; font-size: 10px; }
 .payment-promotion-info strong { color: var(--green-dark); }
