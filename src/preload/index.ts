@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('gestionale', {
   savePromotion: (promotion: PromotionInput) => ipcRenderer.invoke('promotion:save', promotion),
   deletePromotion: (id: number) => ipcRenderer.invoke('promotion:delete', id),
   saveSetting: (key: 'shop_name' | 'archive_folder', value: string) => ipcRenderer.invoke('settings:save', key, value),
+  chooseShopLogo: () => ipcRenderer.invoke('settings:choose-shop-logo'),
   updateSale: (sale: { id: number; payment_method: string; discount: number; items: SaleItem[] }) => ipcRenderer.invoke('sale:update', sale),
   deleteSale: (id: number) => ipcRenderer.invoke('sale:delete', id),
   chooseArchiveFolder: () => ipcRenderer.invoke('archive:choose-folder'),

@@ -42,14 +42,17 @@
     "appId": "it.gestionale.supermercato",
     "productName": "Gestione Supermercato",
     "directories": { "output": "release" },
-    "files": ["out/**/*", "package.json"],
+    "files": ["out/**/*", "package.json", "resources/icon.ico", "resources/icon.png"],
     "asar": true,
     "npmRebuild": true,
     "win": {
+      "icon": "resources/icon.ico",
       "target": [{ "target": "nsis", "arch": ["x64"] }],
       "artifactName": "Gestione-Supermercato-Setup-${version}.${ext}"
     },
     "nsis": {
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
