@@ -33,7 +33,9 @@ h1, h2, h3, .brand strong { font-family: 'Manrope', 'Segoe UI', sans-serif; lett
 .brand > div:last-child { min-width: 0; }
 .brand strong { display: block; overflow: hidden; max-width: 168px; color: #29352e; font-size: 13px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
 .brand small { display: block; margin-top: 3px; color: #929b94; font-size: 9px; font-weight: 700; letter-spacing: 0; }
-.brand-mark { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 7px; background: var(--green); color: white; }
+.brand-mark { display: grid; overflow: hidden; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 7px; background: var(--green); color: white; }
+.brand-mark.has-logo { background: white; }
+.brand-mark img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .nav-label, .eyebrow { color: #969e98; font-size: 9px; font-weight: 700; letter-spacing: 0; }
 .nav-label { margin: 34px 9px 12px; }
 .sidebar nav .nav-label { margin-top: 20px; }
@@ -55,6 +57,7 @@ kbd { margin-left: auto; padding: 2px 5px; border: 1px solid #e5e8e4; border-rad
 .main-content { min-height: 100vh; margin-left: 210px; }
 .topbar { position: sticky; top: 0; z-index: 3; display: flex; min-height: 78px; align-items: center; justify-content: space-between; padding: 12px 42px; border-bottom: 1px solid var(--line); background: rgb(255 255 255 / 96%); backdrop-filter: blur(14px); }
 .topbar-logo, .topbar-logo-fallback { position: absolute; left: 50%; width: auto; max-width: min(160px, 25vw); height: 42px; object-fit: contain; transform: translateX(-50%); }
+.topbar-logo { display: block; }
 .topbar-logo-fallback { display: grid; width: 42px; place-items: center; border-radius: 6px; background: var(--green); color: white; }
 .topbar h1 { font-size: 21px; font-weight: 700; }
 .topbar-right { display: flex; align-items: center; gap: 22px; }
