@@ -15,4 +15,5 @@ contextBridge.exposeInMainWorld('gestionale', {
   updateSale: (sale: { id: number; payment_method: string; discount: number; items: SaleItem[] }) => ipcRenderer.invoke('sale:update', sale),
   deleteSale: (id: number) => ipcRenderer.invoke('sale:delete', id),
   chooseArchiveFolder: () => ipcRenderer.invoke('archive:choose-folder'),
+  chooseShopLogo: () => ipcRenderer.invoke('settings:choose-shop-logo'),
 });

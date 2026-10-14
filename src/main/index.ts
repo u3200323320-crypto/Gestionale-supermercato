@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import Database from 'better-sqlite3';
 import PDFDocument from 'pdfkit';
 import { randomInt, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import type { CheckoutInput, Product, ProductInput, Promotion, PromotionInput, SaleItem } from '../shared/types';
@@ -49,7 +49,7 @@ function setSetting(key: string, value: string): void {
 }
 
 function saleItems(saleId: number): SaleItem[] {
-  return database.prepare('SELECT product_id, name, code, quantity, unit_price, purchase_price FROM sale_items WHERE sale_id = ?').all(saleId) as SaleItem[];
+  return database.prepare('SELECT product_id, name, code, unit, quantity, unit_price, purchase_price FROM sale_items WHERE sale_id = ?').all(saleId) as SaleItem[];
 }
 
 function allPromotions(): Promotion[] {
@@ -67,7 +67,7 @@ function state() {
     products: database.prepare('SELECT * FROM products ORDER BY name').all(),
     sales: allSales(),
     promotions: database.prepare('SELECT * FROM promotions ORDER BY starts_at DESC').all(),
-    settings: { shop_name: setting('shop_name', 'Il tuo supermercato'), archive_folder: setting('archive_folder', join(app.getPath('documents'), 'Gestionale-Archivio')), database_file: databaseFile },
+    settings: { shop_name: setting('shop_name', 'Il tuo supermercato'), shop_logo: setting('shop_logo'), archive_folder: setting('archive_folder', join(app.getPath('documents'), 'Gestionale-Archivio')), database_file: databaseFile },
   };
 }
 
@@ -78,7 +78,7 @@ function initDatabase(): void {
   database.pragma('foreign_keys = ON');
   database.exec(`
     CREATE TABLE IF NOT EXISTS products (
-      id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+      id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, unit TEXT NOT NULL DEFAULT 'PEZZO',
       category TEXT NOT NULL DEFAULT 'Altro', sale_price REAL NOT NULL, purchase_price REAL NOT NULL,
       stock REAL NOT NULL DEFAULT 0, low_stock_threshold REAL NOT NULL DEFAULT 5
     );
@@ -89,13 +89,14 @@ function initDatabase(): void {
     );
     CREATE TABLE IF NOT EXISTS sale_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
-      product_id INTEGER NOT NULL, name TEXT NOT NULL, code TEXT NOT NULL, quantity REAL NOT NULL,
+      product_id INTEGER NOT NULL, name TEXT NOT NULL, code TEXT NOT NULL, unit TEXT NOT NULL DEFAULT 'PEZZO', quantity REAL NOT NULL,
       unit_price REAL NOT NULL, purchase_price REAL NOT NULL
     );
     CREATE TABLE IF NOT EXISTS promotions (
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, percentage REAL NOT NULL,
       category TEXT NOT NULL, starts_at TEXT NOT NULL, ends_at TEXT NOT NULL,
       minimum_spend REAL NOT NULL DEFAULT 0,
+      minimum_kilograms REAL NOT NULL DEFAULT 0, minimum_pieces REAL NOT NULL DEFAULT 0, minimum_liters REAL NOT NULL DEFAULT 0,
       application_mode TEXT NOT NULL CHECK(application_mode IN ('Automatica', 'Manuale'))
     );
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -111,6 +112,19 @@ function initDatabase(): void {
   const promotionColumns = database.prepare('PRAGMA table_info(promotions)').all() as Array<{ name: string }>;
   if (!promotionColumns.some((column) => column.name === 'minimum_spend')) {
     database.exec('ALTER TABLE promotions ADD COLUMN minimum_spend REAL NOT NULL DEFAULT 0');
+  }
+  for (const column of ['minimum_kilograms', 'minimum_pieces', 'minimum_liters']) {
+    if (!promotionColumns.some((existing) => existing.name === column)) {
+      database.exec(`ALTER TABLE promotions ADD COLUMN ${column} REAL NOT NULL DEFAULT 0`);
+    }
+  }
+  const productColumns = database.prepare('PRAGMA table_info(products)').all() as Array<{ name: string }>;
+  if (!productColumns.some((column) => column.name === 'unit')) {
+    database.exec("ALTER TABLE products ADD COLUMN unit TEXT NOT NULL DEFAULT 'PEZZO'");
+  }
+  const saleItemColumns = database.prepare('PRAGMA table_info(sale_items)').all() as Array<{ name: string }>;
+  if (!saleItemColumns.some((column) => column.name === 'unit')) {
+    database.exec("ALTER TABLE sale_items ADD COLUMN unit TEXT NOT NULL DEFAULT 'PEZZO'");
   }
   if (!app.isPackaged && (database.prepare('SELECT COUNT(*) AS count FROM products').get() as { count: number }).count === 0) {
     const insert = database.prepare('INSERT INTO products (code, name, category, sale_price, purchase_price, stock, low_stock_threshold) VALUES (@code, @name, @category, @sale_price, @purchase_price, @stock, @low_stock_threshold)');
@@ -131,14 +145,14 @@ function replaceItems(saleId: number, items: SaleItem[]): void {
   const adjustStock = database.prepare('UPDATE products SET stock = stock + ? WHERE id = ?');
   oldItems.forEach((item) => adjustStock.run(item.quantity, item.product_id));
   database.prepare('DELETE FROM sale_items WHERE sale_id = ?').run(saleId);
-  const addItem = database.prepare(`INSERT INTO sale_items (sale_id, product_id, name, code, quantity, unit_price, purchase_price)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`);
+  const addItem = database.prepare(`INSERT INTO sale_items (sale_id, product_id, name, code, unit, quantity, unit_price, purchase_price)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
   for (const item of items) {
     if (!Number.isFinite(item.quantity) || item.quantity <= 0 || !Number.isFinite(item.unit_price) || item.unit_price < 0) throw new Error('Quantità o prezzo non validi.');
     const product = database.prepare('SELECT stock FROM products WHERE id = ?').get(item.product_id) as { stock: number } | undefined;
     if (!product || product.stock < item.quantity) throw new Error(`Scorta insufficiente per ${item.name}.`);
     adjustStock.run(-item.quantity, item.product_id);
-    addItem.run(saleId, item.product_id, item.name, item.code, item.quantity, item.unit_price, item.purchase_price);
+    addItem.run(saleId, item.product_id, item.name, item.code, item.unit ?? 'PEZZO', item.quantity, item.unit_price, item.purchase_price);
   }
 }
 
@@ -193,6 +207,8 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 920,
+    fullscreen: true,
+    autoHideMenuBar: true,
     minWidth: 1120,
     minHeight: 720,
     backgroundColor: '#f6f7f5',
@@ -220,10 +236,10 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('product:save', (_event, product: ProductInput) => {
     if (!product.name.trim() || !product.code.trim() || product.sale_price < 0 || product.purchase_price < 0 || product.stock < 0) throw new Error('Controlla i dati dell’articolo.');
-    database.prepare(`INSERT INTO products (code, name, category, sale_price, purchase_price, stock, low_stock_threshold)
-      VALUES (@code, @name, @category, @sale_price, @purchase_price, @stock, @low_stock_threshold)
+    database.prepare(`INSERT INTO products (code, name, unit, category, sale_price, purchase_price, stock, low_stock_threshold)
+      VALUES (@code, @name, @unit, @category, @sale_price, @purchase_price, @stock, @low_stock_threshold)
       ON CONFLICT(code) DO UPDATE SET name=excluded.name, category=excluded.category, sale_price=excluded.sale_price,
-      purchase_price=excluded.purchase_price, stock=excluded.stock, low_stock_threshold=excluded.low_stock_threshold`).run(product);
+      unit=excluded.unit, purchase_price=excluded.purchase_price, stock=excluded.stock, low_stock_threshold=excluded.low_stock_threshold`).run({ ...product, unit: product.unit ?? 'PEZZO' });
   });
   ipcMain.handle('product:stock', (_event, productId: number, stock: number) => {
     if (!Number.isInteger(productId) || productId < 1 || !Number.isFinite(stock) || stock < 0) {
@@ -238,9 +254,9 @@ app.whenReady().then(() => {
     const items = sale.items.map((item) => {
       const product = products.find((candidate) => candidate.id === item.product_id);
       if (!product) throw new Error(`Articolo non trovato: ${item.name}.`);
-      return { ...item, name: product.name, code: product.code, unit_price: product.sale_price, purchase_price: product.purchase_price };
+      return { ...item, name: product.name, code: product.code, unit: product.unit ?? 'PEZZO', unit_price: product.sale_price, purchase_price: product.purchase_price };
     });
-    const discounts = calculatePromotionDiscounts(allPromotions(), products, items, localDate(new Date()), sale.manual_promotion_id);
+    const discounts = calculatePromotionDiscounts(allPromotions(), products, items, localDate(new Date()), sale.manual_promotion_id, sale.automatic_promotion_id);
     if (sale.manual_promotion_id !== undefined && !discounts.manualPromotion) {
       throw new Error('L’offerta selezionata non è più applicabile: controlla il periodo, la categoria e la spesa minima.');
     }
@@ -272,16 +288,23 @@ app.whenReady().then(() => {
     })();
   });
   ipcMain.handle('promotion:save', (_event, promotion: PromotionInput) => {
+    const minimums = [promotion.minimum_spend, promotion.minimum_kilograms ?? 0, promotion.minimum_pieces ?? 0, promotion.minimum_liters ?? 0];
     if (!promotion.name.trim() || !Number.isFinite(promotion.percentage) || promotion.percentage < 1 || promotion.percentage > 100
-      || !Number.isFinite(promotion.minimum_spend) || promotion.minimum_spend < 0 || promotion.ends_at < promotion.starts_at) {
+      || minimums.some((value) => !Number.isFinite(value) || value < 0) || minimums.filter((value) => value > 0).length > 1
+      || promotion.ends_at < promotion.starts_at) {
       throw new Error('Controlla i dati della promozione.');
     }
+    const values = { ...promotion, minimum_kilograms: promotion.minimum_kilograms ?? 0, minimum_pieces: promotion.minimum_pieces ?? 0, minimum_liters: promotion.minimum_liters ?? 0 };
     if (promotion.id === undefined) {
-      database.prepare('INSERT INTO promotions (name, percentage, category, starts_at, ends_at, minimum_spend, application_mode) VALUES (@name, @percentage, @category, @starts_at, @ends_at, @minimum_spend, @application_mode)').run(promotion);
+      database.prepare(`INSERT INTO promotions (name, percentage, category, starts_at, ends_at, minimum_spend,
+        minimum_kilograms, minimum_pieces, minimum_liters, application_mode)
+        VALUES (@name, @percentage, @category, @starts_at, @ends_at, @minimum_spend,
+        @minimum_kilograms, @minimum_pieces, @minimum_liters, @application_mode)`).run(values);
       return;
     }
     const result = database.prepare(`UPDATE promotions SET name=@name, percentage=@percentage, category=@category,
-      starts_at=@starts_at, ends_at=@ends_at, minimum_spend=@minimum_spend, application_mode=@application_mode WHERE id=@id`).run(promotion);
+      starts_at=@starts_at, ends_at=@ends_at, minimum_spend=@minimum_spend, minimum_kilograms=@minimum_kilograms,
+      minimum_pieces=@minimum_pieces, minimum_liters=@minimum_liters, application_mode=@application_mode WHERE id=@id`).run(values);
     if (result.changes === 0) throw new Error('Promozione non trovata.');
   });
   ipcMain.handle('promotion:delete', (_event, id: number) => {
@@ -291,6 +314,18 @@ app.whenReady().then(() => {
   ipcMain.handle('settings:save', (_event, key: string, value: string) => {
     if (!['shop_name', 'archive_folder'].includes(key)) throw new Error('Impostazione non valida.');
     setSetting(key, value);
+  });
+  ipcMain.handle('settings:choose-shop-logo', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, { properties: ['openFile'], filters: [{ name: 'Immagini', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const filePath = result.filePaths[0];
+    const image = readFileSync(filePath);
+    if (image.length > 5 * 1024 * 1024) throw new Error('Il logo deve essere inferiore a 5 MB.');
+    const extension = filePath.split('.').pop()?.toLowerCase();
+    const mimeType = extension === 'png' ? 'image/png' : extension === 'webp' ? 'image/webp' : 'image/jpeg';
+    const logo = `data:${mimeType};base64,${image.toString('base64')}`;
+    setSetting('shop_logo', logo);
+    return logo;
   });
   ipcMain.handle('archive:choose-folder', async () => {
     if (setting('archive_folder')) {
