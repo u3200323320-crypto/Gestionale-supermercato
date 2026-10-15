@@ -1,5 +1,6 @@
 export type Section = 'home' | 'inventory' | 'inventory-history' | 'stock-movement' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'settings';
 export type ProductUnit = 'KG' | 'LITRO' | 'PEZZO';
+export type Printer = { name: string; displayName: string };
 
 export interface Product {
   id: number;
@@ -72,7 +73,7 @@ export interface AppState {
   products: Product[];
   sales: Sale[];
   promotions: Promotion[];
-  settings: { shop_name: string; shop_logo?: string; archive_folder: string; database_file: string };
+  settings: { shop_name: string; shop_logo?: string; archive_folder: string; database_file: string; receipt_printer: string; barcode_scanner_enabled: boolean; barcode_scanner_detected: boolean };
   stockMovements: StockMovement[];
 }
 
@@ -102,7 +103,9 @@ declare global {
     checkout: (sale: CheckoutInput) => Promise<Sale>;
     savePromotion: (promotion: PromotionInput) => Promise<void>;
     deletePromotion: (id: number) => Promise<void>;
-    saveSetting: (key: 'shop_name' | 'archive_folder', value: string) => Promise<void>;
+    saveSetting: (key: 'shop_name' | 'archive_folder' | 'receipt_printer' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => Promise<void>;
+    getPrinters: () => Promise<Printer[]>;
+    printReceipt: () => Promise<void>;
     updateSale: (sale: Pick<Sale, 'id' | 'payment_method' | 'discount'> & { items: SaleItem[] }) => Promise<void>;
     deleteSale: (id: number) => Promise<void>;
     chooseArchiveFolder: () => Promise<string | null>;

@@ -6,7 +6,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import JsBarcode from 'jsbarcode';
 import { calculatePromotionDiscounts } from '../shared/promotions';
-import type { AppState, Product, ProductInput, ProductUnit, Promotion, PromotionInput, Sale, SaleItem, Section } from '../shared/types';
+import type { AppState, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, Sale, SaleItem, Section } from '../shared/types';
 
 const money = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
 const dateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' });
@@ -62,7 +62,7 @@ function ProductForm({ initial, save, close }: { initial: ProductInput; save: (p
   const submit = async (event: FormEvent) => { event.preventDefault(); setSaving(true); try { await save(product); close(); } finally { setSaving(false); } };
   return <Modal title={initial.name ? 'Modifica articolo' : 'Nuovo articolo'} close={close}><form className="form-grid product-form" onSubmit={submit}>
     <Field label="Nome articolo" value={product.name} onChange={(e) => change('name', e.target.value)} required autoFocus />
-    <Field label="Codice a barre" value={product.code} onChange={(e) => change('code', e.target.value)} required />
+    <Field label="Codice a barre" value={product.code} onChange={(e) => change('code', e.target.value)} required readOnly={!initial.name} title={!initial.name ? 'Il codice viene acquisito dal lettore barcode.' : undefined} />
     <fieldset className="unit-choice"><legend>Unità di vendita</legend>{(['KG', 'LITRO', 'PEZZO'] as ProductUnit[]).map((unit) => <label key={unit}><input type="radio" name="product-unit" checked={(product.unit ?? 'PEZZO') === unit} onChange={() => setProduct({ ...product, unit })} /><span>{unit}</span></label>)}</fieldset>
     <Field label="Prezzo di vendita" type="number" min="0" step="0.01" value={product.sale_price || ''} onChange={(e) => change('sale_price', e.target.value)} required />
     <Field label="Prezzo di acquisto" type="number" min="0" step="0.01" value={product.purchase_price || ''} onChange={(e) => change('purchase_price', e.target.value)} required />
@@ -91,6 +91,7 @@ export default function App() {
   const [statisticsPeriod, setStatisticsPeriod] = useState('Tutti');
   const [unsoldListOpen, setUnsoldListOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
+  const [printers, setPrinters] = useState<PrinterDevice[]>([]);
   const [locked, setLocked] = useState(true);
   const [hasPin, setHasPin] = useState(false);
   const [pin, setPin] = useState('');
@@ -121,6 +122,7 @@ export default function App() {
   const [saleProductSearch, setSaleProductSearch] = useState('');
   const [saleCart, setSaleCart] = useState<SaleItem[]>([]);
   const [camera, setCamera] = useState(false);
+  const [pendingUnknownCode, setPendingUnknownCode] = useState('');
   const [shopName, setShopName] = useState('');
   const [archiveFolder, setArchiveFolder] = useState('');
   const [newPin, setNewPin] = useState('');
@@ -130,12 +132,17 @@ export default function App() {
   const [promotionMinimum, setPromotionMinimum] = useState<PromotionMinimum>('none');
   const [manualPromotionId, setManualPromotionId] = useState<number | undefined>();
   const [automaticPromotionId, setAutomaticPromotionId] = useState<number | null | undefined>(undefined);
+  const scannerSequence = useRef({ value: '', startedAt: 0, lastAt: 0 });
 
   const refresh = async () => { const next = await window.gestionale.getState(); setData(next); setShopName(next.settings.shop_name); setArchiveFolder(next.settings.archive_folder); return next; };
   const notify = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 3600); };
   useEffect(() => { void window.gestionale.hasPin().then((exists) => { setHasPin(exists); if (!exists) { setLocked(false); void refresh(); } }); }, []);
   useEffect(() => { const openCash = (event: KeyboardEvent) => { if (event.key === 'F2') { event.preventDefault(); setInventoryMenuOpen(false); setSection('cash'); } }; window.addEventListener('keydown', openCash); return () => window.removeEventListener('keydown', openCash); }, []);
-  useEffect(() => { if (section === 'cash') document.getElementById('scanner-field')?.focus(); }, [section]);
+  useEffect(() => {
+    if (section === 'cash' && !camera && !pendingUnknownCode && !productForm) {
+      requestAnimationFrame(() => document.getElementById('scanner-field')?.focus());
+    }
+  }, [section, camera, pendingUnknownCode, productForm]);
   useEffect(() => { if (receipt) { const barcode = document.getElementById('receipt-barcode'); if (barcode) JsBarcode(barcode, receipt.receipt_no, { format: 'CODE128', width: 2.1, height: 48, displayValue: false, margin: 0 }); } }, [receipt]);
 
   const categories = [...new Set(data?.products.map((item) => item.category) ?? [])];
@@ -147,12 +154,23 @@ export default function App() {
   const automaticDiscount = promotionDiscounts.automaticDiscount;
   const manualDiscount = promotionDiscounts.manualDiscount;
   const addToCart = (product: Product) => {
-    const line = cart.find((item) => item.product_id === product.id);
     const amount = product.unit === 'PEZZO' || !product.unit ? 1 : 0.1;
-    if (product.stock - (line?.quantity ?? 0) < amount) { notify(`Scorta insufficiente per ${product.name}.`); return; }
-    setCart((current) => line ? current.map((item) => item.product_id === product.id ? { ...item, quantity: item.quantity + amount } : item) : [...current, { product_id: product.id, name: product.name, code: product.code, unit: product.unit ?? 'PEZZO', quantity: amount, unit_price: product.sale_price, purchase_price: product.purchase_price }]);
+    setCart((current) => {
+      const line = current.find((item) => item.product_id === product.id);
+      if (product.stock - (line?.quantity ?? 0) < amount) { notify(`Scorta insufficiente per ${product.name}.`); return current; }
+      return line
+        ? current.map((item) => item.product_id === product.id ? { ...item, quantity: item.quantity + amount } : item)
+        : [...current, { product_id: product.id, name: product.name, code: product.code, unit: product.unit ?? 'PEZZO', quantity: amount, unit_price: product.sale_price, purchase_price: product.purchase_price }];
+    });
   };
-  const scanCode = (code: string) => { const normalized = code.trim(); const product = data?.products.find((item) => item.code === normalized); if (product) { addToCart(product); setScannerSearch(''); } else if (normalized && window.confirm(`Il codice ${normalized} non è presente in magazzino. Vuoi aggiungere l'articolo?`)) { setProductForm({ ...blankProduct, code: normalized }); } };
+  const scanCode = (code: string) => {
+    const normalized = code.trim();
+    if (!normalized) return;
+    const product = data?.products.find((item) => item.code === normalized);
+    setScannerSearch('');
+    if (product) addToCart(product);
+    else setPendingUnknownCode(normalized);
+  };
   const saveProduct = async (item: ProductInput) => { try { await window.gestionale.saveProduct(item); await refresh(); setSelectedProduct(null); notify('Articolo salvato'); } catch (error) { notify(errorText(error)); throw error; } };
   const saveStock = async (event: FormEvent) => {
     event.preventDefault();
@@ -193,6 +211,54 @@ export default function App() {
     setSaleDialog({ ...sale, items: sale.items.map((item) => ({ ...item })) });
   };
   const findSale = () => { const sale = data?.sales.find((item) => item.receipt_no === saleLookup.trim()); if (sale) openSaleForEditing(sale); else notify('Scontrino non trovato'); };
+  const handleScannedCode = (code: string) => {
+    const normalized = code.trim();
+    if (!normalized || !data?.settings.barcode_scanner_enabled) return;
+    if (!data.settings.barcode_scanner_detected) {
+      setData((current) => current ? { ...current, settings: { ...current.settings, barcode_scanner_detected: true } } : current);
+      void window.gestionale.saveSetting('barcode_scanner_detected', 'true').catch((error: unknown) => notify(errorText(error)));
+    }
+    if (section === 'cash') scanCode(normalized);
+    else if (section === 'sales') setSaleSearch(normalized.replace(/\D/g, ''));
+    else if (section === 'sale-management') {
+      const receiptNumber = normalized.replace(/\D/g, '');
+      setSaleLookup(receiptNumber);
+      const sale = data.sales.find((item) => item.receipt_no === receiptNumber);
+      if (sale) openSaleForEditing(sale);
+      else notify('Scontrino non trovato');
+    }
+  };
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!['cash', 'sales', 'sale-management'].includes(section) || !data?.settings.barcode_scanner_enabled) return;
+      const now = performance.now();
+      const sequence = scannerSequence.current;
+      if (event.key === 'Enter') {
+        const averageInterval = sequence.value.length > 1 ? (now - sequence.startedAt) / (sequence.value.length - 1) : Infinity;
+        if (sequence.value.length >= 4 && now - sequence.startedAt <= 600 && averageInterval <= 75) {
+          event.preventDefault();
+          event.stopPropagation();
+          handleScannedCode(sequence.value);
+          if (section === 'cash') requestAnimationFrame(() => document.getElementById('scanner-field')?.focus());
+        }
+        sequence.value = '';
+        return;
+      }
+      if (event.key.length !== 1 || event.ctrlKey || event.altKey || event.metaKey) return;
+      if (now - sequence.lastAt > 100) {
+        sequence.value = '';
+        sequence.startedAt = now;
+      }
+      sequence.value += event.key;
+      sequence.lastAt = now;
+    };
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, [data, section]);
+  useEffect(() => {
+    if (section !== 'settings' || settingsTab !== 'Dispositivi') return;
+    void window.gestionale.getPrinters().then(setPrinters).catch((error: unknown) => notify(errorText(error)));
+  }, [section, settingsTab]);
   const changeSaleDiscount = (percentage: number) => {
     if (!saleDialog) return;
     const gross = saleDialog.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
@@ -261,6 +327,21 @@ export default function App() {
     } catch (error) { notify(errorText(error)); await refresh(); }
   };
   const saveStoreName = async (event: FormEvent) => { event.preventDefault(); await window.gestionale.saveSetting('shop_name', shopName.trim() || 'Il tuo supermercato'); await refresh(); notify('Nome negozio aggiornato'); };
+  const saveReceiptPrinter = async (printerName: string) => {
+    try {
+      await window.gestionale.saveSetting('receipt_printer', printerName);
+      await refresh();
+      notify(printerName ? 'Stampante scontrini collegata' : 'Stampante scontrini rimossa');
+    } catch (error) { notify(errorText(error)); }
+  };
+  const toggleBarcodeScanner = async () => {
+    const enabled = !data?.settings.barcode_scanner_enabled;
+    try {
+      await window.gestionale.saveSetting('barcode_scanner_enabled', String(enabled));
+      await refresh();
+      notify(enabled ? 'Lettore barcode attivato' : 'Lettore barcode disattivato');
+    } catch (error) { notify(errorText(error)); }
+  };
   const chooseShopLogo = async () => { try { const logo = await window.gestionale.chooseShopLogo(); if (logo) { await refresh(); notify('Logo del negozio aggiornato'); } } catch (error) { notify(errorText(error)); } };
   const chooseFolder = async () => { const chosen = await window.gestionale.chooseArchiveFolder(); if (chosen) { setArchiveFolder(chosen); await refresh(); notify('Cartella archivio aggiornata'); } };
   const savePromotion = async (event: FormEvent) => {
@@ -389,17 +470,15 @@ export default function App() {
   const sectionLabel = section === 'inventory-history' ? 'Storico Magazzino'
     : section === 'stock-movement' ? 'Carica e scarica (Merce)'
       : nav.find((item) => item.section === section)?.label ?? 'Impostazioni';
-  const printReceipt = () => window.print();
+  const printReceipt = () => {
+    if (data?.settings.receipt_printer) {
+      void window.gestionale.printReceipt().catch((error: unknown) => notify(errorText(error)));
+    } else window.print();
+  };
   const scanCameraCode = (code: string) => {
     setCamera(false);
     if (section === 'cash') scanCode(code);
-    else if (section === 'sale-management') {
-      const receiptNumber = code.replace(/\D/g, '');
-      setSaleLookup(receiptNumber);
-      const sale = data?.sales.find((item) => item.receipt_no === receiptNumber);
-      if (sale) openSaleForEditing(sale);
-      else notify('Codice non associato a uno scontrino');
-    } else setSaleSearch(code.replace(/\D/g, ''));
+    else setSaleSearch(code.replace(/\D/g, ''));
   };
   const calendarDays = () => { const year = calendarMonth.getFullYear(); const month = calendarMonth.getMonth(); const offset = (new Date(year, month, 1).getDay() + 6) % 7; return [...Array(offset).fill(null), ...Array.from({ length: new Date(year, month + 1, 0).getDate() }, (_, i) => i + 1)]; };
   const resetPromotionForm = () => {
@@ -481,7 +560,7 @@ export default function App() {
 
       {section === 'sales' && <div className="page-content"><div className="sale-tools"><button className="button button-outline" onClick={() => setCamera(true)}><Camera size={16} /> Cerca con fotocamera</button><SearchInput value={saleSearch} onChange={setSaleSearch} placeholder="Cerca numero scontrino…" numericOnly /><button className="button button-outline" onClick={exportReport}><ArrowDownToLine size={16} /> Esporta PDF</button></div><div className="sale-filters"><SelectField label="Periodo" value={salesPeriod} onChange={setSalesPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A']} />{salesPeriod === 'Da - A' && <><Field label="Da" type="date" value={salesFrom} onChange={(event) => setSalesFrom(event.target.value)} /><Field label="A" type="date" value={salesTo} onChange={(event) => setSalesTo(event.target.value)} /></>}<SelectField label="Categoria" value={salesCategory} onChange={setSalesCategory} options={['Tutte', ...categories]} /></div><SalesTable sales={salesList} onSelect={setReceipt} /></div>}
 
-      {section === 'sale-management' && <div className="page-content settings-page"><section className="settings-panel"><div className="settings-title"><h2>Modifica o elimina una vendita</h2><p>Inserisci il numero a 5 cifre stampato sullo scontrino.</p></div><div className="lookup-panel"><button className="button button-primary" onClick={() => setCamera(true)}><Camera size={16} /> Scansiona</button><Field label="Numero scontrino" type="text" inputMode="numeric" pattern="[0-9]*" maxLength={5} value={saleLookup} onChange={(e) => setSaleLookup(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => { if (e.key === 'Enter') findSale(); }} placeholder="Numero scontrino" /><button className="button button-primary" onClick={findSale}><Search size={16} /> Cerca scontrino</button></div></section></div>}
+      {section === 'sale-management' && <div className="page-content settings-page"><section className="settings-panel"><div className="settings-title"><h2>Modifica o elimina una vendita</h2><p>Inserisci il numero a 5 cifre oppure leggilo con il lettore barcode.</p></div><div className="lookup-panel"><Field label="Numero scontrino" type="text" inputMode="numeric" pattern="[0-9]*" maxLength={5} value={saleLookup} onChange={(e) => setSaleLookup(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => { if (e.key === 'Enter') findSale(); }} placeholder="Numero scontrino" /><button className="button button-primary" onClick={findSale}><Search size={16} /> Cerca scontrino</button></div></section></div>}
 
       {section === 'promotions' && <div className="page-content settings-page"><section className="settings-panel">
         <div className="settings-title"><h2>Promozioni</h2><p>Crea offerte con periodo, categoria e condizioni di spesa.</p></div>
@@ -523,14 +602,16 @@ export default function App() {
         <section className="panel category-panel"><div className="panel-heading"><div><h3>Vendite per categoria</h3><p>Valore degli articoli venduti nel periodo selezionato</p></div></div><div className="category-chart"><ResponsiveContainer width="100%" height={230}><PieChart><Pie data={Object.entries(categoriesSales).map(([name, value]) => ({ name, value }))} dataKey="value" nameKey="name" innerRadius={57} outerRadius={88} paddingAngle={3}>{Object.keys(categoriesSales).map((name, i) => <Cell key={name} fill={colors[i % colors.length]} />)}</Pie><Tooltip formatter={(value) => money.format(Number(value))} /></PieChart></ResponsiveContainer><div className="chart-legend">{Object.entries(categoriesSales).length ? Object.entries(categoriesSales).map(([name, value], i) => <div key={name}><span style={{ backgroundColor: colors[i % colors.length] }} /><span>{name}</span><strong>{money.format(value)}</strong></div>) : <span className="muted">Le categorie appariranno dopo la prima vendita.</span>}</div></div></section>
       </div>}
 
-      {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">{settingsTab === null ? <nav className="settings-nav">{[{ name: 'Nome negozio', icon: Store }, { name: 'Sicurezza', icon: ShieldCheck }, { name: 'Archivio dati', icon: Archive }].map(({ name, icon: Icon }) => <button key={name} onClick={() => setSettingsTab(name)}><Icon size={17} />{name}</button>)}</nav> : <section className="settings-panel"><button className="settings-back" onClick={() => setSettingsTab(null)}><ArrowLeft size={15} /> Impostazioni</button>
+      {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">{settingsTab === null ? <nav className="settings-nav">{[{ name: 'Nome negozio', icon: Store }, { name: 'Sicurezza', icon: ShieldCheck }, { name: 'Archivio dati', icon: Archive }, { name: 'Dispositivi', icon: Barcode }].map(({ name, icon: Icon }) => <button key={name} onClick={() => setSettingsTab(name)}><Icon size={17} />{name}</button>)}</nav> : <section className="settings-panel"><button className="settings-back" onClick={() => setSettingsTab(null)}><ArrowLeft size={15} /> Impostazioni</button>
         {settingsTab === 'Nome negozio' && <><div className="settings-title"><h2>Info negozio</h2><p>Nome e logo del negozio per il menu e la barra superiore.</p></div><form className="settings-form" onSubmit={saveStoreName}><Field label="Nome attività" value={shopName} onChange={(e) => setShopName(e.target.value)} required /><div className="receipt-preview"><Store size={17} /><span>{shopName || 'Nome negozio'}</span><small>Anteprima intestazione scontrino</small></div><div className="shop-logo-setting"><span className="field-label">Logo del negozio</span>{data.settings.shop_logo && <img src={data.settings.shop_logo} alt="Logo attuale" />}<button className="button button-outline" type="button" onClick={() => void chooseShopLogo()}><Store size={15} /> {data.settings.shop_logo ? 'Sostituisci logo' : 'Scegli logo'}</button></div><button className="button button-primary"><Check size={16} /> Salva nome</button></form></>}
         {settingsTab === 'Sicurezza' && <><div className="settings-title"><h2>Accesso e sicurezza</h2><p>Proteggi l’apertura del gestionale con un PIN.</p></div><div className="security-status"><div className="security-icon"><ShieldCheck size={20} /></div><div><strong>{hasPin ? 'PIN attivo' : 'Nessun PIN configurato'}</strong><span>{hasPin ? 'Il PIN viene richiesto all’avvio.' : 'Scegli un codice da 4 a 8 cifre.'}</span></div></div><form className="settings-form" onSubmit={async (event) => { event.preventDefault(); try { await window.gestionale.setPin(newPin); setHasPin(true); setNewPin(''); notify('PIN aggiornato'); } catch (error) { notify(errorText(error)); } }}><Field label={hasPin ? 'Nuovo PIN (4–8 cifre)' : 'PIN (4–8 cifre)'} type="password" inputMode="numeric" minLength={4} maxLength={8} pattern="[0-9]{4,8}" value={newPin} onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))} required /><button className="button button-primary"><LockKeyhole size={16} />{hasPin ? 'Aggiorna PIN' : 'Attiva PIN'}</button></form></>}
         {settingsTab === 'Archivio dati' && <><div className="settings-title"><h2>Archivio locale</h2><p>Database SQLite e copie giornaliere dei dati.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Archivio locale attivo</div><div className="database-card"><div className="security-icon"><Archive size={20} /></div><div><strong>Database SQLite</strong><span className="database-path">{data.settings.database_file}</span></div><span className="stock-badge">Attivo</span></div><div className="settings-form"><label className="field"><span>Cartella esportazioni giornaliere</span><div className="folder-input"><input value={archiveFolder} readOnly /><button className="button button-outline" type="button" onClick={() => void chooseFolder()}>Scegli cartella</button></div></label><p className="help-copy">Ogni giorno a mezzanotte vengono aggiornati file TXT e PDF nelle cartelle Magazzino, Cassa, Vendite e Statistiche.</p></div></>}
+        {settingsTab === 'Dispositivi' && <><div className="settings-title"><h2>Dispositivi</h2><p>Configura il lettore di codici a barre e la stampante degli scontrini.</p></div><div className="device-setting"><div className="device-heading"><div className="security-icon"><Barcode size={20} /></div><div><strong>Lettore di codici a barre</strong><span>{data.settings.barcode_scanner_detected ? 'Rilevato: è stata acquisita almeno una scansione su questo computer.' : 'In attesa della prima lettura del lettore USB/HID.'}</span></div><button className={`toggle-button${data.settings.barcode_scanner_enabled ? ' enabled' : ''}`} type="button" role="switch" aria-checked={data.settings.barcode_scanner_enabled} onClick={() => void toggleBarcodeScanner()}>{data.settings.barcode_scanner_enabled ? 'Attivo' : 'Disattivo'}</button></div><p className="help-copy">I lettori USB che si comportano come tastiera vengono riconosciuti automaticamente quando inviano un codice. La preferenza resta salvata tra gli avvii.</p></div><div className="device-setting"><div className="settings-title"><h3>Stampante scontrini</h3><p>Le stampanti rilevate dal sistema possono essere collegate in modo permanente.</p></div><div className="device-printer-row"><SelectField label="Stampante collegata" value={data.settings.receipt_printer} onChange={(value) => void saveReceiptPrinter(value)} options={['', ...printers.map((printer) => printer.name)]} labels={['Seleziona stampante', ...printers.map((printer) => printer.displayName || printer.name)]} /><button className="button button-outline" type="button" onClick={() => void window.gestionale.getPrinters().then(setPrinters).catch((error: unknown) => notify(errorText(error)))}><Printer size={15} /> Rileva stampanti</button></div>{!printers.length && <p className="help-copy">Nessuna stampante rilevata. Verifica che sia collegata e installata nel sistema.</p>}{data.settings.receipt_printer && !printers.some((printer) => printer.name === data.settings.receipt_printer) && <p className="help-copy">La stampante salvata non è attualmente disponibile: selezionane una nuova.</p>}</div></>}
       </section>}</div></div>}
     </main>
 
     {unsoldListOpen && <Modal title="Articoli ancora in magazzino" close={() => setUnsoldListOpen(false)} wide><div id="unsold-list-print"><Table headings={['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']}><>{unsoldProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td>{product.category}</td><td>{product.stock} {product.unit ?? 'PEZZO'}</td><td>{money.format(product.sale_price)}</td></tr>)}</>{!unsoldProducts.length && <tr><td colSpan={4} className="empty-cell">Non risultano articoli rimanenti in magazzino.</td></tr>}</Table></div><div className="unsold-list-actions no-print"><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa</button><button className="button button-primary" onClick={() => void shareUnsoldList()}><Share2 size={16} /> Condividi</button></div></Modal>}
+    {pendingUnknownCode && <Modal title="Articolo non presente" wide close={() => { setPendingUnknownCode(''); setScannerSearch(''); }}><div className="unknown-code-message"><CircleAlert size={26} /><p>Il codice a barre <strong>{pendingUnknownCode}</strong> non è presente tra gli articoli.</p><span>Vuoi aggiungerlo come nuovo articolo? Il codice verrà mantenuto e non sarà modificabile manualmente.</span><div className="form-actions"><button className="button button-quiet" onClick={() => { setPendingUnknownCode(''); setScannerSearch(''); }}>Annulla</button><button className="button button-primary" onClick={() => { setProductForm({ ...blankProduct, code: pendingUnknownCode }); setPendingUnknownCode(''); }}><Plus size={16} /> Aggiungi articolo</button></div></div></Modal>}
     {productForm && <ProductForm initial={productForm} save={saveProduct} close={() => setProductForm(null)} />}
     {stockProduct && <Modal title={`Aggiungi quantità · ${stockProduct.name}`} close={() => setStockProduct(null)}><form className="form-grid stock-form" onSubmit={(event) => void saveStock(event)}>
       <p className="stock-current">Giacenza attuale: <strong>{stockProduct.stock}</strong></p>

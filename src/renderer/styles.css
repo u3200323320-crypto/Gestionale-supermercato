@@ -292,6 +292,21 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .folder-input { display: flex; gap: 6px; }
 .folder-input input { flex: 1; }
 .help-copy { color: #929b94; font-size: 9px; line-height: 1.6; }
+.device-setting { display: grid; gap: 13px; margin-top: 20px; padding: 16px; border: 1px solid var(--line); border-radius: 4px; }
+.device-heading { display: flex; align-items: center; gap: 12px; }
+.device-heading > div:nth-child(2) { display: grid; flex: 1; gap: 4px; }
+.device-heading strong { font-size: 11px; }
+.device-heading span { color: var(--muted); font-size: 9px; }
+.device-printer-row { display: flex; align-items: flex-end; gap: 9px; }
+.device-printer-row .field { flex: 1; }
+.device-setting > .settings-title { padding: 0 0 10px; }
+.device-setting .settings-title h3 { font-size: 12px; }
+.device-setting .settings-title p { font-size: 9px; }
+.unknown-code-message { display: grid; justify-items: center; gap: 12px; padding: 24px; color: var(--green); text-align: center; }
+.unknown-code-message p { margin: 0; color: var(--ink); font-size: 15px; }
+.unknown-code-message p strong { color: var(--green-dark); font-family: 'DM Mono', 'Consolas', monospace; }
+.unknown-code-message > span { max-width: 400px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.unknown-code-message .form-actions { width: 100%; justify-content: center; padding-top: 8px; }
 .modal-backdrop, .drawer-backdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 20px; background: rgb(28 38 31 / 43%); animation: fade-in .14s ease-out; }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 .modal { overflow: auto; width: min(100%, 480px); max-height: min(90vh, 800px); border: 1px solid rgb(255 255 255 / 60%); border-radius: 6px; background: white; box-shadow: var(--shadow); animation: modal-in .18s ease-out; }

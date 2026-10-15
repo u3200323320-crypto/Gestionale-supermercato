@@ -68,7 +68,15 @@ function state() {
     sales: allSales(),
     stockMovements: database.prepare('SELECT * FROM stock_movements ORDER BY created_at DESC, id DESC').all(),
     promotions: database.prepare('SELECT * FROM promotions ORDER BY starts_at DESC').all(),
-    settings: { shop_name: setting('shop_name', 'Il tuo supermercato'), shop_logo: setting('shop_logo'), archive_folder: setting('archive_folder', join(app.getPath('documents'), 'Gestionale-Archivio')), database_file: databaseFile },
+    settings: {
+      shop_name: setting('shop_name', 'Il tuo supermercato'),
+      shop_logo: setting('shop_logo'),
+      archive_folder: setting('archive_folder', join(app.getPath('documents'), 'Gestionale-Archivio')),
+      database_file: databaseFile,
+      receipt_printer: setting('receipt_printer'),
+      barcode_scanner_enabled: setting('barcode_scanner_enabled', 'true') === 'true',
+      barcode_scanner_detected: setting('barcode_scanner_detected') === 'true',
+    },
   };
 }
 
@@ -409,8 +417,19 @@ app.whenReady().then(() => {
     if (result.changes === 0) throw new Error('Promozione non trovata.');
   });
   ipcMain.handle('settings:save', (_event, key: string, value: string) => {
-    if (!['shop_name', 'archive_folder'].includes(key)) throw new Error('Impostazione non valida.');
+    if (!['shop_name', 'archive_folder', 'receipt_printer', 'barcode_scanner_enabled', 'barcode_scanner_detected'].includes(key)) throw new Error('Impostazione non valida.');
     setSetting(key, value);
+  });
+  ipcMain.handle('devices:printers', async () => (await mainWindow.webContents.getPrintersAsync()).map(({ name, displayName }) => ({ name, displayName })));
+  ipcMain.handle('receipt:print', async () => {
+    const printer = setting('receipt_printer');
+    if (!printer) throw new Error('Seleziona una stampante per gli scontrini nelle impostazioni Dispositivi.');
+    await new Promise<void>((resolve, reject) => {
+      mainWindow.webContents.print({ silent: true, deviceName: printer, printBackground: true }, (success, failureReason) => {
+        if (success) resolve();
+        else reject(new Error(failureReason || 'Stampa dello scontrino non riuscita.'));
+      });
+    });
   });
   ipcMain.handle('settings:choose-shop-logo', async () => {
     const result = await dialog.showOpenDialog(mainWindow, { properties: ['openFile'], filters: [{ name: 'Immagini', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] });
