@@ -1,4 +1,4 @@
-export type Section = 'home' | 'inventory' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'settings';
+export type Section = 'home' | 'inventory' | 'inventory-history' | 'stock-movement' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'settings';
 export type ProductUnit = 'KG' | 'LITRO' | 'PEZZO';
 
 export interface Product {
@@ -11,6 +11,8 @@ export interface Product {
   purchase_price: number;
   stock: number;
   low_stock_threshold: number;
+  expiry_enabled?: boolean;
+  expiry_date?: string | null;
 }
 
 export interface SaleItem {
@@ -36,6 +38,16 @@ export interface Sale {
   items: SaleItem[];
 }
 
+export interface StockMovement {
+  id: number;
+  product_id: number;
+  product_name: string;
+  movement_type: 'Carico' | 'Scarico';
+  quantity: number;
+  created_at: string;
+  note: string;
+}
+
 export interface Promotion {
   id: number;
   name: string;
@@ -58,6 +70,7 @@ export interface AppState {
   sales: Sale[];
   promotions: Promotion[];
   settings: { shop_name: string; shop_logo?: string; archive_folder: string; database_file: string };
+  stockMovements: StockMovement[];
 }
 
 export interface ProductInput {
@@ -69,6 +82,8 @@ export interface ProductInput {
   purchase_price: number;
   stock: number;
   low_stock_threshold: number;
+  expiry_enabled?: boolean;
+  expiry_date?: string | null;
 }
 
 declare global {
@@ -80,6 +95,7 @@ declare global {
     setPin: (pin: string) => Promise<void>;
     saveProduct: (product: ProductInput) => Promise<void>;
     updateStock: (productId: number, stock: number) => Promise<void>;
+    moveStock: (movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; note: string }) => Promise<void>;
     checkout: (sale: CheckoutInput) => Promise<Sale>;
     savePromotion: (promotion: PromotionInput) => Promise<void>;
     deletePromotion: (id: number) => Promise<void>;

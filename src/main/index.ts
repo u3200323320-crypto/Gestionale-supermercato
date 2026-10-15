@@ -64,8 +64,9 @@ function allSales(): unknown[] {
 
 function state() {
   return {
-    products: database.prepare('SELECT * FROM products ORDER BY name').all(),
+    products: (database.prepare('SELECT * FROM products ORDER BY name').all() as Array<Omit<Product, 'expiry_enabled'> & { expiry_enabled: number }>).map((product) => ({ ...product, expiry_enabled: Boolean(product.expiry_enabled) })),
     sales: allSales(),
+    stockMovements: database.prepare('SELECT * FROM stock_movements ORDER BY created_at DESC, id DESC').all(),
     promotions: database.prepare('SELECT * FROM promotions ORDER BY starts_at DESC').all(),
     settings: { shop_name: setting('shop_name', 'Il tuo supermercato'), shop_logo: setting('shop_logo'), archive_folder: setting('archive_folder', join(app.getPath('documents'), 'Gestionale-Archivio')), database_file: databaseFile },
   };
@@ -80,7 +81,8 @@ function initDatabase(): void {
     CREATE TABLE IF NOT EXISTS products (
       id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, unit TEXT NOT NULL DEFAULT 'PEZZO',
       category TEXT NOT NULL DEFAULT 'Altro', sale_price REAL NOT NULL, purchase_price REAL NOT NULL,
-      stock REAL NOT NULL DEFAULT 0, low_stock_threshold REAL NOT NULL DEFAULT 5
+      stock REAL NOT NULL DEFAULT 0, low_stock_threshold REAL NOT NULL DEFAULT 5,
+      expiry_enabled INTEGER NOT NULL DEFAULT 0, expiry_date TEXT
     );
     CREATE TABLE IF NOT EXISTS sales (
       id INTEGER PRIMARY KEY AUTOINCREMENT, receipt_no TEXT NOT NULL UNIQUE,
@@ -100,6 +102,11 @@ function initDatabase(): void {
       application_mode TEXT NOT NULL CHECK(application_mode IN ('Automatica', 'Manuale'))
     );
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS stock_movements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, product_name TEXT NOT NULL,
+      movement_type TEXT NOT NULL CHECK(movement_type IN ('Carico', 'Scarico')),
+      quantity REAL NOT NULL, created_at TEXT NOT NULL, note TEXT NOT NULL DEFAULT ''
+    );
   `);
   const saleColumns = database.prepare('PRAGMA table_info(sales)').all() as Array<{ name: string }>;
   if (!saleColumns.some((column) => column.name === 'gross_total')) {
@@ -122,9 +129,27 @@ function initDatabase(): void {
   if (!productColumns.some((column) => column.name === 'unit')) {
     database.exec("ALTER TABLE products ADD COLUMN unit TEXT NOT NULL DEFAULT 'PEZZO'");
   }
+  if (!productColumns.some((column) => column.name === 'expiry_enabled')) {
+    database.exec('ALTER TABLE products ADD COLUMN expiry_enabled INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!productColumns.some((column) => column.name === 'expiry_date')) {
+    database.exec('ALTER TABLE products ADD COLUMN expiry_date TEXT');
+  }
   const saleItemColumns = database.prepare('PRAGMA table_info(sale_items)').all() as Array<{ name: string }>;
   if (!saleItemColumns.some((column) => column.name === 'unit')) {
     database.exec("ALTER TABLE sale_items ADD COLUMN unit TEXT NOT NULL DEFAULT 'PEZZO'");
+  }
+  if (setting('stock_movements_sales_backfilled') !== '1') {
+    const previousSales = database.prepare(`SELECT i.product_id, i.name, i.quantity, s.created_at, s.receipt_no
+      FROM sale_items i JOIN sales s ON s.id = i.sale_id ORDER BY s.created_at, i.id`).all() as Array<{
+      product_id: number; name: string; quantity: number; created_at: string; receipt_no: string;
+    }>;
+    const insertMovement = database.prepare(`INSERT INTO stock_movements (product_id, product_name, movement_type, quantity, created_at, note)
+      VALUES (?, ?, 'Scarico', ?, ?, ?)`);
+    database.transaction(() => {
+      previousSales.forEach((sale) => insertMovement.run(sale.product_id, sale.name, sale.quantity, sale.created_at, `Vendita #${sale.receipt_no}`));
+      setSetting('stock_movements_sales_backfilled', '1');
+    })();
   }
   if (!app.isPackaged && (database.prepare('SELECT COUNT(*) AS count FROM products').get() as { count: number }).count === 0) {
     const insert = database.prepare('INSERT INTO products (code, name, category, sale_price, purchase_price, stock, low_stock_threshold) VALUES (@code, @name, @category, @sale_price, @purchase_price, @stock, @low_stock_threshold)');
@@ -154,6 +179,11 @@ function replaceItems(saleId: number, items: SaleItem[]): void {
     adjustStock.run(-item.quantity, item.product_id);
     addItem.run(saleId, item.product_id, item.name, item.code, item.unit ?? 'PEZZO', item.quantity, item.unit_price, item.purchase_price);
   }
+}
+
+function recordStockMovement(productId: number, productName: string, type: 'Carico' | 'Scarico', quantity: number, note: string): void {
+  database.prepare(`INSERT INTO stock_movements (product_id, product_name, movement_type, quantity, created_at, note)
+    VALUES (?, ?, ?, ?, ?, ?)`).run(productId, productName, type, quantity, new Date().toISOString(), note);
 }
 
 function archiveDay(day: string): Promise<void> {
@@ -235,11 +265,21 @@ app.whenReady().then(() => {
     setSetting('pin_hash', `${salt}:${scryptSync(pin, salt, 64).toString('hex')}`);
   });
   ipcMain.handle('product:save', (_event, product: ProductInput) => {
-    if (!product.name.trim() || !product.code.trim() || product.sale_price < 0 || product.purchase_price < 0 || product.stock < 0) throw new Error('Controlla i dati dell’articolo.');
-    database.prepare(`INSERT INTO products (code, name, unit, category, sale_price, purchase_price, stock, low_stock_threshold)
-      VALUES (@code, @name, @unit, @category, @sale_price, @purchase_price, @stock, @low_stock_threshold)
+    const expiryDate = product.expiry_date ? new Date(`${product.expiry_date}T00:00:00`) : null;
+    if (!product.name.trim() || !product.code.trim() || product.sale_price < 0 || product.purchase_price < 0 || product.stock < 0
+      || (product.expiry_enabled && (!product.expiry_date || !/^\d{4}-\d{2}-\d{2}$/.test(product.expiry_date) || !expiryDate || Number.isNaN(expiryDate.getTime()) || localDate(expiryDate) !== product.expiry_date))) {
+      throw new Error('Controlla i dati dell’articolo e la data di scadenza.');
+    }
+    database.prepare(`INSERT INTO products (code, name, unit, category, sale_price, purchase_price, stock, low_stock_threshold, expiry_enabled, expiry_date)
+      VALUES (@code, @name, @unit, @category, @sale_price, @purchase_price, @stock, @low_stock_threshold, @expiry_enabled, @expiry_date)
       ON CONFLICT(code) DO UPDATE SET name=excluded.name, category=excluded.category, sale_price=excluded.sale_price,
-      unit=excluded.unit, purchase_price=excluded.purchase_price, stock=excluded.stock, low_stock_threshold=excluded.low_stock_threshold`).run({ ...product, unit: product.unit ?? 'PEZZO' });
+      unit=excluded.unit, purchase_price=excluded.purchase_price, stock=excluded.stock, low_stock_threshold=excluded.low_stock_threshold,
+      expiry_enabled=excluded.expiry_enabled, expiry_date=excluded.expiry_date`).run({
+      ...product,
+      unit: product.unit ?? 'PEZZO',
+      expiry_enabled: product.expiry_enabled ? 1 : 0,
+      expiry_date: product.expiry_enabled ? product.expiry_date : null,
+    });
   });
   ipcMain.handle('product:stock', (_event, productId: number, stock: number) => {
     if (!Number.isInteger(productId) || productId < 1 || !Number.isFinite(stock) || stock < 0) {
@@ -247,6 +287,20 @@ app.whenReady().then(() => {
     }
     const result = database.prepare('UPDATE products SET stock = ? WHERE id = ?').run(stock, productId);
     if (result.changes === 0) throw new Error('Articolo non trovato.');
+  });
+  ipcMain.handle('product:move-stock', (_event, movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; note: string }) => {
+    if (!Number.isInteger(movement.productId) || movement.productId < 1 || !['Carico', 'Scarico'].includes(movement.type)
+      || !Number.isFinite(movement.quantity) || movement.quantity <= 0 || typeof movement.note !== 'string') {
+      throw new Error('I dati del movimento di magazzino non sono validi.');
+    }
+    database.transaction(() => {
+      const product = database.prepare('SELECT name, stock FROM products WHERE id = ?').get(movement.productId) as { name: string; stock: number } | undefined;
+      if (!product) throw new Error('Articolo non trovato.');
+      if (movement.type === 'Scarico' && product.stock < movement.quantity) throw new Error('La quantità da scaricare supera la giacenza disponibile.');
+      const delta = movement.type === 'Carico' ? movement.quantity : -movement.quantity;
+      database.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(delta, movement.productId);
+      recordStockMovement(movement.productId, product.name, movement.type, movement.quantity, movement.note.trim());
+    })();
   });
   ipcMain.handle('sale:checkout', (_event, sale: CheckoutInput) => {
     if (!sale.items.length) throw new Error('Il carrello è vuoto.');
@@ -265,9 +319,11 @@ app.whenReady().then(() => {
     const discount = discounts.automaticDiscount + discounts.manualDiscount + sale.additional_discount;
     if (discount > grossTotal) throw new Error('Lo sconto supera il totale della vendita.');
     const createSale = database.transaction(() => {
+      const receiptNo = receiptNumber();
       const result = database.prepare('INSERT INTO sales (receipt_no, created_at, payment_method, discount, gross_total, total) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(receiptNumber(), new Date().toISOString(), sale.payment_method, discount, grossTotal, Math.max(0, grossTotal - discount));
+        .run(receiptNo, new Date().toISOString(), sale.payment_method, discount, grossTotal, Math.max(0, grossTotal - discount));
       replaceItems(Number(result.lastInsertRowid), items);
+      items.forEach((item) => recordStockMovement(item.product_id, item.name, 'Scarico', item.quantity, `Vendita #${receiptNo}`));
       return Number(result.lastInsertRowid);
     });
     const id = createSale();
@@ -275,7 +331,26 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('sale:update', (_event, sale: { id: number; payment_method: string; discount: number; items: SaleItem[] }) => {
     database.transaction(() => {
+      const previousQuantities = new Map<number, { quantity: number; name: string }>();
+      saleItems(sale.id).forEach((item) => {
+        const current = previousQuantities.get(item.product_id);
+        previousQuantities.set(item.product_id, { quantity: (current?.quantity ?? 0) + item.quantity, name: item.name });
+      });
+      const nextQuantities = new Map<number, { quantity: number; name: string }>();
+      sale.items.forEach((item) => {
+        const current = nextQuantities.get(item.product_id);
+        nextQuantities.set(item.product_id, { quantity: (current?.quantity ?? 0) + item.quantity, name: item.name });
+      });
       replaceItems(sale.id, sale.items);
+      const receipt = database.prepare('SELECT receipt_no FROM sales WHERE id = ?').get(sale.id) as { receipt_no: string } | undefined;
+      new Set([...previousQuantities.keys(), ...nextQuantities.keys()]).forEach((productId) => {
+        const previous = previousQuantities.get(productId);
+        const next = nextQuantities.get(productId);
+        const difference = (next?.quantity ?? 0) - (previous?.quantity ?? 0);
+        if (difference) {
+          recordStockMovement(productId, next?.name ?? previous?.name ?? 'Articolo', difference > 0 ? 'Scarico' : 'Carico', Math.abs(difference), `Modifica vendita #${receipt?.receipt_no ?? sale.id}`);
+        }
+      });
       const grossTotal = sale.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
       database.prepare('UPDATE sales SET payment_method=?, discount=?, gross_total=?, total=? WHERE id=?')
         .run(sale.payment_method, sale.discount, grossTotal, Math.max(0, grossTotal - sale.discount), sale.id);
@@ -283,7 +358,11 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('sale:delete', (_event, id: number) => {
     database.transaction(() => {
-      saleItems(id).forEach((item) => database.prepare('UPDATE products SET stock=stock+? WHERE id=?').run(item.quantity, item.product_id));
+      const receipt = database.prepare('SELECT receipt_no FROM sales WHERE id = ?').get(id) as { receipt_no: string } | undefined;
+      saleItems(id).forEach((item) => {
+        database.prepare('UPDATE products SET stock=stock+? WHERE id=?').run(item.quantity, item.product_id);
+        recordStockMovement(item.product_id, item.name, 'Carico', item.quantity, `Vendita #${receipt?.receipt_no ?? id} eliminata`);
+      });
       database.prepare('DELETE FROM sales WHERE id=?').run(id);
     })();
   });
