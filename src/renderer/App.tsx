@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import type { FormEvent, InputHTMLAttributes, ReactNode } from 'react';
-import { Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Camera, Check, ChevronDown, CircleAlert, ClipboardList, CreditCard, House, LockKeyhole, Minus, Package, Pencil, Plus, Printer, Search, Settings, ShieldCheck, ShoppingBasket, Store, Trash2, TrendingUp, X } from 'lucide-react';
+import { Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Camera, Check, ChevronDown, CircleAlert, ClipboardList, CreditCard, House, LockKeyhole, Minus, Package, Pencil, Plus, Printer, Search, Settings, Share2, ShieldCheck, ShoppingBasket, Store, Trash2, TrendingUp, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -12,7 +12,7 @@ const money = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR
 const dateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' });
 const receiptDate = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short' });
 const receiptTime = new Intl.DateTimeFormat('it-IT', { timeStyle: 'short' });
-const colors = ['#d47b32', '#c17e4f', '#658499', '#c4a05f', '#8a7461', '#88749a'];
+const colors = ['#416e59', '#c17e4f', '#658499', '#a9aa64', '#8a7461', '#609085'];
 const localDateKey = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const permanentPromotionEnd = '9999-12-31';
 const promotionDurations = ['1 giorno', '3 giorni', '7 giorni', '1 mese', 'Sempre', 'Personalizzata'];
@@ -28,10 +28,11 @@ const inventoryFilters: { value: 'all' | 'available' | 'low' | 'out'; label: str
   { value: 'all', label: 'Tutto' }, { value: 'available', label: 'Disponibile' },
   { value: 'low', label: 'In esaurimento' }, { value: 'out', label: 'Esaurito' },
 ];
-const statisticsPeriods = ['1 giorno', '3 giorni', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Ultimi 6 mesi', 'Ultimo anno'];
+const statisticsPeriods = ['Tutti', 'Ultimo giorno', 'Ultimi 3 giorni', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Ultimi 6 mesi', 'Ultimo anno'];
 const blankProduct: ProductInput = { code: '', name: '', unit: 'PEZZO', category: 'Dispensa', sale_price: 0, purchase_price: 0, stock: 0, low_stock_threshold: 5, expiry_enabled: false, expiry_date: '' };
-const blankPromotion = (): PromotionInput => ({ name: '', percentage: 10, category: 'Tutte', starts_at: localDateKey(), ends_at: localDateKey(), minimum_spend: 0, minimum_kilograms: 0, minimum_pieces: 0, minimum_liters: 0, application_mode: 'Automatica' });
+const blankPromotion = (): PromotionInput => ({ name: '', discount_type: 'percentage', percentage: 10, buy_quantity: 2, free_quantity: 1, category: 'Tutte', starts_at: localDateKey(), ends_at: localDateKey(), minimum_spend: 0, minimum_kilograms: 0, minimum_pieces: 0, minimum_liters: 0, application_mode: 'Automatica' });
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Operazione non riuscita.';
+type PromotionDiscountType = 'percentage' | '2+1' | '3+1' | 'custom';
 
 function promotionEndDate(start: string, duration: string): string {
   if (duration === 'Sempre') return permanentPromotionEnd;
@@ -87,7 +88,7 @@ export default function App() {
   const [stockMovementProduct, setStockMovementProduct] = useState('');
   const [stockMovementQuantity, setStockMovementQuantity] = useState('');
   const [stockMovementNote, setStockMovementNote] = useState('');
-  const [statisticsPeriod, setStatisticsPeriod] = useState('Ultimo anno');
+  const [statisticsPeriod, setStatisticsPeriod] = useState('Tutti');
   const [unsoldListOpen, setUnsoldListOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
   const [locked, setLocked] = useState(true);
@@ -125,22 +126,26 @@ export default function App() {
   const [newPin, setNewPin] = useState('');
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [promotion, setPromotion] = useState<PromotionInput>(blankPromotion);
+  const [promotionDiscountType, setPromotionDiscountType] = useState<PromotionDiscountType>('percentage');
   const [promotionMinimum, setPromotionMinimum] = useState<PromotionMinimum>('none');
+  const [manualPromotionId, setManualPromotionId] = useState<number | undefined>();
   const [automaticPromotionId, setAutomaticPromotionId] = useState<number | null | undefined>(undefined);
 
   const refresh = async () => { const next = await window.gestionale.getState(); setData(next); setShopName(next.settings.shop_name); setArchiveFolder(next.settings.archive_folder); return next; };
   const notify = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 3600); };
   useEffect(() => { void window.gestionale.hasPin().then((exists) => { setHasPin(exists); if (!exists) { setLocked(false); void refresh(); } }); }, []);
-  useEffect(() => { const openCash = (event: KeyboardEvent) => { if (event.key === 'F2') { event.preventDefault(); setSection('cash'); } }; window.addEventListener('keydown', openCash); return () => window.removeEventListener('keydown', openCash); }, []);
+  useEffect(() => { const openCash = (event: KeyboardEvent) => { if (event.key === 'F2') { event.preventDefault(); setInventoryMenuOpen(false); setSection('cash'); } }; window.addEventListener('keydown', openCash); return () => window.removeEventListener('keydown', openCash); }, []);
   useEffect(() => { if (section === 'cash') document.getElementById('scanner-field')?.focus(); }, [section]);
   useEffect(() => { if (receipt) { const barcode = document.getElementById('receipt-barcode'); if (barcode) JsBarcode(barcode, receipt.receipt_no, { format: 'CODE128', width: 2.1, height: 48, displayValue: false, margin: 0 }); } }, [receipt]);
 
   const categories = [...new Set(data?.products.map((item) => item.category) ?? [])];
   const availableSaleProducts = data?.products.filter((product) => product.stock > 0) ?? [];
   const todayKey = localDateKey();
-  const promotionDiscounts = calculatePromotionDiscounts(data?.promotions ?? [], data?.products ?? [], cart, todayKey, undefined, automaticPromotionId);
+  const promotionDiscounts = calculatePromotionDiscounts(data?.promotions ?? [], data?.products ?? [], cart, todayKey, manualPromotionId, automaticPromotionId);
   const automaticApplicableOffers = promotionDiscounts.automaticApplicablePromotions;
+  const manualApplicableOffers = promotionDiscounts.manualApplicablePromotions;
   const automaticDiscount = promotionDiscounts.automaticDiscount;
+  const manualDiscount = promotionDiscounts.manualDiscount;
   const addToCart = (product: Product) => {
     const line = cart.find((item) => item.product_id === product.id);
     const amount = product.unit === 'PEZZO' || !product.unit ? 1 : 0.1;
@@ -228,7 +233,7 @@ export default function App() {
   const updateSale = async () => { if (!saleDialog) return; const items = saleDialog.items.filter((item) => item.quantity > 0); if (!items.length) { notify('Una vendita deve contenere almeno un articolo.'); return; } if (saleDiscountPercentage < 0 || saleDiscountPercentage > 100) { notify('Lo sconto deve essere compreso tra 0 e 100%.'); return; } try { const saleId = saleDialog.id; await window.gestionale.updateSale({ id: saleId, payment_method: saleDialog.payment_method, discount: saleDialog.discount, items }); const next = await refresh(); const updatedSale = next.sales.find((sale) => sale.id === saleId); setSaleLookup(''); setSaleDialog(null); if (!updatedSale) throw new Error('Vendita aggiornata ma non trovata nell’archivio.'); setReceipt(updatedSale); notify('Vendita aggiornata'); } catch (error) { notify(errorText(error)); await refresh(); } };
   const deleteSale = async (sale: Sale) => { if (!window.confirm(`Eliminare lo scontrino ${sale.receipt_no}? Le quantità verranno ripristinate.`)) return; try { await window.gestionale.deleteSale(sale.id); await refresh(); setSaleLookup(''); setSaleDialog(null); notify('Vendita eliminata'); } catch (error) { notify(errorText(error)); await refresh(); } };
   const subtotal = cart.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-  const totalBeforeAdditionalDiscount = Math.max(0, subtotal - automaticDiscount);
+  const totalBeforeAdditionalDiscount = Math.max(0, subtotal - automaticDiscount - manualDiscount);
   const additionalDiscount = Math.round(totalBeforeAdditionalDiscount * Number(discount || 0)) / 100;
   const total = Math.max(0, totalBeforeAdditionalDiscount - additionalDiscount);
   const changeQuantity = (id: number, amount: number) => {
@@ -245,9 +250,10 @@ export default function App() {
       return;
     }
     try {
-      const sale = await window.gestionale.checkout({ items: cart, payment_method: paymentMethod, additional_discount: additionalDiscount, automatic_promotion_id: automaticPromotionId });
+      const sale = await window.gestionale.checkout({ items: cart, payment_method: paymentMethod, additional_discount: additionalDiscount, manual_promotion_id: promotionDiscounts.manualPromotion?.id, automatic_promotion_id: automaticPromotionId });
       setCart([]);
       setDiscount(0);
+      setManualPromotionId(undefined);
       setAutomaticPromotionId(undefined);
       setCheckoutOpen(false);
       await refresh();
@@ -265,9 +271,7 @@ export default function App() {
       await window.gestionale.savePromotion({ ...promotion, minimum_spend: promotionMinimum === 'spend' ? promotion.minimum_spend : 0, minimum_kilograms: promotionMinimum === 'kilograms' ? promotion.minimum_kilograms : 0, minimum_pieces: promotionMinimum === 'pieces' ? promotion.minimum_pieces : 0, minimum_liters: promotionMinimum === 'liters' ? promotion.minimum_liters : 0 });
       await refresh();
       const wasEditing = promotion.id !== undefined;
-      setPromotion(blankPromotion());
-      setPromotionDuration('1 giorno');
-      setPromotionMinimum('none');
+      resetPromotionForm();
       notify(wasEditing ? 'Promozione aggiornata' : 'Promozione creata');
     } catch (error) { notify(errorText(error)); }
   };
@@ -285,29 +289,38 @@ export default function App() {
     try {
       await window.gestionale.deletePromotion(offer.id);
       await refresh();
-      if (promotion.id === offer.id) { setPromotion(blankPromotion()); setPromotionDuration('1 giorno'); setPromotionMinimum('none'); }
+      if (promotion.id === offer.id) resetPromotionForm();
       notify('Offerta eliminata');
     } catch (error) {
       notify(errorText(error));
     }
   };
-  const exportReport = () => { if (!data) return; const doc = new jsPDF(); doc.setFontSize(18); doc.text(data.settings.shop_name, 14, 17); doc.setFontSize(11); doc.text('Report vendite', 14, 25); autoTable(doc, { startY: 32, head: [['Scontrino', 'Data e ora', 'Articoli', 'Pagamento', 'Totale']], body: data.sales.map((sale) => [sale.receipt_no, dateTime.format(new Date(sale.created_at)), String(sale.item_count), sale.payment_method, money.format(sale.total)]), styles: { fontSize: 9 }, headStyles: { fillColor: [212, 123, 50] } }); doc.save(`report-vendite-${new Date().toISOString().slice(0, 10)}.pdf`); };
-  const exportInventoryReport = () => { if (!data) return; const doc = new jsPDF({ orientation: 'landscape' }); doc.setFontSize(18); doc.text(data.settings.shop_name, 14, 17); doc.setFontSize(11); doc.text('Report magazzino', 14, 25); autoTable(doc, { startY: 32, head: [['Codice', 'Articolo', 'Categoria', 'Prezzo vendita', 'Prezzo acquisto', 'Giacenza', 'Soglia minima', 'Scadenza']], body: data.products.map((item) => [item.code, item.name, item.category, money.format(item.sale_price), money.format(item.purchase_price), String(item.stock), String(item.low_stock_threshold), item.expiry_enabled && item.expiry_date ? receiptDate.format(new Date(`${item.expiry_date}T00:00:00`)) : '—']), styles: { fontSize: 9 }, headStyles: { fillColor: [212, 123, 50] } }); doc.save(`report-magazzino-${new Date().toISOString().slice(0, 10)}.pdf`); };
+  const exportReport = () => { if (!data) return; const doc = new jsPDF(); doc.setFontSize(18); doc.text(data.settings.shop_name, 14, 17); doc.setFontSize(11); doc.text('Report vendite', 14, 25); autoTable(doc, { startY: 32, head: [['Scontrino', 'Data e ora', 'Articoli', 'Pagamento', 'Totale']], body: data.sales.map((sale) => [sale.receipt_no, dateTime.format(new Date(sale.created_at)), String(sale.item_count), sale.payment_method, money.format(sale.total)]), styles: { fontSize: 9 }, headStyles: { fillColor: [56, 104, 78] } }); doc.save(`report-vendite-${new Date().toISOString().slice(0, 10)}.pdf`); };
+  const exportInventoryReport = () => { if (!data) return; const doc = new jsPDF({ orientation: 'landscape' }); doc.setFontSize(18); doc.text(data.settings.shop_name, 14, 17); doc.setFontSize(11); doc.text('Report magazzino', 14, 25); autoTable(doc, { startY: 32, head: [['Codice', 'Articolo', 'Categoria', 'Prezzo vendita', 'Prezzo acquisto', 'Giacenza', 'Soglia minima', 'Scadenza']], body: data.products.map((item) => [item.code, item.name, item.category, money.format(item.sale_price), money.format(item.purchase_price), String(item.stock), String(item.low_stock_threshold), item.expiry_enabled && item.expiry_date ? receiptDate.format(new Date(`${item.expiry_date}T00:00:00`)) : '—']), styles: { fontSize: 9 }, headStyles: { fillColor: [56, 104, 78] } }); doc.save(`report-magazzino-${new Date().toISOString().slice(0, 10)}.pdf`); };
   const todaySales = data?.sales.filter((sale) => new Date(sale.created_at).toDateString() === new Date().toDateString()) ?? [];
   const dailyTotal = todaySales.reduce((sum, sale) => sum + sale.total, 0);
   const dailyGross = todaySales.reduce((sum, sale) => sum + sale.gross_total, 0);
   const dailyUnits = todaySales.reduce((sum, sale) => sum + sale.item_count, 0);
   const statisticsStart = new Date();
   statisticsStart.setHours(0, 0, 0, 0);
-  const statisticsDays: Record<string, number> = { '1 giorno': 1, '3 giorni': 3, 'Ultima settimana': 7 };
+  const statisticsDays: Record<string, number> = { 'Ultimo giorno': 1, 'Ultimi 3 giorni': 3, 'Ultima settimana': 7 };
   if (statisticsDays[statisticsPeriod]) statisticsStart.setDate(statisticsStart.getDate() - statisticsDays[statisticsPeriod] + 1);
-  else {
+  else if (statisticsPeriod !== 'Tutti') {
     const months = statisticsPeriod === 'Ultimo mese' ? 1 : statisticsPeriod === 'Ultimi 3 mesi' ? 3 : statisticsPeriod === 'Ultimi 6 mesi' ? 6 : 12;
     const day = statisticsStart.getDate();
     const targetMonth = new Date(statisticsStart.getFullYear(), statisticsStart.getMonth() - months, 1);
     statisticsStart.setFullYear(targetMonth.getFullYear(), targetMonth.getMonth(), Math.min(day, new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0).getDate()));
   }
-  const statisticsSales = data?.sales.filter((sale) => new Date(sale.created_at) >= statisticsStart) ?? [];
+  if (statisticsPeriod === 'Tutti' && data?.sales.length) {
+    const oldestSale = data.sales.reduce((oldest, sale) => {
+      const saleDate = new Date(sale.created_at);
+      return saleDate < oldest ? saleDate : oldest;
+    }, new Date(data.sales[0].created_at));
+    statisticsStart.setFullYear(oldestSale.getFullYear(), oldestSale.getMonth(), 1);
+  }
+  const statisticsSales = statisticsPeriod === 'Tutti'
+    ? data?.sales ?? []
+    : data?.sales.filter((sale) => new Date(sale.created_at) >= statisticsStart) ?? [];
   const soldCost = statisticsSales.reduce((sum, sale) => sum + sale.items.reduce((subtotal, item) => subtotal + item.quantity * item.purchase_price, 0), 0);
   const soldTotal = statisticsSales.reduce((sum, sale) => sum + sale.total, 0);
   const soldUnits = statisticsSales.reduce((sum, sale) => sum + sale.item_count, 0);
@@ -328,12 +341,15 @@ export default function App() {
     return { mese: month.toLocaleDateString('it-IT', { month: 'short' }), totale: monthSales.reduce((sum, sale) => sum + sale.total, 0) };
   });
   const chartDays = Array.from({ length: 7 }, (_, index) => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - 6 + index); const sales = statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()); return { giorno: date.toLocaleDateString('it-IT', { weekday: 'short' }), totale: sales.reduce((sum, sale) => sum + sale.total, 0) }; });
-  const expiringProducts = data?.products.filter((product) => {
-    if (!product.expiry_enabled || !product.expiry_date) return false;
-    const expiry = new Date(`${product.expiry_date}T00:00:00`);
-    const daysUntilExpiry = Math.ceil((expiry.getTime() - new Date(`${todayKey}T00:00:00`).getTime()) / 86400000);
-    return !Number.isNaN(daysUntilExpiry) && daysUntilExpiry <= 30;
-  }) ?? [];
+  const expiryLimit = new Date();
+  expiryLimit.setDate(expiryLimit.getDate() + 10);
+  const expiryLimitKey = localDateKey(expiryLimit);
+  const expiringProducts = data?.products.filter((product) =>
+    product.expiry_enabled && product.expiry_date && product.expiry_date >= todayKey && product.expiry_date <= expiryLimitKey
+  ) ?? [];
+  const expiredProducts = data?.products.filter((product) =>
+    product.expiry_enabled && product.expiry_date && product.expiry_date < todayKey
+  ) ?? [];
   const inventoryList = data?.products.filter((item) =>
     (item.name.toLowerCase().includes(inventorySearch.toLowerCase()) || item.code.includes(inventorySearch))
     && (category === 'Tutte' || item.category === category)
@@ -386,24 +402,78 @@ export default function App() {
     } else setSaleSearch(code.replace(/\D/g, ''));
   };
   const calendarDays = () => { const year = calendarMonth.getFullYear(); const month = calendarMonth.getMonth(); const offset = (new Date(year, month, 1).getDay() + 6) % 7; return [...Array(offset).fill(null), ...Array.from({ length: new Date(year, month + 1, 0).getDate() }, (_, i) => i + 1)]; };
+  const resetPromotionForm = () => {
+    setPromotion(blankPromotion());
+    setPromotionDuration('1 giorno');
+    setPromotionMinimum('none');
+    setPromotionDiscountType('percentage');
+  };
+  const changePromotionDiscountType = (value: string) => {
+    const type = value as PromotionDiscountType;
+    setPromotionDiscountType(type);
+    if (type === 'percentage') setPromotion((current) => ({ ...current, discount_type: 'percentage' }));
+    else setPromotion((current) => ({
+      ...current,
+      discount_type: 'buy_get',
+      buy_quantity: type === '2+1' ? 2 : type === '3+1' ? 3 : current.buy_quantity,
+      free_quantity: type === 'custom' ? current.free_quantity : 1,
+    }));
+  };
+  const promotionDiscountLabel = (offer: Promotion) => offer.discount_type === 'percentage'
+    ? `${offer.percentage}%`
+    : `${offer.buy_quantity}+${offer.free_quantity}`;
+  const createUnsoldListPdf = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(18);
+    doc.text(data?.settings.shop_name ?? 'Gestione Supermercato', 14, 17);
+    doc.setFontSize(11);
+    doc.text('Articoli ancora in magazzino', 14, 25);
+    autoTable(doc, {
+      startY: 32,
+      head: [['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']],
+      body: unsoldProducts.map((product) => [product.name, product.category, `${product.stock} ${product.unit ?? 'PEZZO'}`, money.format(product.sale_price)]),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [56, 104, 78] },
+    });
+    return doc;
+  };
+  const shareUnsoldList = async () => {
+    try {
+      const doc = createUnsoldListPdf();
+      const file = new File([doc.output('blob')], `articoli-magazzino-${todayKey}.pdf`, { type: 'application/pdf' });
+      if (!navigator.share || !navigator.canShare?.({ files: [file] })) {
+        doc.save(file.name);
+        notify('La condivisione non è supportata qui: ho scaricato la lista in PDF.');
+        return;
+      }
+      await navigator.share({ files: [file], title: 'Articoli ancora in magazzino' });
+      notify('Lista PDF condivisa.');
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      notify(errorText(error));
+    }
+  };
 
   if (locked) return <div className="lock-screen"><div className="lock-panel"><div className="brand-mark"><Store size={23} /></div><p className="eyebrow">ACCESSO AL GESTIONALE</p><h1>{data?.settings.shop_name ?? 'Il tuo supermercato'}</h1><p className="muted">Inserisci il PIN per continuare</p><form onSubmit={unlock}><Field label="PIN di sicurezza" type="password" value={pin} onChange={(e) => setPin(e.target.value)} autoFocus /><button className="button button-primary full-width"><LockKeyhole size={16} /> Accedi</button></form></div>{notice && <div className="toast">{notice}</div>}</div>;
   if (!data) return <div className="loading-screen"><span className="loader" />Caricamento archivio…</div>;
 
   return <div className="app-shell">
-    <aside className="sidebar"><div className="brand"><div className={`brand-mark${data.settings.shop_logo ? ' has-logo' : ''}`}>{data.settings.shop_logo ? <img src={data.settings.shop_logo} alt="Logo negozio" /> : <Store size={20} />}</div><div><strong>{data.settings.shop_name}</strong><small>GESTIONE NEGOZIO</small></div></div><div className="nav-label">OPERATIVITÀ</div><nav>{nav.map(({ section: target, label, icon: Icon }, index) => <Fragment key={target}>{index === 5 && <div className="nav-label">EXTRA</div>}{target === 'inventory' ? <><button className={`nav-item${section.startsWith('inventory') || section === 'stock-movement' ? ' active' : ''}`} aria-expanded={inventoryMenuOpen} onClick={() => setInventoryMenuOpen((open) => !open)}><Icon size={18} /><span>{label}</span><ChevronDown className={`nav-chevron${inventoryMenuOpen ? ' open' : ''}`} size={15} /></button>{inventoryMenuOpen && <div className="nav-submenu"><button className={`nav-subitem${section === 'inventory' ? ' active' : ''}`} onClick={() => setSection('inventory')}>Magazzino</button><button className={`nav-subitem${section === 'inventory-history' ? ' active' : ''}`} onClick={() => setSection('inventory-history')}>Storico Magazzino</button><button className={`nav-subitem${section === 'stock-movement' ? ' active' : ''}`} onClick={() => { setStockMovementProduct(String(data.products[0]?.id ?? '')); setSection('stock-movement'); }}>Carica e scarica (Merce)</button></div>}</> : <button className={`nav-item${section === target ? ' active' : ''}`} onClick={() => setSection(target)}><Icon size={18} /><span>{label}</span>{target === 'cash' && <kbd>F2</kbd>}</button>}</Fragment>)}</nav><div className="sidebar-bottom"><button className={`nav-item settings-link${section === 'settings' ? ' active' : ''}`} onClick={() => { setSettingsTab(null); setSection('settings'); }}><Settings size={18} /><span>Impostazioni</span></button><div className="user-card"><div className="user-avatar">{data.settings.shop_name.slice(0, 1).toUpperCase()}</div><div><strong>Gestore</strong><small>Account locale</small></div></div></div></aside>
+    <aside className="sidebar"><div className="brand"><div className={`brand-mark${data.settings.shop_logo ? ' has-logo' : ''}`}>{data.settings.shop_logo ? <img src={data.settings.shop_logo} alt="Logo negozio" /> : <Store size={20} />}</div><div><strong>{data.settings.shop_name}</strong><small>GESTIONE NEGOZIO</small></div></div><div className="nav-label">OPERATIVITÀ</div><nav>{nav.map(({ section: target, label, icon: Icon }, index) => <Fragment key={target}>{index === 5 && <div className="nav-label">EXTRA</div>}{target === 'inventory' ? <><button className={`nav-item${section.startsWith('inventory') || section === 'stock-movement' ? ' active' : ''}`} aria-expanded={inventoryMenuOpen} onClick={() => setInventoryMenuOpen((open) => !open)}><Icon size={18} /><span>{label}</span><ChevronDown className={`nav-chevron${inventoryMenuOpen ? ' open' : ''}`} size={15} /></button>{inventoryMenuOpen && <div className="nav-submenu"><button className={`nav-subitem${section === 'inventory' ? ' active' : ''}`} onClick={() => setSection('inventory')}>Magazzino</button><button className={`nav-subitem${section === 'inventory-history' ? ' active' : ''}`} onClick={() => setSection('inventory-history')}>Storico Magazzino</button><button className={`nav-subitem${section === 'stock-movement' ? ' active' : ''}`} onClick={() => { setStockMovementProduct(String(data.products[0]?.id ?? '')); setSection('stock-movement'); }}>Carica e scarica (Merce)</button></div>}</> : <button className={`nav-item${section === target ? ' active' : ''}`} onClick={() => { setInventoryMenuOpen(false); setSection(target); }}><Icon size={18} /><span>{label}</span>{target === 'cash' && <kbd>F2</kbd>}</button>}</Fragment>)}</nav><div className="sidebar-bottom"><button className={`nav-item settings-link${section === 'settings' ? ' active' : ''}`} onClick={() => { setInventoryMenuOpen(false); setSettingsTab(null); setSection('settings'); }}><Settings size={18} /><span>Impostazioni</span></button><div className="user-card"><div className="user-avatar">{data.settings.shop_name.slice(0, 1).toUpperCase()}</div><div><strong>Gestore</strong><small>Account locale</small></div></div></div></aside>
     <main className="main-content"><header className="topbar"><h1>{sectionLabel}</h1>{data.settings.shop_logo ? <img className="topbar-logo" src={data.settings.shop_logo} alt="Logo negozio" /> : <div className="topbar-logo-fallback"><Store size={19} /></div>}<div className="topbar-right"><div className="today-date">{new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}</div><span className="store-chip"><span className="status-dot" />Operativo</span></div></header>
 
-      {section === 'home' && <div className="page-content"><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length} scontrini emessi`} /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyTotal)} detail="Incasso al netto degli sconti" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString('it-IT')} detail="Pezzi registrati oggi" /></div><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length} articoli sotto soglia`} action={<button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); setSection('inventory'); }}>Vai al magazzino →</button>} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => setSelectedProduct(p)}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock}</td><td>{p.low_stock_threshold}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => setSection('sales')}>Tutte le vendite →</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
+      {section === 'home' && <div className="page-content"><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length} scontrini emessi`} /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyTotal)} detail="Incasso al netto degli sconti" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString('it-IT')} detail="Pezzi registrati oggi" /></div><section className="expiry-alert expiry-home-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length} articoli sotto soglia`} action={<button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); setSection('inventory'); setInventoryMenuOpen(false); }}>Vai al magazzino →</button>} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => setSelectedProduct(p)}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock}</td><td>{p.low_stock_threshold}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => setSection('sales')}>Tutte le vendite →</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
 
       {section === 'inventory' && <div className="page-content">
         <div className="page-toolbar inventory-toolbar"><div><h2>Articoli in magazzino</h2><p>{data.products.length} articoli registrati</p></div><div className="toolbar-actions"><button className="button button-outline" onClick={exportInventoryReport}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-primary" onClick={() => setProductForm({ ...blankProduct })}><Plus size={16} /> Aggiungi nuovo articolo</button></div></div>
-        <section className="expiry-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} articoli scaduti o in scadenza entro 30 giorni` : 'Nessun articolo in scadenza nei prossimi 30 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section>
         <div className="filter-row"><SearchInput value={inventorySearch} onChange={setInventorySearch} placeholder="Cerca per nome o codice…" /><label className="select-wrap"><span>Categoria</span><select value={category} onChange={(e) => setCategory(e.target.value)}><option>Tutte</option>{categories.map((item) => <option key={item}>{item}</option>)}</select><ChevronDown size={14} /></label><details className="inventory-filter-dropdown"><summary className="select-wrap"><span>Disponibilità: {inventoryFilters.find((item) => item.value === inventoryStatus)?.label}</span><ChevronDown size={14} /></summary><div className="inventory-status-filters" role="group" aria-label="Filtra prodotti per disponibilità">{inventoryFilters.map(({ value, label }) => <button key={value} className={`status-filter${inventoryStatus === value ? ' active' : ''}`} aria-pressed={inventoryStatus === value} onClick={(event) => { setInventoryStatus(value); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{label}</button>)}</div></details></div>
+        <div className="expiry-panels">
+          <section className="expiry-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section>
+          <section className="expiry-alert expired-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Prodotti scaduti</strong><span>{expiredProducts.length ? `${expiredProducts.length} ${expiredProducts.length === 1 ? 'articolo scaduto' : 'articoli scaduti'}` : 'Nessun prodotto scaduto'}</span></div></div>{expiredProducts.length > 0 && <div className="expiry-list">{expiredProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section>
+        </div>
         <div className="product-grid">{inventoryList.map((product) => <button className="product-tile" key={product.id} onClick={() => setSelectedProduct(product)}><div className="tile-icon"><Package size={20} /></div><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="tile-price">{money.format(product.sale_price)}</span><span className={`tile-stock${product.stock <= product.low_stock_threshold ? ' text-low' : ''}`}>{product.stock} disponibili</span></button>)}</div>{inventoryList.length === 0 && <Empty icon={Package} title="Nessun articolo trovato" detail="Modifica la ricerca o aggiungi un articolo." />}
       </div>}
 
-      {section === 'inventory-history' && <div className="page-content"><div className="page-toolbar"><div><h2>Storico Magazzino</h2><p>Carichi e scarichi registrati</p></div><button className="button button-primary" onClick={() => { setStockMovementProduct(String(data.products[0]?.id ?? '')); setSection('stock-movement'); }}><Plus size={16} /> Nuovo movimento</button></div><Table headings={['Data e ora', 'Articolo', 'Movimento', 'Quantità', 'Nota']}><>{data.stockMovements.map((movement) => <tr key={movement.id}><td>{dateTime.format(new Date(movement.created_at))}</td><td className="cell-primary">{movement.product_name}</td><td><span className={`movement-badge ${movement.movement_type === 'Carico' ? 'movement-in' : 'movement-out'}`}>{movement.movement_type}</span></td><td>{movement.quantity}</td><td>{movement.note || '—'}</td></tr>)}</>{!data.stockMovements.length && <tr><td colSpan={5} className="empty-cell">Nessun movimento registrato.</td></tr>}</Table></div>}
+      {section === 'inventory-history' && <div className="page-content"><div id="inventory-history-print"><div className="page-toolbar"><div><h2>Storico Magazzino</h2><p>Carichi e scarichi registrati</p></div><button className="button button-outline no-print" onClick={() => window.print()}><Printer size={16} /> Stampa lista</button></div><Table headings={['Data e ora', 'Articolo', 'Movimento', 'Quantità', 'Nota']}><>{data.stockMovements.map((movement) => <tr key={movement.id}><td>{dateTime.format(new Date(movement.created_at))}</td><td className="cell-primary">{movement.product_name}</td><td><span className={`movement-badge ${movement.movement_type === 'Carico' ? 'movement-in' : 'movement-out'}`}>{movement.movement_type}</span></td><td>{movement.quantity}</td><td>{movement.note || '—'}</td></tr>)}</>{!data.stockMovements.length && <tr><td colSpan={5} className="empty-cell">Nessun movimento registrato.</td></tr>}</Table></div></div>}
 
       {section === 'stock-movement' && <div className="page-content settings-page"><section className="settings-panel"><div className="settings-title"><h2>Carica e scarica merce</h2><p>Registra un movimento e aggiorna automaticamente la giacenza.</p></div><form className="settings-form movement-form" onSubmit={(event) => void saveStockMovement(event)}><SelectField label="Tipo di movimento" value={stockMovementType} onChange={(value) => setStockMovementType(value === 'Scarico' ? 'Scarico' : 'Carico')} options={['Carico', 'Scarico']} /><SelectField label="Articolo" value={stockMovementProduct} onChange={setStockMovementProduct} options={data.products.map((product) => String(product.id))} labels={data.products.map((product) => `${product.name} · ${product.stock} disponibili`)} /><Field label="Quantità" type="number" min="0.01" step="any" value={stockMovementQuantity} onChange={(event) => setStockMovementQuantity(event.target.value)} required /><Field label="Nota (facoltativa)" value={stockMovementNote} onChange={(event) => setStockMovementNote(event.target.value)} /><button className="button button-primary" disabled={!data.products.length}><Check size={16} /> Registra {stockMovementType.toLowerCase()}</button></form></section></div>}
 
@@ -417,7 +487,9 @@ export default function App() {
         <div className="settings-title"><h2>Promozioni</h2><p>Crea offerte con periodo, categoria e condizioni di spesa.</p></div>
         <form className="form-grid promotion-form" onSubmit={savePromotion}>
           <Field label="Nome offerta" value={promotion.name} onChange={(e) => setPromotion({ ...promotion, name: e.target.value })} required />
-          <Field label="Sconto %" type="number" min="1" max="100" value={promotion.percentage} onChange={(e) => setPromotion({ ...promotion, percentage: Number(e.target.value) })} required />
+          <SelectField label="Sconto" value={promotionDiscountType} onChange={changePromotionDiscountType} options={['percentage', '2+1', '3+1', 'custom']} labels={['Percentuale %', '2+1', '3+1', 'Crea forma']} />
+          {promotionDiscountType === 'percentage' && <Field label="Percentuale di sconto (%)" type="number" min="1" max="100" value={promotion.percentage} onChange={(e) => setPromotion({ ...promotion, percentage: Number(e.target.value) })} required />}
+          {promotionDiscountType === 'custom' && <div className="promotion-bundle-fields"><Field label="Articoli da acquistare" type="number" min="1" step="1" value={promotion.buy_quantity} onChange={(e) => setPromotion({ ...promotion, buy_quantity: Number(e.target.value) })} required /><Field label="Articoli in omaggio" type="number" min="1" step="1" value={promotion.free_quantity} onChange={(e) => setPromotion({ ...promotion, free_quantity: Number(e.target.value) })} required /></div>}
           <SelectField label="Categoria" value={promotion.category} onChange={(value) => setPromotion({ ...promotion, category: value })} options={['Tutte', ...categories]} />
           <SelectField label="Applicazione" value={promotion.application_mode} onChange={(value) => setPromotion({ ...promotion, application_mode: value as Promotion['application_mode'] })} options={['Automatica', 'Manuale']} />
           <SelectField label="Durata offerta" value={promotionDuration} onChange={changePromotionDuration} options={promotionDurations} />
@@ -429,25 +501,25 @@ export default function App() {
           {promotionMinimum === 'kilograms' && <Field label="KG minimi" type="number" min="0.1" step="0.1" value={promotion.minimum_kilograms || ''} onChange={(e) => setPromotion({ ...promotion, minimum_kilograms: Number(e.target.value) })} required />}
           {promotionMinimum === 'pieces' && <Field label="Pezzi minimi" type="number" min="1" step="1" value={promotion.minimum_pieces || ''} onChange={(e) => setPromotion({ ...promotion, minimum_pieces: Number(e.target.value) })} required />}
           {promotionMinimum === 'liters' && <Field label="Litri minimi" type="number" min="0.1" step="0.1" value={promotion.minimum_liters || ''} onChange={(e) => setPromotion({ ...promotion, minimum_liters: Number(e.target.value) })} required />}
-          <div className="form-actions">{promotion.id !== undefined && <button className="button button-quiet" type="button" onClick={() => { setPromotion(blankPromotion()); setPromotionDuration('1 giorno'); setPromotionMinimum('none'); }}>Annulla modifica</button>}<button className="button button-primary"><Check size={16} /> {promotion.id === undefined ? 'Crea promozione' : 'Salva modifiche'}</button></div>
+          <div className="form-actions">{promotion.id !== undefined && <button className="button button-quiet" type="button" onClick={resetPromotionForm}>Annulla modifica</button>}<button className="button button-primary"><Check size={16} /> {promotion.id === undefined ? 'Crea promozione' : 'Salva modifiche'}</button></div>
         </form>
         <div className="promotion-list">{data.promotions.map((item) => <div className="promotion-row" key={item.id}>
           <div><strong>{item.name}</strong><span>{item.category} · {item.starts_at} — {item.ends_at === permanentPromotionEnd ? 'Sempre' : item.ends_at}{item.minimum_spend > 0 ? ` · Spesa minima ${money.format(item.minimum_spend)}` : ''}{item.minimum_kilograms ? ` · ${item.minimum_kilograms} KG minimi` : ''}{item.minimum_pieces ? ` · ${item.minimum_pieces} pezzi minimi` : ''}{item.minimum_liters ? ` · ${item.minimum_liters} litri minimi` : ''}</span></div>
-          <b>−{item.percentage}%</b><span className="stock-badge">{item.application_mode}</span>
+          <b>{promotionDiscountLabel(item)}</b><span className="stock-badge">{item.application_mode}</span>
           <div className="promotion-actions">
-            <button className="button button-outline" onClick={() => { setPromotion({ ...item }); setPromotionDuration(item.ends_at === permanentPromotionEnd ? 'Sempre' : 'Personalizzata'); setPromotionMinimum(item.minimum_spend > 0 ? 'spend' : item.minimum_kilograms ? 'kilograms' : item.minimum_pieces ? 'pieces' : item.minimum_liters ? 'liters' : 'none'); }}><Pencil size={14} /> Modifica</button>
+            <button className="button button-outline" onClick={() => { setPromotion({ ...item }); setPromotionDiscountType(item.discount_type !== 'buy_get' ? 'percentage' : item.buy_quantity === 2 && item.free_quantity === 1 ? '2+1' : item.buy_quantity === 3 && item.free_quantity === 1 ? '3+1' : 'custom'); setPromotionDuration(item.ends_at === permanentPromotionEnd ? 'Sempre' : 'Personalizzata'); setPromotionMinimum(item.minimum_spend > 0 ? 'spend' : item.minimum_kilograms ? 'kilograms' : item.minimum_pieces ? 'pieces' : item.minimum_liters ? 'liters' : 'none'); }}><Pencil size={14} /> Modifica</button>
             <button className="button button-danger" onClick={() => void deletePromotion(item)}><Trash2 size={14} /> Elimina</button>
           </div>
         </div>)}</div>
       </section></div>}
 
       {section === 'statistics' && <div className="page-content">
-        <div className="page-toolbar"><div><h2>Rendimento e andamento</h2><p>Statistiche nel periodo selezionato</p></div><span className="period-chip">Dati aggiornati in tempo reale</span></div>
+        <div className="page-toolbar"><div><h2>Rendimento e andamento</h2></div><span className="period-chip">Dati aggiornati in tempo reale</span></div>
         <div className="statistics-periods" role="group" aria-label="Filtra statistiche per periodo">{statisticsPeriods.map((period) => <button key={period} className={`status-filter${statisticsPeriod === period ? ' active' : ''}`} aria-pressed={statisticsPeriod === period} onClick={() => setStatisticsPeriod(period)}>{period}</button>)}</div>
         <div className="metric-grid stats-metrics"><Metric icon={Banknote} label="Vendite" value={money.format(soldTotal)} detail="Incassi registrati nel periodo" /><Metric icon={CreditCard} label="Acquisto merce venduta" value={money.format(soldCost)} detail="Costo degli articoli venduti" /><Metric icon={TrendingUp} label="Netto stimato" value={money.format(soldTotal - soldCost)} detail="Ricavi meno costo del venduto" /><Metric icon={ShoppingBasket} label="Quantità vendite" value={`${soldUnits.toLocaleString('it-IT')} di ${totalTrackedUnits.toLocaleString('it-IT')}`} detail="Articoli venduti rispetto a quelli ancora in magazzino" action={<button className="text-button metric-action" onClick={() => setUnsoldListOpen(true)}>Vedi lista</button>} /></div>
         <div className="metric-grid inventory-values"><Metric icon={Package} label="Valore vendita in magazzino" value={money.format(stockRetail)} detail="Valore al prezzo di vendita" compact /><Metric icon={Archive} label="Valore acquisto in magazzino" value={money.format(stockCost)} detail="Costo delle scorte attuali" compact /><Metric icon={TrendingUp} label="Netto potenziale" value={money.format(stockRetail - stockCost)} detail="Margine potenziale delle scorte" compact /></div>
-        <div className="analytics-grid"><section className="panel calendar-panel"><div className="panel-heading"><div><h3>Calendario vendite</h3><p>Incasso per giorno</p></div><div className="month-controls"><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}>‹</button><strong>{calendarMonth.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</strong><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}>›</button></div></div><div className="calendar-grid">{['L', 'M', 'M', 'G', 'V', 'S', 'D'].map((day, index) => <span className="calendar-weekday" key={`${day}${index}`}>{day}</span>)}{calendarDays().map((day, index) => { const date = day ? new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day) : null; const revenue = date ? statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()).reduce((sum, sale) => sum + sale.total, 0) : 0; return <div key={index} className={`calendar-day${revenue ? ' has-sales' : ''}${date?.toDateString() === new Date().toDateString() ? ' today' : ''}`}>{day && <><span>{day}</span>{revenue > 0 && <small>{money.format(revenue)}</small>}</>}</div>; })}</div></section><section className="panel chart-panel"><div className="panel-heading"><div><h3>Vendite giornaliere</h3><p>Ultimi sette giorni nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><BarChart data={chartDays} margin={{ top: 14, right: 8, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="giorno" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value}€`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Bar dataKey="totale" fill="#d47b32" radius={[4, 4, 0, 0]} maxBarSize={34} /></BarChart></ResponsiveContainer></section></div>
-        <div className="analytics-grid statistics-extra"><section className="panel chart-panel"><div className="panel-heading"><div><h3>Andamento mensile</h3><p>Incasso per mese nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><LineChart data={monthlySales} margin={{ top: 14, right: 12, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="mese" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value}€`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Line type="monotone" dataKey="totale" stroke="#d47b32" strokeWidth={3} dot={{ fill: '#d47b32', r: 4 }} /></LineChart></ResponsiveContainer></section><section className="panel payment-panel"><div className="panel-heading"><div><h3>Pagamenti per metodo</h3><p>Totale incassato nel periodo</p></div></div><div className="payment-totals">{Object.entries(paymentTotals).length ? Object.entries(paymentTotals).map(([method, amount], index) => <div key={method}><span className="payment-dot" style={{ backgroundColor: colors[index % colors.length] }} /><span>{method}</span><strong>{money.format(amount)}</strong></div>) : <span className="muted">Nessun pagamento nel periodo selezionato.</span>}</div></section></div>
+        <div className="analytics-grid"><section className="panel calendar-panel"><div className="panel-heading"><div><h3>Calendario vendite</h3><p>Incasso per giorno</p></div><div className="month-controls"><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}>‹</button><strong>{calendarMonth.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</strong><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}>›</button></div></div><div className="calendar-grid">{['L', 'M', 'M', 'G', 'V', 'S', 'D'].map((day, index) => <span className="calendar-weekday" key={`${day}${index}`}>{day}</span>)}{calendarDays().map((day, index) => { const date = day ? new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day) : null; const revenue = date ? statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()).reduce((sum, sale) => sum + sale.total, 0) : 0; return <div key={index} className={`calendar-day${revenue ? ' has-sales' : ''}${date?.toDateString() === new Date().toDateString() ? ' today' : ''}`}>{day && <><span>{day}</span>{revenue > 0 && <small>{money.format(revenue)}</small>}</>}</div>; })}</div></section><section className="panel chart-panel"><div className="panel-heading"><div><h3>Vendite giornaliere</h3><p>Ultimi sette giorni nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><BarChart data={chartDays} margin={{ top: 14, right: 8, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="giorno" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value}€`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Bar dataKey="totale" fill="#38684e" radius={[4, 4, 0, 0]} maxBarSize={34} /></BarChart></ResponsiveContainer></section></div>
+        <div className="analytics-grid statistics-extra"><section className="panel chart-panel"><div className="panel-heading"><div><h3>Andamento mensile</h3><p>Incasso per mese nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><LineChart data={monthlySales} margin={{ top: 14, right: 12, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="mese" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value}€`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Line type="monotone" dataKey="totale" stroke="#38684e" strokeWidth={3} dot={{ fill: '#38684e', r: 4 }} /></LineChart></ResponsiveContainer></section><section className="panel payment-panel"><div className="panel-heading"><div><h3>Pagamenti per metodo</h3><p>Totale incassato nel periodo</p></div></div><div className="payment-totals">{Object.entries(paymentTotals).length ? Object.entries(paymentTotals).map(([method, amount], index) => <div key={method}><span className="payment-dot" style={{ backgroundColor: colors[index % colors.length] }} /><span>{method}</span><strong>{money.format(amount)}</strong></div>) : <span className="muted">Nessun pagamento nel periodo selezionato.</span>}</div></section></div>
         <section className="panel category-panel"><div className="panel-heading"><div><h3>Vendite per categoria</h3><p>Valore degli articoli venduti nel periodo selezionato</p></div></div><div className="category-chart"><ResponsiveContainer width="100%" height={230}><PieChart><Pie data={Object.entries(categoriesSales).map(([name, value]) => ({ name, value }))} dataKey="value" nameKey="name" innerRadius={57} outerRadius={88} paddingAngle={3}>{Object.keys(categoriesSales).map((name, i) => <Cell key={name} fill={colors[i % colors.length]} />)}</Pie><Tooltip formatter={(value) => money.format(Number(value))} /></PieChart></ResponsiveContainer><div className="chart-legend">{Object.entries(categoriesSales).length ? Object.entries(categoriesSales).map(([name, value], i) => <div key={name}><span style={{ backgroundColor: colors[i % colors.length] }} /><span>{name}</span><strong>{money.format(value)}</strong></div>) : <span className="muted">Le categorie appariranno dopo la prima vendita.</span>}</div></div></section>
       </div>}
 
@@ -458,7 +530,7 @@ export default function App() {
       </section>}</div></div>}
     </main>
 
-    {unsoldListOpen && <Modal title="Articoli ancora in magazzino" close={() => setUnsoldListOpen(false)} wide><Table headings={['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']}><>{unsoldProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td>{product.category}</td><td>{product.stock} {product.unit ?? 'PEZZO'}</td><td>{money.format(product.sale_price)}</td></tr>)}</>{!unsoldProducts.length && <tr><td colSpan={4} className="empty-cell">Non risultano articoli rimanenti in magazzino.</td></tr>}</Table></Modal>}
+    {unsoldListOpen && <Modal title="Articoli ancora in magazzino" close={() => setUnsoldListOpen(false)} wide><div id="unsold-list-print"><Table headings={['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']}><>{unsoldProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td>{product.category}</td><td>{product.stock} {product.unit ?? 'PEZZO'}</td><td>{money.format(product.sale_price)}</td></tr>)}</>{!unsoldProducts.length && <tr><td colSpan={4} className="empty-cell">Non risultano articoli rimanenti in magazzino.</td></tr>}</Table></div><div className="unsold-list-actions no-print"><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa</button><button className="button button-primary" onClick={() => void shareUnsoldList()}><Share2 size={16} /> Condividi</button></div></Modal>}
     {productForm && <ProductForm initial={productForm} save={saveProduct} close={() => setProductForm(null)} />}
     {stockProduct && <Modal title={`Aggiungi quantità · ${stockProduct.name}`} close={() => setStockProduct(null)}><form className="form-grid stock-form" onSubmit={(event) => void saveStock(event)}>
       <p className="stock-current">Giacenza attuale: <strong>{stockProduct.stock}</strong></p>
@@ -469,11 +541,16 @@ export default function App() {
       <details className="payment-promotion-info">
         <summary><strong>Offerte automatiche applicate</strong></summary>
         <div className="payment-offer-list"><div className="payment-offer-toggle-row"><span>Applica sconti automatici</span><button className={`switch-button${automaticPromotionId !== null ? ' is-on' : ''}`} type="button" role="switch" aria-checked={automaticPromotionId !== null} onClick={() => setAutomaticPromotionId(automaticPromotionId === null ? undefined : null)}>{automaticPromotionId === null ? 'OFF' : 'ON'}</button></div>{automaticPromotionId !== null && (automaticApplicableOffers.length ? automaticApplicableOffers.map((offer) => <div className="payment-offer" key={offer.id}>
-          <span>{offer.name} · {offer.percentage}%</span>
+          <span>{offer.name} · {promotionDiscountLabel(offer)}</span>
           <small>{promotionDiscounts.automaticPromotion?.id === offer.id ? 'Applicata' : 'Non applicata (massimo 1)'}</small>
         </div>) : <small>Nessuna offerta automatica applicabile al carrello.</small>)}
         {automaticDiscount > 0 && <small>Risparmio: {money.format(automaticDiscount)}</small>}</div>
       </details>
+      {manualApplicableOffers.length > 0 && <details className="payment-promotion-info">
+        <summary><strong>Offerte manuali disponibili</strong></summary>
+        <div className="payment-offer-list">{manualApplicableOffers.map((offer) => <button className={`payment-offer-choice${promotionDiscounts.manualPromotion?.id === offer.id ? ' selected' : ''}`} type="button" key={offer.id} onClick={() => setManualPromotionId((current) => current === offer.id ? undefined : offer.id)}><span>{offer.name} · {promotionDiscountLabel(offer)}</span><small>{promotionDiscounts.manualPromotion?.id === offer.id ? 'Applicata' : 'Applica'}</small></button>)}
+          {manualDiscount > 0 && <small>Risparmio: {money.format(manualDiscount)}</small>}</div>
+      </details>}
       <SelectField label="Metodo di pagamento" value={paymentMethod} onChange={setPaymentMethod} options={['Carta', 'Contanti', 'Bancomat', 'Buono']} />
       <Field label="Sconto aggiuntivo (%)" type="number" min="0" max="100" step="0.01" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} />
       <div className="payment-total">{total < subtotal && <div className="payment-total-before"><span>Prezzo prima dello sconto</span><strong>{money.format(subtotal)}</strong></div>}<div className="payment-total-after"><span>Totale da pagare</span><strong>{money.format(total)}</strong></div></div>

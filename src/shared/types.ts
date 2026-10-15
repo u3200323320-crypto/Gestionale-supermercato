@@ -51,7 +51,10 @@ export interface StockMovement {
 export interface Promotion {
   id: number;
   name: string;
+  discount_type: 'percentage' | 'buy_get';
   percentage: number;
+  buy_quantity: number;
+  free_quantity: number;
   category: string;
   starts_at: string;
   ends_at: string;

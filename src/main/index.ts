@@ -96,6 +96,7 @@ function initDatabase(): void {
     );
     CREATE TABLE IF NOT EXISTS promotions (
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, percentage REAL NOT NULL,
+      discount_type TEXT NOT NULL DEFAULT 'percentage', buy_quantity INTEGER NOT NULL DEFAULT 2, free_quantity INTEGER NOT NULL DEFAULT 1,
       category TEXT NOT NULL, starts_at TEXT NOT NULL, ends_at TEXT NOT NULL,
       minimum_spend REAL NOT NULL DEFAULT 0,
       minimum_kilograms REAL NOT NULL DEFAULT 0, minimum_pieces REAL NOT NULL DEFAULT 0, minimum_liters REAL NOT NULL DEFAULT 0,
@@ -117,6 +118,15 @@ function initDatabase(): void {
     )`);
   }
   const promotionColumns = database.prepare('PRAGMA table_info(promotions)').all() as Array<{ name: string }>;
+  for (const [column, definition] of [
+    ['discount_type', "TEXT NOT NULL DEFAULT 'percentage'"],
+    ['buy_quantity', 'INTEGER NOT NULL DEFAULT 2'],
+    ['free_quantity', 'INTEGER NOT NULL DEFAULT 1'],
+  ]) {
+    if (!promotionColumns.some((existing) => existing.name === column)) {
+      database.exec(`ALTER TABLE promotions ADD COLUMN ${column} ${definition}`);
+    }
+  }
   if (!promotionColumns.some((column) => column.name === 'minimum_spend')) {
     database.exec('ALTER TABLE promotions ADD COLUMN minimum_spend REAL NOT NULL DEFAULT 0');
   }
@@ -193,7 +203,10 @@ function archiveDay(day: string): Promise<void> {
     { name: 'Magazzino', body: () => (database.prepare('SELECT code, name, category, sale_price, purchase_price, stock FROM products ORDER BY name').all() as Array<Record<string, unknown>>).map((p) => `${p.code}\t${p.name}\t${p.category}\t${p.stock}\t${p.sale_price}\t${p.purchase_price}`).join('\n') },
     { name: 'Vendite', body: () => (database.prepare('SELECT receipt_no, created_at, payment_method, total FROM sales WHERE created_at >= ? AND created_at < ? ORDER BY created_at').all(dayStart, dayEnd) as Array<Record<string, unknown>>).map((s) => `${s.receipt_no}\t${s.created_at}\t${s.payment_method}\t${s.total}`).join('\n') },
     { name: 'Cassa', body: () => (database.prepare(`SELECT s.receipt_no, i.name, i.quantity, i.unit_price FROM sale_items i JOIN sales s ON s.id = i.sale_id WHERE s.created_at >= ? AND s.created_at < ? ORDER BY s.created_at`).all(dayStart, dayEnd) as Array<Record<string, unknown>>).map((i) => `${i.receipt_no}\t${i.name}\t${i.quantity}\t${i.unit_price}`).join('\n') },
-    { name: 'Promozioni', body: () => (database.prepare('SELECT name, percentage, category, starts_at, ends_at, minimum_spend, application_mode FROM promotions ORDER BY starts_at').all() as Array<Record<string, unknown>>).map((p) => `${p.name}\t${p.percentage}%\t${p.category}\t${p.starts_at}\t${p.ends_at}\tMinimo ${p.minimum_spend} EUR\t${p.application_mode}`).join('\n') },
+    { name: 'Promozioni', body: () => (database.prepare('SELECT name, percentage, discount_type, buy_quantity, free_quantity, category, starts_at, ends_at, minimum_spend, application_mode FROM promotions ORDER BY starts_at').all() as Array<Record<string, unknown>>).map((p) => {
+      const discount = p.discount_type === 'buy_get' ? `${p.buy_quantity}+${p.free_quantity}` : `${p.percentage}%`;
+      return `${p.name}\t${discount}\t${p.category}\t${p.starts_at}\t${p.ends_at}\tMinimo ${p.minimum_spend} EUR\t${p.application_mode}`;
+    }).join('\n') },
     { name: 'Statistiche', body: () => {
       const row = database.prepare(`SELECT COUNT(*) AS transactions, COALESCE(SUM(total), 0) AS net, COALESCE(SUM((SELECT SUM(quantity) FROM sale_items WHERE sale_id = sales.id)), 0) AS quantity FROM sales WHERE created_at >= ? AND created_at < ?`).get(dayStart, dayEnd) as { transactions: number; net: number; quantity: number };
       return `Data: ${day}\nVendite: ${row.transactions}\nNetto: ${row.net.toFixed(2)} EUR\nPezzi venduti: ${row.quantity}`;
@@ -368,20 +381,25 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('promotion:save', (_event, promotion: PromotionInput) => {
     const minimums = [promotion.minimum_spend, promotion.minimum_kilograms ?? 0, promotion.minimum_pieces ?? 0, promotion.minimum_liters ?? 0];
-    if (!promotion.name.trim() || !Number.isFinite(promotion.percentage) || promotion.percentage < 1 || promotion.percentage > 100
+    const invalidDiscount = promotion.discount_type === 'percentage'
+      ? !Number.isFinite(promotion.percentage) || promotion.percentage < 1 || promotion.percentage > 100
+      : promotion.discount_type !== 'buy_get' || !Number.isInteger(promotion.buy_quantity) || promotion.buy_quantity < 1
+        || !Number.isInteger(promotion.free_quantity) || promotion.free_quantity < 1;
+    if (!promotion.name.trim() || invalidDiscount
       || minimums.some((value) => !Number.isFinite(value) || value < 0) || minimums.filter((value) => value > 0).length > 1
       || promotion.ends_at < promotion.starts_at) {
       throw new Error('Controlla i dati della promozione.');
     }
     const values = { ...promotion, minimum_kilograms: promotion.minimum_kilograms ?? 0, minimum_pieces: promotion.minimum_pieces ?? 0, minimum_liters: promotion.minimum_liters ?? 0 };
     if (promotion.id === undefined) {
-      database.prepare(`INSERT INTO promotions (name, percentage, category, starts_at, ends_at, minimum_spend,
+      database.prepare(`INSERT INTO promotions (name, percentage, discount_type, buy_quantity, free_quantity, category, starts_at, ends_at, minimum_spend,
         minimum_kilograms, minimum_pieces, minimum_liters, application_mode)
-        VALUES (@name, @percentage, @category, @starts_at, @ends_at, @minimum_spend,
+        VALUES (@name, @percentage, @discount_type, @buy_quantity, @free_quantity, @category, @starts_at, @ends_at, @minimum_spend,
         @minimum_kilograms, @minimum_pieces, @minimum_liters, @application_mode)`).run(values);
       return;
     }
-    const result = database.prepare(`UPDATE promotions SET name=@name, percentage=@percentage, category=@category,
+    const result = database.prepare(`UPDATE promotions SET name=@name, percentage=@percentage, discount_type=@discount_type,
+      buy_quantity=@buy_quantity, free_quantity=@free_quantity, category=@category,
       starts_at=@starts_at, ends_at=@ends_at, minimum_spend=@minimum_spend, minimum_kilograms=@minimum_kilograms,
       minimum_pieces=@minimum_pieces, minimum_liters=@minimum_liters, application_mode=@application_mode WHERE id=@id`).run(values);
     if (result.changes === 0) throw new Error('Promozione non trovata.');
