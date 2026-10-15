@@ -5,7 +5,7 @@ import { randomInt, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto
 import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { calculatePromotionDiscounts } from '../shared/promotions';
-import type { CheckoutInput, Product, ProductInput, Promotion, PromotionInput, SaleItem } from '../shared/types';
+import type { CheckoutInput, Product, ProductInput, Promotion, PromotionInput, SaleItem, VoucherBatch, VoucherBatchInput } from '../shared/types';
 
 let database: Database.Database;
 let mainWindow: BrowserWindow;
@@ -56,6 +56,15 @@ function allPromotions(): Promotion[] {
   return database.prepare('SELECT * FROM promotions ORDER BY starts_at DESC').all() as Promotion[];
 }
 
+function allVoucherBatches(): VoucherBatch[] {
+  const batches = database.prepare('SELECT * FROM voucher_batches ORDER BY created_at DESC, id DESC').all() as Array<Omit<VoucherBatch, 'codes'>>;
+  const getCodes = database.prepare('SELECT code FROM vouchers WHERE batch_id = ? ORDER BY code');
+  return batches.map((batch) => ({
+    ...batch,
+    codes: (getCodes.all(batch.id) as Array<{ code: string }>).map(({ code }) => code),
+  }));
+}
+
 function allSales(): unknown[] {
   const sales = database.prepare(`SELECT s.*, COALESCE(SUM(i.quantity), 0) AS item_count
     FROM sales s LEFT JOIN sale_items i ON i.sale_id = s.id GROUP BY s.id ORDER BY s.created_at DESC`).all() as Array<Record<string, unknown>>;
@@ -68,6 +77,7 @@ function state() {
     sales: allSales(),
     stockMovements: database.prepare('SELECT * FROM stock_movements ORDER BY created_at DESC, id DESC').all(),
     promotions: database.prepare('SELECT * FROM promotions ORDER BY starts_at DESC').all(),
+    voucherBatches: allVoucherBatches(),
     settings: {
       shop_name: setting('shop_name', 'Il tuo supermercato'),
       shop_logo: setting('shop_logo'),
@@ -115,6 +125,14 @@ function initDatabase(): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, product_name TEXT NOT NULL,
       movement_type TEXT NOT NULL CHECK(movement_type IN ('Carico', 'Scarico')),
       quantity REAL NOT NULL, created_at TEXT NOT NULL, person TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS voucher_batches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, discount_percentage REAL NOT NULL,
+      starts_at TEXT NOT NULL, ends_at TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS vouchers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, batch_id INTEGER NOT NULL REFERENCES voucher_batches(id) ON DELETE CASCADE,
+      code TEXT NOT NULL UNIQUE
     );
   `);
   const stockMovementColumns = database.prepare('PRAGMA table_info(stock_movements)').all() as Array<{ name: string }>;
@@ -528,6 +546,32 @@ app.whenReady().then(() => {
   ipcMain.handle('promotion:delete', (_event, id: number) => {
     const result = database.prepare('DELETE FROM promotions WHERE id = ?').run(id);
     if (result.changes === 0) throw new Error('Promozione non trovata.');
+  });
+  ipcMain.handle('voucher-batch:save', (_event, batch: VoucherBatchInput) => {
+    const isValidDate = (value: string) => {
+      const date = new Date(`${value}T00:00:00`);
+      return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(date.getTime()) && localDate(date) === value;
+    };
+    const uniqueCodes = new Set(batch.codes);
+    if (!Number.isFinite(batch.discount_percentage) || batch.discount_percentage < 1 || batch.discount_percentage > 100
+      || !isValidDate(batch.starts_at) || !isValidDate(batch.ends_at) || batch.ends_at < batch.starts_at
+      || !batch.codes.length || batch.codes.some((code) => !/^Co-di-ce-\d{8}$/.test(code)) || uniqueCodes.size !== batch.codes.length) {
+      throw new Error('Controlla percentuale, date e codici del buono sconto.');
+    }
+    const transaction = database.transaction(() => {
+      const insertBatch = database.prepare('INSERT INTO voucher_batches (discount_percentage, starts_at, ends_at, created_at) VALUES (?, ?, ?, ?)');
+      const result = insertBatch.run(batch.discount_percentage, batch.starts_at, batch.ends_at, new Date().toISOString());
+      const insertVoucher = database.prepare('INSERT INTO vouchers (batch_id, code) VALUES (?, ?)');
+      for (const code of batch.codes) insertVoucher.run(result.lastInsertRowid, code);
+    });
+    try {
+      transaction();
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('UNIQUE constraint failed: vouchers.code')) {
+        throw new Error('Uno o più codici sono già presenti. Genera nuovamente i codici prima di confermare.');
+      }
+      throw error;
+    }
   });
   ipcMain.handle('settings:save', (_event, key: string, value: string) => {
     if (!['shop_name', 'archive_folder', 'receipt_printer', 'barcode_scanner_enabled', 'barcode_scanner_detected'].includes(key)) throw new Error('Impostazione non valida.');

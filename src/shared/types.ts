@@ -67,6 +67,16 @@ export interface Promotion {
   application_mode: 'Automatica' | 'Manuale';
 }
 
+export interface VoucherBatch {
+  id: number;
+  discount_percentage: number;
+  starts_at: string;
+  ends_at: string;
+  created_at: string;
+  codes: string[];
+}
+
+export type VoucherBatchInput = Pick<VoucherBatch, 'discount_percentage' | 'starts_at' | 'ends_at' | 'codes'>;
 export type PromotionInput = Omit<Promotion, 'id'> & { id?: number };
 export type CheckoutInput = { items: SaleItem[]; payment_method: string; additional_discount: number; manual_promotion_id?: number; automatic_promotion_id?: number | null };
 
@@ -74,6 +84,7 @@ export interface AppState {
   products: Product[];
   sales: Sale[];
   promotions: Promotion[];
+  voucherBatches: VoucherBatch[];
   settings: { shop_name: string; shop_logo?: string; archive_folder: string; database_file: string; receipt_printer: string; barcode_scanner_enabled: boolean; barcode_scanner_detected: boolean };
   stockMovements: StockMovement[];
 }
@@ -104,6 +115,7 @@ declare global {
     checkout: (sale: CheckoutInput) => Promise<Sale>;
     savePromotion: (promotion: PromotionInput) => Promise<void>;
     deletePromotion: (id: number) => Promise<void>;
+    saveVoucherBatch: (batch: VoucherBatchInput) => Promise<void>;
     saveSetting: (key: 'shop_name' | 'archive_folder' | 'receipt_printer' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => Promise<void>;
     getPrinters: () => Promise<Printer[]>;
     printReceipt: () => Promise<void>;

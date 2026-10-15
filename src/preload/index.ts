@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { CheckoutInput, Printer, ProductInput, PromotionInput, SaleItem } from '../shared/types';
+import type { CheckoutInput, Printer, ProductInput, PromotionInput, SaleItem, VoucherBatchInput } from '../shared/types';
 
 contextBridge.exposeInMainWorld('gestionale', {
   getState: () => ipcRenderer.invoke('state:get'),
@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('gestionale', {
   checkout: (sale: CheckoutInput) => ipcRenderer.invoke('sale:checkout', sale),
   savePromotion: (promotion: PromotionInput) => ipcRenderer.invoke('promotion:save', promotion),
   deletePromotion: (id: number) => ipcRenderer.invoke('promotion:delete', id),
+  saveVoucherBatch: (batch: VoucherBatchInput) => ipcRenderer.invoke('voucher-batch:save', batch),
   saveSetting: (key: 'shop_name' | 'archive_folder' | 'receipt_printer' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => ipcRenderer.invoke('settings:save', key, value),
   getPrinters: (): Promise<Printer[]> => ipcRenderer.invoke('devices:printers'),
   printReceipt: (): Promise<void> => ipcRenderer.invoke('receipt:print'),

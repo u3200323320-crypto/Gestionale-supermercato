@@ -244,6 +244,12 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .settings-nav button { display: flex; width: 100%; min-height: 48px; align-items: center; gap: 10px; padding: 0 14px; border: 1px solid var(--line); border-radius: 4px; background: white; color: #536158; cursor: pointer; font-size: 11px; text-align: left; }
 .settings-nav button:hover { background: #ecefea; }
 .settings-nav button.selected { background: #e7efe8; color: #315d41; font-weight: 600; }
+.settings-nav .nav-submenu { margin: -2px 0 5px 29px; }
+.voucher-form { max-width: 650px; }
+.voucher-preview-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin: 18px 0 10px; color: #536158; font-size: 11px; }
+.voucher-codes { max-height: 55vh; }
+.voucher-codes td { color: #37433a; }
+.voucher-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 15px; }
 .settings-back { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 15px; padding: 0; border: 0; background: transparent; color: var(--green); cursor: pointer; font-size: 10px; font-weight: 600; }
 .settings-panel { min-height: 475px; padding: 25px; border: 1px solid var(--line); border-radius: 5px; background: white; }
 .settings-title { padding-bottom: 17px; border-bottom: 1px solid var(--line); }
@@ -505,10 +511,11 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
   body, body * { visibility: hidden !important; }
   #receipt-print, #receipt-print *,
   #inventory-history-print, #inventory-history-print *,
-  #unsold-list-print, #unsold-list-print * { visibility: visible !important; }
+  #unsold-list-print, #unsold-list-print *,
+  #voucher-print, #voucher-print * { visibility: visible !important; }
   #receipt-print { position: fixed; top: 0; left: 0; width: 76mm; max-width: none; padding: 0; color: #000; font-size: 9.5pt; }
-  #inventory-history-print, #unsold-list-print { position: fixed; top: 0; left: 0; width: 100%; max-width: none; padding: 0; background: white; }
-  #inventory-history-print .table-wrap, #unsold-list-print .table-wrap { overflow: visible; border: 0; }
+  #inventory-history-print, #unsold-list-print, #voucher-print { position: fixed; top: 0; left: 0; width: 100%; max-width: none; padding: 0; background: white; }
+  #inventory-history-print .table-wrap, #unsold-list-print .table-wrap, #voucher-print { overflow: visible; border: 0; max-height: none; }
   .page-content { animation: none !important; transform: none !important; }
   .no-print { display: none !important; }
   .modal-backdrop { position: static; display: block; padding: 0; background: transparent; }
