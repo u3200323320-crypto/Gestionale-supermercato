@@ -129,7 +129,8 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .inventory-history-actions > .field:first-child { flex: 0 0 132px; }
 .inventory-history-actions > .button { flex: 0 0 auto; }
 .inventory-history-actions > .search-field { min-width: 220px; }
-#inventory-history-print table thead th { height: 48px; color: #000; font-size: 18px; font-weight: 700; text-transform: uppercase; }
+#inventory-history-print table thead th { height: 54px; color: #000; font-size: 17px; font-weight: 700; text-transform: uppercase; }
+#inventory-history-print table tbody td:not(:nth-child(3)) { color: #37433a; font-size: 11px; }
 .toolbar-actions { display: flex; align-items: center; gap: 8px; }
 .inventory-toolbar .button, .filter-row .select-wrap { width: 180px; flex: 0 0 180px; }
 .filter-row .select-wrap { justify-content: space-between; }
