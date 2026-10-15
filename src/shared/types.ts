@@ -46,6 +46,7 @@ export interface StockMovement {
   movement_type: 'Carico' | 'Scarico';
   quantity: number;
   created_at: string;
+  person: string;
   note: string;
 }
 
@@ -99,7 +100,7 @@ declare global {
     setPin: (pin: string) => Promise<void>;
     saveProduct: (product: ProductInput) => Promise<void>;
     updateStock: (productId: number, stock: number) => Promise<void>;
-    moveStock: (movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; note: string }) => Promise<void>;
+    moveStock: (movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; person?: string; note: string }) => Promise<void>;
     checkout: (sale: CheckoutInput) => Promise<Sale>;
     savePromotion: (promotion: PromotionInput) => Promise<void>;
     deletePromotion: (id: number) => Promise<void>;

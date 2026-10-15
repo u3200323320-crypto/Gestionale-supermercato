@@ -114,9 +114,13 @@ function initDatabase(): void {
     CREATE TABLE IF NOT EXISTS stock_movements (
       id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, product_name TEXT NOT NULL,
       movement_type TEXT NOT NULL CHECK(movement_type IN ('Carico', 'Scarico')),
-      quantity REAL NOT NULL, created_at TEXT NOT NULL, note TEXT NOT NULL DEFAULT ''
+      quantity REAL NOT NULL, created_at TEXT NOT NULL, person TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT ''
     );
   `);
+  const stockMovementColumns = database.prepare('PRAGMA table_info(stock_movements)').all() as Array<{ name: string }>;
+  if (!stockMovementColumns.some((column) => column.name === 'person')) {
+    database.exec("ALTER TABLE stock_movements ADD COLUMN person TEXT NOT NULL DEFAULT ''");
+  }
   const saleColumns = database.prepare('PRAGMA table_info(sales)').all() as Array<{ name: string }>;
   if (!saleColumns.some((column) => column.name === 'gross_total')) {
     database.exec('ALTER TABLE sales ADD COLUMN gross_total REAL NOT NULL DEFAULT 0');
@@ -199,9 +203,9 @@ function replaceItems(saleId: number, items: SaleItem[]): void {
   }
 }
 
-function recordStockMovement(productId: number, productName: string, type: 'Carico' | 'Scarico', quantity: number, note: string): void {
-  database.prepare(`INSERT INTO stock_movements (product_id, product_name, movement_type, quantity, created_at, note)
-    VALUES (?, ?, ?, ?, ?, ?)`).run(productId, productName, type, quantity, new Date().toISOString(), note);
+function recordStockMovement(productId: number, productName: string, type: 'Carico' | 'Scarico', quantity: number, note: string, person = ''): void {
+  database.prepare(`INSERT INTO stock_movements (product_id, product_name, movement_type, quantity, created_at, person, note)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`).run(productId, productName, type, quantity, new Date().toISOString(), person, note);
 }
 
 const archiveNumber = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 2 });
@@ -416,9 +420,11 @@ app.whenReady().then(() => {
     const result = database.prepare('UPDATE products SET stock = ? WHERE id = ?').run(stock, productId);
     if (result.changes === 0) throw new Error('Articolo non trovato.');
   });
-  ipcMain.handle('product:move-stock', (_event, movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; note: string }) => {
+  ipcMain.handle('product:move-stock', (_event, movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; person?: string; note: string }) => {
     if (!Number.isInteger(movement.productId) || movement.productId < 1 || !['Carico', 'Scarico'].includes(movement.type)
-      || !Number.isFinite(movement.quantity) || movement.quantity <= 0 || typeof movement.note !== 'string') {
+      || !Number.isFinite(movement.quantity) || movement.quantity <= 0 || typeof movement.note !== 'string'
+      || (movement.person !== undefined && typeof movement.person !== 'string')
+      || (movement.type === 'Scarico' && !movement.person?.trim())) {
       throw new Error('I dati del movimento di magazzino non sono validi.');
     }
     database.transaction(() => {
@@ -427,7 +433,7 @@ app.whenReady().then(() => {
       if (movement.type === 'Scarico' && product.stock < movement.quantity) throw new Error('La quantità da scaricare supera la giacenza disponibile.');
       const delta = movement.type === 'Carico' ? movement.quantity : -movement.quantity;
       database.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(delta, movement.productId);
-      recordStockMovement(movement.productId, product.name, movement.type, movement.quantity, movement.note.trim());
+      recordStockMovement(movement.productId, product.name, movement.type, movement.quantity, movement.note.trim(), movement.person?.trim() ?? '');
     })();
   });
   ipcMain.handle('sale:checkout', (_event, sale: CheckoutInput) => {
