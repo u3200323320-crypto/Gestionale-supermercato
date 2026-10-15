@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import Database from 'better-sqlite3';
 import PDFDocument from 'pdfkit';
 import { randomInt, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import type { CheckoutInput, Product, ProductInput, Promotion, PromotionInput, SaleItem } from '../shared/types';
@@ -204,33 +204,139 @@ function recordStockMovement(productId: number, productName: string, type: 'Cari
     VALUES (?, ?, ?, ?, ?, ?)`).run(productId, productName, type, quantity, new Date().toISOString(), note);
 }
 
+const archiveNumber = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 2 });
+const archiveMoney = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
+const archiveDateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' });
+
+interface ArchiveSection {
+  name: string;
+  columns: string[];
+  weights: number[];
+  rows: string[][];
+}
+
+function removeLegacyTextBackups(folder: string): void {
+  for (const section of ['Magazzino', 'Cassa', 'Vendite', 'Promozioni', 'Statistiche']) {
+    const dir = join(folder, section);
+    if (!existsSync(dir)) continue;
+    for (const fileName of readdirSync(dir)) {
+      if (/^\d{4}-\d{2}-\d{2}\.txt$/.test(fileName)) unlinkSync(join(dir, fileName));
+    }
+  }
+}
+
 function archiveDay(day: string): Promise<void> {
   const [dayStart, dayEnd] = localDayBounds(day);
   const folder = setting('archive_folder', join(app.getPath('documents'), 'Gestionale-Archivio'));
-  const sections = [
-    { name: 'Magazzino', body: () => (database.prepare('SELECT code, name, category, sale_price, purchase_price, stock FROM products ORDER BY name').all() as Array<Record<string, unknown>>).map((p) => `${p.code}\t${p.name}\t${p.category}\t${p.stock}\t${p.sale_price}\t${p.purchase_price}`).join('\n') },
-    { name: 'Vendite', body: () => (database.prepare('SELECT receipt_no, created_at, payment_method, total FROM sales WHERE created_at >= ? AND created_at < ? ORDER BY created_at').all(dayStart, dayEnd) as Array<Record<string, unknown>>).map((s) => `${s.receipt_no}\t${s.created_at}\t${s.payment_method}\t${s.total}`).join('\n') },
-    { name: 'Cassa', body: () => (database.prepare(`SELECT s.receipt_no, i.name, i.quantity, i.unit_price FROM sale_items i JOIN sales s ON s.id = i.sale_id WHERE s.created_at >= ? AND s.created_at < ? ORDER BY s.created_at`).all(dayStart, dayEnd) as Array<Record<string, unknown>>).map((i) => `${i.receipt_no}\t${i.name}\t${i.quantity}\t${i.unit_price}`).join('\n') },
-    { name: 'Promozioni', body: () => (database.prepare('SELECT name, percentage, discount_type, buy_quantity, free_quantity, category, starts_at, ends_at, minimum_spend, application_mode FROM promotions ORDER BY starts_at').all() as Array<Record<string, unknown>>).map((p) => {
-      const discount = p.discount_type === 'buy_get' ? `${p.buy_quantity}+${p.free_quantity}` : `${p.percentage}%`;
-      return `${p.name}\t${discount}\t${p.category}\t${p.starts_at}\t${p.ends_at}\tMinimo ${p.minimum_spend} EUR\t${p.application_mode}`;
-    }).join('\n') },
-    { name: 'Statistiche', body: () => {
-      const row = database.prepare(`SELECT COUNT(*) AS transactions, COALESCE(SUM(total), 0) AS net, COALESCE(SUM((SELECT SUM(quantity) FROM sale_items WHERE sale_id = sales.id)), 0) AS quantity FROM sales WHERE created_at >= ? AND created_at < ?`).get(dayStart, dayEnd) as { transactions: number; net: number; quantity: number };
-      return `Data: ${day}\nVendite: ${row.transactions}\nNetto: ${row.net.toFixed(2)} EUR\nPezzi venduti: ${row.quantity}`;
-    } },
+  const shopName = setting('shop_name', 'Gestione Supermercato');
+  const products = database.prepare('SELECT code, name, category, unit, sale_price, purchase_price, stock FROM products ORDER BY name').all() as Array<Record<string, string | number>>;
+  const sales = database.prepare('SELECT receipt_no, created_at, payment_method, gross_total, discount, total FROM sales WHERE created_at >= ? AND created_at < ? ORDER BY created_at').all(dayStart, dayEnd) as Array<Record<string, string | number>>;
+  const saleItemsForDay = database.prepare(`SELECT s.receipt_no, i.name, i.unit, i.quantity, i.unit_price FROM sale_items i JOIN sales s ON s.id = i.sale_id WHERE s.created_at >= ? AND s.created_at < ? ORDER BY s.created_at`).all(dayStart, dayEnd) as Array<Record<string, string | number>>;
+  const promotions = database.prepare('SELECT name, percentage, discount_type, buy_quantity, free_quantity, category, starts_at, ends_at, minimum_spend, application_mode FROM promotions ORDER BY starts_at').all() as Array<Record<string, string | number>>;
+  const statistics = database.prepare(`SELECT COUNT(*) AS transactions, COALESCE(SUM(total), 0) AS net, COALESCE(SUM((SELECT SUM(quantity) FROM sale_items WHERE sale_id = sales.id)), 0) AS quantity FROM sales WHERE created_at >= ? AND created_at < ?`).get(dayStart, dayEnd) as { transactions: number; net: number; quantity: number };
+  const sections: ArchiveSection[] = [
+    {
+      name: 'Magazzino',
+      columns: ['Codice', 'Articolo', 'Categoria', 'Vendita', 'Acquisto', 'Giacenza'],
+      weights: [1.1, 2.2, 1.25, 1, 1, 0.9],
+      rows: products.map((product) => [String(product.code), String(product.name), String(product.category), archiveMoney.format(Number(product.sale_price)), archiveMoney.format(Number(product.purchase_price)), `${archiveNumber.format(Number(product.stock))} ${product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'lit.' : 'pz'}`]),
+    },
+    {
+      name: 'Vendite',
+      columns: ['Scontrino', 'Data e ora', 'Pagamento', 'Lordo', 'Sconto', 'Netto'],
+      weights: [0.9, 1.4, 1.1, 1, 1, 1],
+      rows: sales.map((sale) => [String(sale.receipt_no), archiveDateTime.format(new Date(String(sale.created_at))), String(sale.payment_method), archiveMoney.format(Number(sale.gross_total)), archiveMoney.format(Number(sale.discount)), archiveMoney.format(Number(sale.total))]),
+    },
+    {
+      name: 'Cassa',
+      columns: ['Scontrino', 'Articolo', 'Quantità', 'Unità', 'Prezzo unitario'],
+      weights: [0.9, 2.2, 0.8, 0.8, 1.1],
+      rows: saleItemsForDay.map((item) => [String(item.receipt_no), String(item.name), archiveNumber.format(Number(item.quantity)), item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz', archiveMoney.format(Number(item.unit_price))]),
+    },
+    {
+      name: 'Promozioni',
+      columns: ['Promozione', 'Sconto', 'Categoria', 'Periodo', 'Spesa minima', 'Modalità'],
+      weights: [1.6, 0.7, 1, 1.4, 1, 0.9],
+      rows: promotions.map((promotion) => [
+        String(promotion.name),
+        promotion.discount_type === 'buy_get' ? `${promotion.buy_quantity}+${promotion.free_quantity}` : `${promotion.percentage}%`,
+        String(promotion.category),
+        `${promotion.starts_at} - ${promotion.ends_at}`,
+        archiveMoney.format(Number(promotion.minimum_spend)),
+        String(promotion.application_mode),
+      ]),
+    },
+    {
+      name: 'Statistiche',
+      columns: ['Indicatore', 'Valore'],
+      weights: [1.5, 1],
+      rows: [
+        ['Data del report', day],
+        ['Vendite registrate', String(statistics.transactions)],
+        ['Incasso netto', archiveMoney.format(statistics.net)],
+        ['Quantità venduta', archiveNumber.format(statistics.quantity)],
+      ],
+    },
   ];
-  return Promise.all(sections.map(({ name, body }) => new Promise<void>((resolve, reject) => {
+  return Promise.all(sections.map(({ name, columns, weights, rows }) => new Promise<void>((resolve, reject) => {
     const dir = join(folder, name);
     mkdirSync(dir, { recursive: true });
-    const text = body() || 'Nessun dato';
-    writeFileSync(join(dir, `${day}.txt`), text, 'utf8');
-    const doc = new PDFDocument({ margin: 44 });
-    const stream = doc.pipe(require('node:fs').createWriteStream(join(dir, `${day}.pdf`)));
-    doc.fontSize(16).text(`${name} · ${day}`, { continued: false }).moveDown().fontSize(10).text(text);
-    doc.end();
+    const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
+    const stream = doc.pipe(createWriteStream(join(dir, `${day}.pdf`)));
+    const pageWidth = doc.page.width;
+    const pageHeight = doc.page.height;
+    const tableWidth = pageWidth - 80;
+    const drawHeader = () => {
+      doc.save();
+      doc.rect(0, 0, pageWidth, 105).fill('#2b523d');
+      doc.fillColor('#dce9de').font('Helvetica').fontSize(8).text('GESTIONALE  /  ARCHIVIO GIORNALIERO', 40, 27);
+      doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(22).text(name, 40, 43);
+      doc.fillColor('#e4eee5').font('Helvetica').fontSize(9).text(`${shopName}  ·  ${day}`, 40, 76);
+      doc.restore();
+    };
+    const columnWidths = weights.map((weight) => tableWidth * weight / weights.reduce((sum, item) => sum + item, 0));
+    const drawColumnHeader = (y: number) => {
+      doc.roundedRect(40, y, tableWidth, 24, 3).fill('#38684e');
+      let x = 46;
+      columns.forEach((column, index) => {
+        doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(8).text(column, x, y + 8, { width: columnWidths[index] - 10, lineBreak: false, ellipsis: true });
+        x += columnWidths[index];
+      });
+    };
+    drawHeader();
+    let y = 124;
+    drawColumnHeader(y);
+    y += 24;
+    const dataRows = rows.length ? rows : [columns.map((_, index) => index === 0 ? 'Nessun dato disponibile' : '')];
+    dataRows.forEach((row, rowIndex) => {
+      if (y + 25 > pageHeight - 38) {
+        doc.addPage();
+        drawHeader();
+        y = 124;
+        drawColumnHeader(y);
+        y += 24;
+      }
+      if (rowIndex % 2 === 0) doc.rect(40, y, tableWidth, 25).fill('#f1f5f1');
+      doc.save();
+      doc.rect(40, y, tableWidth, 25).lineWidth(0.4).stroke('#e1e8e1');
+      let x = 46;
+      columns.forEach((_, index) => {
+        doc.fillColor('#34443a').font(index === 0 && name === 'Statistiche' ? 'Helvetica-Bold' : 'Helvetica').fontSize(8)
+          .text(row[index] ?? '', x, y + 8, { width: columnWidths[index] - 10, lineBreak: false, ellipsis: true });
+        x += columnWidths[index];
+      });
+      doc.restore();
+      y += 25;
+    });
+    const pages = doc.bufferedPageRange();
+    for (let index = 0; index < pages.count; index += 1) {
+      doc.switchToPage(pages.start + index);
+      doc.fillColor('#839087').font('Helvetica').fontSize(8)
+        .text(`${shopName}  ·  ${name}  ·  Pagina ${index + 1} di ${pages.count}`, 40, pageHeight - 25, { width: tableWidth, align: 'right' });
+    }
     stream.on('finish', resolve);
     stream.on('error', reject);
+    doc.end();
   }))).then(() => undefined);
 }
 
@@ -238,6 +344,7 @@ async function archiveMissingDays(): Promise<void> {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const lastDay = localDate(yesterday);
+  removeLegacyTextBackups(setting('archive_folder', join(app.getPath('documents'), 'Gestionale-Archivio')));
   const lastArchivedDay = setting('last_archive_day');
   if (!lastArchivedDay) {
     await archiveDay(lastDay);

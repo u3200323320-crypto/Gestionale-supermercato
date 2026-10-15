@@ -122,6 +122,14 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .align-right { text-align: right; }
 .row-arrow { color: #a1a8a2; font-size: 18px; }
 .page-toolbar { margin-bottom: 19px; }
+.inventory-history-toolbar { align-items: flex-end; }
+.inventory-history-actions { display: flex; min-width: 0; flex: 1; align-items: flex-end; gap: 8px; }
+.inventory-history-actions > .select-wrap, .inventory-history-actions > .field { min-width: 0; flex: 1; }
+.inventory-history-actions > .select-wrap select { min-width: 0; width: 100%; }
+.inventory-history-actions > .button { flex: 0 0 auto; }
+.history-print-heading { margin: 0 0 15px; padding: 15px 17px; border: 1px solid #e2e8e2; border-radius: 5px; background: #f5f8f5; }
+.history-print-heading h1 { color: var(--green-dark); font-size: 17px; }
+.history-print-heading p { margin-top: 4px; color: #78837a; font-size: 10px; }
 .toolbar-actions { display: flex; align-items: center; gap: 8px; }
 .inventory-toolbar .button, .filter-row .select-wrap { width: 180px; flex: 0 0 180px; }
 .filter-row .select-wrap { justify-content: space-between; }
@@ -195,6 +203,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .checkout-button span { font-size: 17px; }
 .sale-tools { flex-wrap: nowrap; }
 .sale-tools > .search-field { max-width: none; }
+.sale-tools > .search-field { min-width: 190px; }
 .sale-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin: -2px 0 18px; }
 .sale-filters > .field { min-width: 0; flex: 1 1 calc(50% - 5px); }
 .sale-filters > .field:has(select) { display: flex; height: 38px; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid #dfe4de; border-radius: 4px; background: white; }
@@ -265,6 +274,9 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .stock-current strong { color: var(--ink); }
 .stock-form .form-actions { display: grid; grid-template-columns: 1fr; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 20px; }
+.measured-quantity-form { grid-template-columns: 1fr; }
+.measured-price { grid-column: 1; padding: 12px; border-radius: 4px; background: var(--green-soft); color: var(--green-dark); font-size: 13px; font-weight: 700; }
+.measured-quantity-form .form-actions { display: grid; grid-template-columns: 1fr 1fr; }
 .form-actions { display: flex; grid-column: 1 / -1; justify-content: flex-end; gap: 8px; padding-top: 5px; }
 .product-form .unit-choice { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; border: 0; }
 .unit-choice legend, .field-label { grid-column: 1 / -1; color: #758078; font-size: 10px; font-weight: 500; }
@@ -354,7 +366,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .receipt-spacer { height: 13px; }
 .receipt-shop + .receipt-spacer { height: 25px; }
 .receipt-datetime { display: flex; gap: 30px; }
-.receipt-head, .receipt-item { display: grid; grid-template-columns: minmax(0, 1fr) 30px 71px; gap: 4px; padding: 4px 0; }
+.receipt-head, .receipt-item { display: grid; grid-template-columns: minmax(0, 1fr) 43px 71px; gap: 4px; padding: 4px 0; }
 .receipt-head { border-bottom: 1px solid #c9cdc9; font-weight: 700; }
 .receipt-head span:nth-child(n+2), .receipt-item span:nth-child(n+2) { text-align: right; }
 .receipt-dash { margin: 7px 0; border-top: 1px dashed #8c928d; }
@@ -488,6 +500,8 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
   #receipt-print { position: fixed; top: 0; left: 0; width: 76mm; max-width: none; padding: 0; color: #000; font-size: 9.5pt; }
   #inventory-history-print, #unsold-list-print { position: fixed; top: 0; left: 0; width: 100%; max-width: none; padding: 0; background: white; }
   #inventory-history-print .table-wrap, #unsold-list-print .table-wrap { overflow: visible; border: 0; }
+  #inventory-history-print .inventory-history-toolbar { display: none !important; }
+  #inventory-history-print .history-print-heading { padding: 0 0 10px; border: 0; border-bottom: 2px solid #38684e; border-radius: 0; background: white; }
   .page-content { animation: none !important; transform: none !important; }
   .no-print { display: none !important; }
   .modal-backdrop { position: static; display: block; padding: 0; background: transparent; }
@@ -503,7 +517,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .expiry-alert { min-width: 0; margin: 0 0 19px; padding: 15px; border: 1px solid rgb(56 104 78 / 28%); border-radius: 5px; background: rgb(56 104 78 / 13%); }
 .expiry-panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0 0 19px; }
 .expiry-panels .expiry-alert { margin: 0; }
-.expiry-home-alert { margin-bottom: 19px; }
+.expiry-home-alert { margin-bottom: 19px; padding: 14px; border-color: rgb(56 104 78 / 24%); background: rgb(56 104 78 / 12%); }
 .expiry-alert-heading { display: flex; align-items: center; gap: 10px; color: var(--green-dark); }
 .expiry-alert-heading > div { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; gap: 3px 14px; }
 .expiry-alert-heading strong { font-size: 11px; }
@@ -534,9 +548,9 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .payment-dot { width: 8px; height: 8px; border-radius: 50%; }
 .movement-form { width: min(100%, 460px); }
 .movement-form > .button { justify-self: start; }
-.movement-badge { display: inline-flex; padding: 4px 7px; border-radius: 3px; font-size: 9px; }
-.movement-in { background: rgb(56 104 78 / 14%); color: var(--green-dark); }
-.movement-out { background: rgb(164 80 66 / 14%); color: var(--red); }
+.movement-badge { display: inline-flex; padding: 4px 7px; border-radius: 3px; font-size: 9px; font-weight: 700; }
+.movement-in { background: #d9eddf; color: #176b35; }
+.movement-out { background: #f5dfdd; color: #a1261b; }
 .unsold-list-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
 .unsold-list-actions .button { width: 100%; }
 
@@ -547,4 +561,6 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
   .expiry-panels { grid-template-columns: 1fr; }
   .expiry-list { grid-template-columns: 1fr; }
   .promotion-bundle-fields { grid-template-columns: 1fr; }
+  .inventory-history-toolbar { align-items: stretch; flex-direction: column; }
+  .inventory-history-actions { width: 100%; flex-wrap: wrap; }
 }

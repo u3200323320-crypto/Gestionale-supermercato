@@ -12,6 +12,7 @@ const money = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR
 const dateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' });
 const receiptDate = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short' });
 const receiptTime = new Intl.DateTimeFormat('it-IT', { timeStyle: 'short' });
+const receiptQuantity = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 0 });
 const colors = ['#416e59', '#c17e4f', '#658499', '#a9aa64', '#8a7461', '#609085'];
 const localDateKey = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const permanentPromotionEnd = '9999-12-31';
@@ -60,14 +61,14 @@ function ProductForm({ initial, save, close }: { initial: ProductInput; save: (p
   const [saving, setSaving] = useState(false);
   const change = (key: keyof ProductInput, value: string) => setProduct((current) => ({ ...current, [key]: ['sale_price', 'purchase_price', 'stock', 'low_stock_threshold'].includes(key) ? Number(value) : value }));
   const submit = async (event: FormEvent) => { event.preventDefault(); setSaving(true); try { await save(product); close(); } finally { setSaving(false); } };
-  return <Modal title={initial.name ? 'Modifica articolo' : 'Nuovo articolo'} close={close}><form className="form-grid product-form" onSubmit={submit}>
+  return <Modal title={initial.name ? 'Modifica articolo' : 'Nuovo articolo'} close={close} rightHalf={!initial.name}><form className="form-grid product-form" onSubmit={submit}>
     <Field label="Nome articolo" value={product.name} onChange={(e) => change('name', e.target.value)} required autoFocus />
-    <Field label="Codice a barre" value={product.code} onChange={(e) => change('code', e.target.value)} required readOnly={!initial.name} title={!initial.name ? 'Il codice viene acquisito dal lettore barcode.' : undefined} />
+    <Field label="Codice a barre" value={product.code} onChange={(e) => change('code', e.target.value)} required />
     <fieldset className="unit-choice"><legend>Unità di vendita</legend>{(['KG', 'LITRO', 'PEZZO'] as ProductUnit[]).map((unit) => <label key={unit}><input type="radio" name="product-unit" checked={(product.unit ?? 'PEZZO') === unit} onChange={() => setProduct({ ...product, unit })} /><span>{unit}</span></label>)}</fieldset>
-    <Field label="Prezzo di vendita" type="number" min="0" step="0.01" value={product.sale_price || ''} onChange={(e) => change('sale_price', e.target.value)} required />
-    <Field label="Prezzo di acquisto" type="number" min="0" step="0.01" value={product.purchase_price || ''} onChange={(e) => change('purchase_price', e.target.value)} required />
-    <Field label="Giacenza" type="number" min="0" value={product.stock || ''} onChange={(e) => change('stock', e.target.value)} required />
-    <Field label="Soglia minima avviso" type="number" min="0" value={product.low_stock_threshold || ''} onChange={(e) => change('low_stock_threshold', e.target.value)} required />
+    <Field label={`Prezzo di vendita${product.unit === 'KG' ? ' al kg' : product.unit === 'LITRO' ? ' al litro' : ''}`} type="number" min="0" step="0.01" value={product.sale_price || ''} onChange={(e) => change('sale_price', e.target.value)} required />
+    <Field label={`Prezzo di acquisto${product.unit === 'KG' ? ' al kg' : product.unit === 'LITRO' ? ' al litro' : ''}`} type="number" min="0" step="0.01" value={product.purchase_price || ''} onChange={(e) => change('purchase_price', e.target.value)} required />
+    <Field label={`Giacenza${product.unit === 'KG' ? ' (kg)' : product.unit === 'LITRO' ? ' (litri)' : ''}`} type="number" min="0" step={product.unit === 'PEZZO' ? '1' : 'any'} value={product.stock || ''} onChange={(e) => change('stock', e.target.value)} required />
+    <Field label={`Soglia minima avviso${product.unit === 'KG' ? ' (kg)' : product.unit === 'LITRO' ? ' (litri)' : ''}`} type="number" min="0" step={product.unit === 'PEZZO' ? '1' : 'any'} value={product.low_stock_threshold || ''} onChange={(e) => change('low_stock_threshold', e.target.value)} required />
     <div className="expiry-field">
       <span className="field-label">Gestione data di scadenza</span>
       <button className={`toggle-button${product.expiry_enabled ? ' enabled' : ''}`} type="button" role="switch" aria-checked={product.expiry_enabled} onClick={() => setProduct((current) => ({ ...current, expiry_enabled: !current.expiry_enabled }))}>
@@ -88,6 +89,9 @@ export default function App() {
   const [stockMovementProduct, setStockMovementProduct] = useState('');
   const [stockMovementQuantity, setStockMovementQuantity] = useState('');
   const [stockMovementNote, setStockMovementNote] = useState('');
+  const [inventoryHistoryPeriod, setInventoryHistoryPeriod] = useState('Tutti');
+  const [inventoryHistoryFrom, setInventoryHistoryFrom] = useState('');
+  const [inventoryHistoryTo, setInventoryHistoryTo] = useState('');
   const [statisticsPeriod, setStatisticsPeriod] = useState('Tutti');
   const [unsoldListOpen, setUnsoldListOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
@@ -121,6 +125,9 @@ export default function App() {
   const [saleAddOpen, setSaleAddOpen] = useState(false);
   const [saleProductSearch, setSaleProductSearch] = useState('');
   const [saleCart, setSaleCart] = useState<SaleItem[]>([]);
+  const [measuredProduct, setMeasuredProduct] = useState<Product | null>(null);
+  const [measuredQuantity, setMeasuredQuantity] = useState('');
+  const [measuredTarget, setMeasuredTarget] = useState<'cash' | 'sale-edit'>('cash');
   const [camera, setCamera] = useState(false);
   const [pendingUnknownCode, setPendingUnknownCode] = useState('');
   const [shopName, setShopName] = useState('');
@@ -147,14 +154,14 @@ export default function App() {
 
   const categories = [...new Set(data?.products.map((item) => item.category) ?? [])];
   const availableSaleProducts = data?.products.filter((product) => product.stock > 0) ?? [];
+  const selectedMovementProduct = data?.products.find((product) => String(product.id) === stockMovementProduct);
   const todayKey = localDateKey();
   const promotionDiscounts = calculatePromotionDiscounts(data?.promotions ?? [], data?.products ?? [], cart, todayKey, manualPromotionId, automaticPromotionId);
   const automaticApplicableOffers = promotionDiscounts.automaticApplicablePromotions;
   const manualApplicableOffers = promotionDiscounts.manualApplicablePromotions;
   const automaticDiscount = promotionDiscounts.automaticDiscount;
   const manualDiscount = promotionDiscounts.manualDiscount;
-  const addToCart = (product: Product) => {
-    const amount = product.unit === 'PEZZO' || !product.unit ? 1 : 0.1;
+  const addToCart = (product: Product, amount = 1) => {
     setCart((current) => {
       const line = current.find((item) => item.product_id === product.id);
       if (product.stock - (line?.quantity ?? 0) < amount) { notify(`Scorta insufficiente per ${product.name}.`); return current; }
@@ -168,7 +175,7 @@ export default function App() {
     if (!normalized) return;
     const product = data?.products.find((item) => item.code === normalized);
     setScannerSearch('');
-    if (product) addToCart(product);
+    if (product) addProductToCart(product);
     else setPendingUnknownCode(normalized);
   };
   const saveProduct = async (item: ProductInput) => { try { await window.gestionale.saveProduct(item); await refresh(); setSelectedProduct(null); notify('Articolo salvato'); } catch (error) { notify(errorText(error)); throw error; } };
@@ -270,17 +277,23 @@ export default function App() {
     const gross = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
     setSaleDialog({ ...saleDialog, items, discount: Math.round(gross * saleDiscountPercentage) / 100 });
   };
-  const addProductToSaleCart = (product: Product) => {
-    const amount = product.unit === 'PEZZO' || !product.unit ? 1 : 0.1;
+  const addProductToSaleCart = (product: Product, amount?: number) => {
+    if (amount === undefined && (product.unit === 'KG' || product.unit === 'LITRO')) {
+      setMeasuredProduct(product);
+      setMeasuredTarget('sale-edit');
+      setMeasuredQuantity('');
+      return;
+    }
+    const addedAmount = amount ?? 1;
     const staged = saleCart.find((item) => item.product_id === product.id);
     const originalQuantity = data?.sales.find((sale) => sale.id === saleDialog?.id)?.items
       .filter((item) => item.product_id === product.id).reduce((sum, item) => sum + item.quantity, 0) ?? 0;
     const editedQuantity = saleDialog?.items
       .filter((item) => item.product_id === product.id).reduce((sum, item) => sum + item.quantity, 0) ?? 0;
-    if (product.stock + originalQuantity - editedQuantity - (staged?.quantity ?? 0) < amount) { notify(`Scorta insufficiente per ${product.name}.`); return; }
+    if (product.stock + originalQuantity - editedQuantity - (staged?.quantity ?? 0) < addedAmount) { notify(`Scorta insufficiente per ${product.name}.`); return; }
     setSaleCart((current) => staged
-      ? current.map((item) => item.product_id === product.id ? { ...item, quantity: item.quantity + amount } : item)
-      : [...current, { product_id: product.id, name: product.name, code: product.code, unit: product.unit ?? 'PEZZO', quantity: amount, unit_price: product.sale_price, purchase_price: product.purchase_price }]);
+      ? current.map((item) => item.product_id === product.id ? { ...item, quantity: item.quantity + addedAmount } : item)
+      : [...current, { product_id: product.id, name: product.name, code: product.code, unit: product.unit ?? 'PEZZO', quantity: addedAmount, unit_price: product.sale_price, purchase_price: product.purchase_price }]);
   };
   const addProductToSale = () => {
     if (!saleDialog || !saleCart.length) return;
@@ -295,6 +308,37 @@ export default function App() {
     setSaleCart([]);
     setSaleProductSearch('');
     setSaleAddOpen(false);
+  };
+  const addProductToCart = (product: Product, target: 'cash' | 'sale-edit' = 'cash') => {
+    if (product.unit === 'KG' || product.unit === 'LITRO') {
+      setMeasuredProduct(product);
+      setMeasuredTarget(target);
+      setMeasuredQuantity('');
+      return;
+    }
+    if (target === 'cash') addToCart(product);
+    else addProductToSaleCart(product);
+  };
+  const confirmMeasuredQuantity = (event: FormEvent) => {
+    event.preventDefault();
+    if (!measuredProduct) return;
+    const quantity = Number(measuredQuantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) { notify('Inserisci un peso o un volume maggiore di zero.'); return; }
+    if (measuredTarget === 'cash') {
+      const inCart = cart.find((item) => item.product_id === measuredProduct.id)?.quantity ?? 0;
+      if (measuredProduct.stock - inCart < quantity) { notify(`Scorta insufficiente per ${measuredProduct.name}.`); return; }
+      addToCart(measuredProduct, quantity);
+    } else {
+      const staged = saleCart.find((item) => item.product_id === measuredProduct.id)?.quantity ?? 0;
+      const original = data?.sales.find((sale) => sale.id === saleDialog?.id)?.items
+        .filter((item) => item.product_id === measuredProduct.id).reduce((sum, item) => sum + item.quantity, 0) ?? 0;
+      const edited = saleDialog?.items.filter((item) => item.product_id === measuredProduct.id)
+        .reduce((sum, item) => sum + item.quantity, 0) ?? 0;
+      if (measuredProduct.stock + original - edited - staged < quantity) { notify(`Scorta insufficiente per ${measuredProduct.name}.`); return; }
+      addProductToSaleCart(measuredProduct, quantity);
+    }
+    setMeasuredProduct(null);
+    setMeasuredQuantity('');
   };
   const updateSale = async () => { if (!saleDialog) return; const items = saleDialog.items.filter((item) => item.quantity > 0); if (!items.length) { notify('Una vendita deve contenere almeno un articolo.'); return; } if (saleDiscountPercentage < 0 || saleDiscountPercentage > 100) { notify('Lo sconto deve essere compreso tra 0 e 100%.'); return; } try { const saleId = saleDialog.id; await window.gestionale.updateSale({ id: saleId, payment_method: saleDialog.payment_method, discount: saleDialog.discount, items }); const next = await refresh(); const updatedSale = next.sales.find((sale) => sale.id === saleId); setSaleLookup(''); setSaleDialog(null); if (!updatedSale) throw new Error('Vendita aggiornata ma non trovata nell’archivio.'); setReceipt(updatedSale); notify('Vendita aggiornata'); } catch (error) { notify(errorText(error)); await refresh(); } };
   const deleteSale = async (sale: Sale) => { if (!window.confirm(`Eliminare lo scontrino ${sale.receipt_no}? Le quantità verranno ripristinate.`)) return; try { await window.gestionale.deleteSale(sale.id); await refresh(); setSaleLookup(''); setSaleDialog(null); notify('Vendita eliminata'); } catch (error) { notify(errorText(error)); await refresh(); } };
@@ -376,8 +420,106 @@ export default function App() {
       notify(errorText(error));
     }
   };
-  const exportReport = () => { if (!data) return; const doc = new jsPDF(); doc.setFontSize(18); doc.text(data.settings.shop_name, 14, 17); doc.setFontSize(11); doc.text('Report vendite', 14, 25); autoTable(doc, { startY: 32, head: [['Scontrino', 'Data e ora', 'Articoli', 'Pagamento', 'Totale']], body: data.sales.map((sale) => [sale.receipt_no, dateTime.format(new Date(sale.created_at)), String(sale.item_count), sale.payment_method, money.format(sale.total)]), styles: { fontSize: 9 }, headStyles: { fillColor: [56, 104, 78] } }); doc.save(`report-vendite-${new Date().toISOString().slice(0, 10)}.pdf`); };
-  const exportInventoryReport = () => { if (!data) return; const doc = new jsPDF({ orientation: 'landscape' }); doc.setFontSize(18); doc.text(data.settings.shop_name, 14, 17); doc.setFontSize(11); doc.text('Report magazzino', 14, 25); autoTable(doc, { startY: 32, head: [['Codice', 'Articolo', 'Categoria', 'Prezzo vendita', 'Prezzo acquisto', 'Giacenza', 'Soglia minima', 'Scadenza']], body: data.products.map((item) => [item.code, item.name, item.category, money.format(item.sale_price), money.format(item.purchase_price), String(item.stock), String(item.low_stock_threshold), item.expiry_enabled && item.expiry_date ? receiptDate.format(new Date(`${item.expiry_date}T00:00:00`)) : '—']), styles: { fontSize: 9 }, headStyles: { fillColor: [56, 104, 78] } }); doc.save(`report-magazzino-${new Date().toISOString().slice(0, 10)}.pdf`); };
+  const exportReport = () => {
+    if (!data) return;
+    const doc = new jsPDF({ orientation: 'landscape' });
+    const gross = data.sales.reduce((sum, sale) => sum + sale.gross_total, 0);
+    const net = data.sales.reduce((sum, sale) => sum + sale.total, 0);
+    doc.setFillColor(43, 82, 61);
+    doc.rect(0, 0, 297, 36, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.text(data.settings.shop_name, 14, 16);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.text('Report vendite · Esportato il ' + receiptDate.format(new Date()), 14, 26);
+    doc.setTextColor(41, 51, 46);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(`Vendite: ${data.sales.length}`, 14, 47);
+    doc.text(`Totale lordo: ${money.format(gross)}`, 74, 47);
+    doc.text(`Incasso netto: ${money.format(net)}`, 164, 47);
+    autoTable(doc, {
+      startY: 55,
+      head: [['Scontrino', 'Data e ora', 'Articoli', 'Pagamento', 'Lordo', 'Sconto', 'Totale netto']],
+      body: data.sales.map((sale) => [sale.receipt_no, dateTime.format(new Date(sale.created_at)), String(sale.item_count), sale.payment_method, money.format(sale.gross_total), money.format(sale.discount), money.format(sale.total)]),
+      theme: 'striped',
+      styles: { fontSize: 9, cellPadding: 3, textColor: [49, 60, 53], lineColor: [224, 230, 224] },
+      headStyles: { fillColor: [56, 104, 78], fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [244, 247, 244] },
+      margin: { left: 14, right: 14, bottom: 16 },
+      didDrawPage: () => {
+        doc.setFontSize(8);
+        doc.setTextColor(120, 130, 122);
+        doc.text(`${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`, 14, 202);
+      },
+    });
+    doc.save(`report-vendite-${todayKey}.pdf`);
+  };
+  const exportInventoryReport = () => {
+    if (!data) return;
+    const doc = new jsPDF({ orientation: 'landscape' });
+    const stockValue = data.products.reduce((sum, item) => sum + item.stock * item.purchase_price, 0);
+    const lowStockCount = data.products.filter((item) => item.stock <= item.low_stock_threshold).length;
+    doc.setFillColor(43, 82, 61);
+    doc.rect(0, 0, 297, 36, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.text(data.settings.shop_name, 14, 16);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.text('Report magazzino · Esportato il ' + receiptDate.format(new Date()), 14, 26);
+    doc.setTextColor(41, 51, 46);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(`Articoli: ${data.products.length}`, 14, 47);
+    doc.text(`Sotto soglia: ${lowStockCount}`, 74, 47);
+    doc.text(`Valore acquisto giacenze: ${money.format(stockValue)}`, 164, 47);
+    autoTable(doc, {
+      startY: 55,
+      head: [['Codice', 'Articolo', 'Categoria', 'Vendita / unità', 'Acquisto / unità', 'Giacenza', 'Soglia minima', 'Scadenza']],
+      body: data.products.map((item) => [item.code, item.name, item.category, money.format(item.sale_price), money.format(item.purchase_price), `${item.stock} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'}`, String(item.low_stock_threshold), item.expiry_enabled && item.expiry_date ? receiptDate.format(new Date(`${item.expiry_date}T00:00:00`)) : '—']),
+      theme: 'striped',
+      styles: { fontSize: 8, cellPadding: 3, textColor: [49, 60, 53], lineColor: [224, 230, 224] },
+      headStyles: { fillColor: [56, 104, 78], fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [244, 247, 244] },
+      margin: { left: 14, right: 14, bottom: 16 },
+      didDrawPage: () => {
+        doc.setFontSize(8);
+        doc.setTextColor(120, 130, 122);
+        doc.text(`${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`, 14, 202);
+      },
+    });
+    doc.save(`report-magazzino-${todayKey}.pdf`);
+  };
+  const exportSalesCsv = () => {
+    if (!data) return;
+    const quote = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
+    const csvNumber = new Intl.NumberFormat('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const csvQuantity = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 3 });
+    const rows = [
+      ['Numero scontrino', 'Data e ora', 'Metodo di pagamento', 'Articoli', 'Quantità totale', 'Totale lordo', 'Sconto', 'Totale netto'],
+      ...data.sales.map((sale) => [
+        sale.receipt_no,
+        dateTime.format(new Date(sale.created_at)),
+        sale.payment_method,
+        sale.items.map((item) => `${item.name} (${csvQuantity.format(item.quantity)} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'})`).join(', '),
+        csvQuantity.format(sale.items.reduce((sum, item) => sum + item.quantity, 0)),
+        csvNumber.format(sale.gross_total),
+        csvNumber.format(sale.discount),
+        csvNumber.format(sale.total),
+      ]),
+    ];
+    const csv = `\uFEFFsep=;\r\n${rows.map((row) => row.map(quote).join(';')).join('\r\n')}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `vendite-${todayKey}.csv`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
   const todaySales = data?.sales.filter((sale) => new Date(sale.created_at).toDateString() === new Date().toDateString()) ?? [];
   const dailyTotal = todaySales.reduce((sum, sale) => sum + sale.total, 0);
   const dailyGross = todaySales.reduce((sum, sale) => sum + sale.gross_total, 0);
@@ -467,6 +609,24 @@ export default function App() {
     && (salesCategory === 'Tutte' || sale.items.some((item) => data.products.some((product) => product.id === item.product_id && product.category === salesCategory)))
     && matchesSalesPeriod(sale.created_at)
   ) ?? [];
+  const matchesInventoryHistoryPeriod = (createdAt: string) => {
+    const movementDate = new Date(createdAt);
+    const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    if (inventoryHistoryPeriod === 'Da - A') {
+      const from = inventoryHistoryFrom ? new Date(`${inventoryHistoryFrom}T00:00:00`) : null;
+      const to = inventoryHistoryTo ? new Date(`${inventoryHistoryTo}T23:59:59.999`) : null;
+      return (!from || movementDate >= from) && (!to || movementDate <= to);
+    }
+    if (inventoryHistoryPeriod === 'Tutti') return true;
+    if (inventoryHistoryPeriod === 'Oggi') return movementDate >= todayStart && movementDate < new Date(todayStart.getTime() + 86400000);
+    if (inventoryHistoryPeriod === 'Ieri') return movementDate >= new Date(todayStart.getTime() - 86400000) && movementDate < todayStart;
+    const rangeStart = new Date(todayStart);
+    if (inventoryHistoryPeriod === 'Ultima settimana') rangeStart.setDate(rangeStart.getDate() - 6);
+    else if (inventoryHistoryPeriod === 'Ultimo mese') rangeStart.setMonth(rangeStart.getMonth() - 1);
+    return movementDate >= rangeStart;
+  };
+  const inventoryHistoryMovements = data?.stockMovements.filter((movement) => matchesInventoryHistoryPeriod(movement.created_at)) ?? [];
   const sectionLabel = section === 'inventory-history' ? 'Storico Magazzino'
     : section === 'stock-movement' ? 'Carica e scarica (Merce)'
       : nav.find((item) => item.section === section)?.label ?? 'Impostazioni';
@@ -478,7 +638,13 @@ export default function App() {
   const scanCameraCode = (code: string) => {
     setCamera(false);
     if (section === 'cash') scanCode(code);
-    else setSaleSearch(code.replace(/\D/g, ''));
+    else if (section === 'sale-management') {
+      const receiptNumber = code.replace(/\D/g, '');
+      setSaleLookup(receiptNumber);
+      const sale = data?.sales.find((item) => item.receipt_no === receiptNumber);
+      if (sale) openSaleForEditing(sale);
+      else notify('Scontrino non trovato');
+    } else setSaleSearch(code.replace(/\D/g, ''));
   };
   const calendarDays = () => { const year = calendarMonth.getFullYear(); const month = calendarMonth.getMonth(); const offset = (new Date(year, month, 1).getDay() + 6) % 7; return [...Array(offset).fill(null), ...Array.from({ length: new Date(year, month + 1, 0).getDate() }, (_, i) => i + 1)]; };
   const resetPromotionForm = () => {
@@ -552,15 +718,15 @@ export default function App() {
         <div className="product-grid">{inventoryList.map((product) => <button className="product-tile" key={product.id} onClick={() => setSelectedProduct(product)}><div className="tile-icon"><Package size={20} /></div><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="tile-price">{money.format(product.sale_price)}</span><span className={`tile-stock${product.stock <= product.low_stock_threshold ? ' text-low' : ''}`}>{product.stock} disponibili</span></button>)}</div>{inventoryList.length === 0 && <Empty icon={Package} title="Nessun articolo trovato" detail="Modifica la ricerca o aggiungi un articolo." />}
       </div>}
 
-      {section === 'inventory-history' && <div className="page-content"><div id="inventory-history-print"><div className="page-toolbar"><div><h2>Storico Magazzino</h2><p>Carichi e scarichi registrati</p></div><button className="button button-outline no-print" onClick={() => window.print()}><Printer size={16} /> Stampa lista</button></div><Table headings={['Data e ora', 'Articolo', 'Movimento', 'Quantità', 'Nota']}><>{data.stockMovements.map((movement) => <tr key={movement.id}><td>{dateTime.format(new Date(movement.created_at))}</td><td className="cell-primary">{movement.product_name}</td><td><span className={`movement-badge ${movement.movement_type === 'Carico' ? 'movement-in' : 'movement-out'}`}>{movement.movement_type}</span></td><td>{movement.quantity}</td><td>{movement.note || '—'}</td></tr>)}</>{!data.stockMovements.length && <tr><td colSpan={5} className="empty-cell">Nessun movimento registrato.</td></tr>}</Table></div></div>}
+      {section === 'inventory-history' && <div className="page-content"><div id="inventory-history-print"><div className="page-toolbar inventory-history-toolbar"><div><h2>Storico Magazzino</h2><p>Carichi e scarichi registrati</p></div><div className="inventory-history-actions no-print"><SelectField label="Periodo" value={inventoryHistoryPeriod} onChange={setInventoryHistoryPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Da - A']} />{inventoryHistoryPeriod === 'Da - A' && <><Field label="Da" type="date" value={inventoryHistoryFrom} onChange={(event) => setInventoryHistoryFrom(event.target.value)} /><Field label="A" type="date" value={inventoryHistoryTo} onChange={(event) => setInventoryHistoryTo(event.target.value)} /></>}<button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa</button></div></div><div className="history-print-heading"><h1>{data.settings.shop_name}</h1><p>Storico movimenti di magazzino · {inventoryHistoryPeriod}{inventoryHistoryPeriod === 'Da - A' ? ` (${inventoryHistoryFrom || 'inizio'} – ${inventoryHistoryTo || 'oggi'})` : ''} · {receiptDate.format(new Date())}</p></div><Table headings={['Data e ora', 'Articolo', 'Movimento', 'Quantità', 'Nota']}><>{inventoryHistoryMovements.map((movement) => <tr key={movement.id}><td>{dateTime.format(new Date(movement.created_at))}</td><td className="cell-primary">{movement.product_name}</td><td><span className={`movement-badge ${movement.movement_type === 'Carico' ? 'movement-in' : 'movement-out'}`}>{movement.movement_type}</span></td><td>{movement.quantity}</td><td>{movement.note || '—'}</td></tr>)}</>{!inventoryHistoryMovements.length && <tr><td colSpan={5} className="empty-cell">Nessun movimento nel periodo selezionato.</td></tr>}</Table></div></div>}
 
-      {section === 'stock-movement' && <div className="page-content settings-page"><section className="settings-panel"><div className="settings-title"><h2>Carica e scarica merce</h2><p>Registra un movimento e aggiorna automaticamente la giacenza.</p></div><form className="settings-form movement-form" onSubmit={(event) => void saveStockMovement(event)}><SelectField label="Tipo di movimento" value={stockMovementType} onChange={(value) => setStockMovementType(value === 'Scarico' ? 'Scarico' : 'Carico')} options={['Carico', 'Scarico']} /><SelectField label="Articolo" value={stockMovementProduct} onChange={setStockMovementProduct} options={data.products.map((product) => String(product.id))} labels={data.products.map((product) => `${product.name} · ${product.stock} disponibili`)} /><Field label="Quantità" type="number" min="0.01" step="any" value={stockMovementQuantity} onChange={(event) => setStockMovementQuantity(event.target.value)} required /><Field label="Nota (facoltativa)" value={stockMovementNote} onChange={(event) => setStockMovementNote(event.target.value)} /><button className="button button-primary" disabled={!data.products.length}><Check size={16} /> Registra {stockMovementType.toLowerCase()}</button></form></section></div>}
+      {section === 'stock-movement' && <div className="page-content settings-page"><section className="settings-panel"><div className="settings-title"><h2>Carica e scarica merce</h2><p>Registra un movimento e aggiorna automaticamente la giacenza.</p></div><form className="settings-form movement-form" onSubmit={(event) => void saveStockMovement(event)}><SelectField label="Tipo di movimento" value={stockMovementType} onChange={(value) => setStockMovementType(value === 'Scarico' ? 'Scarico' : 'Carico')} options={['Carico', 'Scarico']} /><SelectField label="Articolo" value={stockMovementProduct} onChange={setStockMovementProduct} options={data.products.map((product) => String(product.id))} labels={data.products.map((product) => `${product.name} · ${product.stock} ${product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'lit.' : 'pz'} disponibili`)} /><Field label={`Quantità${selectedMovementProduct?.unit === 'KG' ? ' (kg)' : selectedMovementProduct?.unit === 'LITRO' ? ' (litri)' : ''}`} type="number" min={selectedMovementProduct?.unit === 'PEZZO' ? '1' : '0.001'} step={selectedMovementProduct?.unit === 'PEZZO' ? '1' : 'any'} value={stockMovementQuantity} onChange={(event) => setStockMovementQuantity(event.target.value)} required /><Field label="Nota (facoltativa)" value={stockMovementNote} onChange={(event) => setStockMovementNote(event.target.value)} /><button className="button button-primary" disabled={!data.products.length}><Check size={16} /> Registra {stockMovementType.toLowerCase()}</button></form></section></div>}
 
-      {section === 'cash' && <div className="page-content cash-content"><div className="cash-layout"><section className="cash-products"><div className="cash-search-row"><label className="search-field"><Barcode size={17} /><input id="scanner-field" placeholder="Cerca o scansiona un codice a barre…" value={scannerSearch} onChange={(e) => setScannerSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scanCode(scannerSearch); } }} /></label><button className="icon-button camera-button" title="Scansiona con fotocamera" onClick={() => setCamera(true)}><Camera size={18} /></button></div><div className="cash-product-grid">{data.products.filter((p) => (p.name.toLowerCase().includes(scannerSearch.toLowerCase()) || p.code.includes(scannerSearch)) && p.stock > 0).map((product) => { const remainingStock = Math.max(0, product.stock - (cart.find((item) => item.product_id === product.id)?.quantity ?? 0)); return <button className="cash-product" key={product.id} disabled={remainingStock === 0} onClick={() => addToCart(product)}><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="cash-product-bottom"><b>{money.format(product.sale_price)}</b><small>{remainingStock} pz</small></span></button>; })}</div></section><aside className="cart-panel"><div className="cart-heading"><div className="cart-heading-title"><h2>CARRELLO <span>{cart.reduce((sum, item) => sum + item.quantity, 0)}</span></h2></div></div><div className="cart-lines">{cart.map((item) => <div className="cart-line" key={item.product_id}><div className="cart-line-name"><strong>{item.name}</strong></div><div className="quantity-control"><button onClick={() => changeQuantity(item.product_id, -1)} aria-label="Rimuovi uno"><Minus size={13} /></button><span>{item.quantity}</span><button onClick={() => changeQuantity(item.product_id, 1)} aria-label="Aggiungi uno"><Plus size={13} /></button></div><strong className="line-total">{money.format(item.quantity * item.unit_price)}</strong></div>)}{!cart.length && <div className="cart-empty"><ShoppingBasket size={25} /><span>Seleziona gli articoli<br />per iniziare una vendita</span></div>}</div><div className="receipt-summary"><div><span>Subtotale</span><span>{money.format(subtotal)}</span></div><div className="total-row"><strong>TOTALE</strong><strong>{money.format(subtotal)}</strong></div></div><button className="button button-primary checkout-button" disabled={!cart.length} onClick={() => setCheckoutOpen(true)}>Procedi al pagamento <span>→</span></button></aside></div></div>}
+      {section === 'cash' && <div className="page-content cash-content"><div className="cash-layout"><section className="cash-products"><div className="cash-search-row"><label className="search-field"><Barcode size={17} /><input id="scanner-field" placeholder="Cerca o scansiona un codice a barre…" value={scannerSearch} onChange={(e) => setScannerSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scanCode(scannerSearch); } }} /></label><button className="icon-button camera-button" title="Scansiona con fotocamera" onClick={() => setCamera(true)}><Camera size={18} /></button></div><div className="cash-product-grid">{data.products.filter((p) => (p.name.toLowerCase().includes(scannerSearch.toLowerCase()) || p.code.includes(scannerSearch)) && p.stock > 0).map((product) => { const remainingStock = Math.max(0, product.stock - (cart.find((item) => item.product_id === product.id)?.quantity ?? 0)); return <button className="cash-product" key={product.id} disabled={remainingStock === 0} onClick={() => addProductToCart(product)}><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="cash-product-bottom"><b>{money.format(product.sale_price)}{product.unit === 'KG' ? ' / kg' : product.unit === 'LITRO' ? ' / lit.' : ''}</b><small>{remainingStock} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'lit.' : 'pz'}</small></span></button>; })}</div></section><aside className="cart-panel"><div className="cart-heading"><div className="cart-heading-title"><h2>CARRELLO <span>{cart.reduce((sum, item) => sum + item.quantity, 0)}</span></h2></div></div><div className="cart-lines">{cart.map((item) => <div className="cart-line" key={item.product_id}><div className="cart-line-name"><strong>{item.name}</strong><small>{item.quantity} {item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'}</small></div><div className="quantity-control"><button onClick={() => changeQuantity(item.product_id, -1)} aria-label="Rimuovi uno"><Minus size={13} /></button><span>{item.quantity}</span><button onClick={() => changeQuantity(item.product_id, 1)} aria-label="Aggiungi uno"><Plus size={13} /></button></div><strong className="line-total">{money.format(item.quantity * item.unit_price)}</strong></div>)}{!cart.length && <div className="cart-empty"><ShoppingBasket size={25} /><span>Seleziona gli articoli<br />per iniziare una vendita</span></div>}</div><div className="receipt-summary"><div><span>Subtotale</span><span>{money.format(subtotal)}</span></div><div className="total-row"><strong>TOTALE</strong><strong>{money.format(subtotal)}</strong></div></div><button className="button button-primary checkout-button" disabled={!cart.length} onClick={() => setCheckoutOpen(true)}>Procedi al pagamento <span>→</span></button></aside></div></div>}
 
-      {section === 'sales' && <div className="page-content"><div className="sale-tools"><button className="button button-outline" onClick={() => setCamera(true)}><Camera size={16} /> Cerca con fotocamera</button><SearchInput value={saleSearch} onChange={setSaleSearch} placeholder="Cerca numero scontrino…" numericOnly /><button className="button button-outline" onClick={exportReport}><ArrowDownToLine size={16} /> Esporta PDF</button></div><div className="sale-filters"><SelectField label="Periodo" value={salesPeriod} onChange={setSalesPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A']} />{salesPeriod === 'Da - A' && <><Field label="Da" type="date" value={salesFrom} onChange={(event) => setSalesFrom(event.target.value)} /><Field label="A" type="date" value={salesTo} onChange={(event) => setSalesTo(event.target.value)} /></>}<SelectField label="Categoria" value={salesCategory} onChange={setSalesCategory} options={['Tutte', ...categories]} /></div><SalesTable sales={salesList} onSelect={setReceipt} /></div>}
+      {section === 'sales' && <div className="page-content"><div className="sale-tools"><button className="button button-outline" onClick={exportReport}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-outline" onClick={exportSalesCsv}><ArrowDownToLine size={16} /> Esporta CSV</button><button className="button button-outline" onClick={() => setCamera(true)}><Camera size={16} /> Cerca con fotocamera</button><SearchInput value={saleSearch} onChange={setSaleSearch} placeholder="Cerca numero scontrino…" numericOnly /></div><div className="sale-filters"><SelectField label="Periodo" value={salesPeriod} onChange={setSalesPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A']} />{salesPeriod === 'Da - A' && <><Field label="Da" type="date" value={salesFrom} onChange={(event) => setSalesFrom(event.target.value)} /><Field label="A" type="date" value={salesTo} onChange={(event) => setSalesTo(event.target.value)} /></>}<SelectField label="Categoria" value={salesCategory} onChange={setSalesCategory} options={['Tutte', ...categories]} /></div><SalesTable sales={salesList} onSelect={setReceipt} /></div>}
 
-      {section === 'sale-management' && <div className="page-content settings-page"><section className="settings-panel"><div className="settings-title"><h2>Modifica o elimina una vendita</h2><p>Inserisci il numero a 5 cifre oppure leggilo con il lettore barcode.</p></div><div className="lookup-panel"><Field label="Numero scontrino" type="text" inputMode="numeric" pattern="[0-9]*" maxLength={5} value={saleLookup} onChange={(e) => setSaleLookup(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => { if (e.key === 'Enter') findSale(); }} placeholder="Numero scontrino" /><button className="button button-primary" onClick={findSale}><Search size={16} /> Cerca scontrino</button></div></section></div>}
+      {section === 'sale-management' && <div className="page-content settings-page"><section className="settings-panel"><div className="settings-title"><h2>Modifica o elimina una vendita</h2><p>Inserisci il numero a 5 cifre oppure leggilo con il lettore barcode.</p></div><div className="lookup-panel"><Field label="Numero scontrino" type="text" inputMode="numeric" pattern="[0-9]*" maxLength={5} value={saleLookup} onChange={(e) => setSaleLookup(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => { if (e.key === 'Enter') findSale(); }} placeholder="Numero scontrino" /><button className="button button-primary" onClick={findSale}><Search size={16} /> Cerca scontrino</button><button className="button button-outline" onClick={() => setCamera(true)}><Camera size={16} /> Scansiona con fotocamera</button></div></section></div>}
 
       {section === 'promotions' && <div className="page-content settings-page"><section className="settings-panel">
         <div className="settings-title"><h2>Promozioni</h2><p>Crea offerte con periodo, categoria e condizioni di spesa.</p></div>
@@ -611,7 +777,8 @@ export default function App() {
     </main>
 
     {unsoldListOpen && <Modal title="Articoli ancora in magazzino" close={() => setUnsoldListOpen(false)} wide><div id="unsold-list-print"><Table headings={['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']}><>{unsoldProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td>{product.category}</td><td>{product.stock} {product.unit ?? 'PEZZO'}</td><td>{money.format(product.sale_price)}</td></tr>)}</>{!unsoldProducts.length && <tr><td colSpan={4} className="empty-cell">Non risultano articoli rimanenti in magazzino.</td></tr>}</Table></div><div className="unsold-list-actions no-print"><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa</button><button className="button button-primary" onClick={() => void shareUnsoldList()}><Share2 size={16} /> Condividi</button></div></Modal>}
-    {pendingUnknownCode && <Modal title="Articolo non presente" wide close={() => { setPendingUnknownCode(''); setScannerSearch(''); }}><div className="unknown-code-message"><CircleAlert size={26} /><p>Il codice a barre <strong>{pendingUnknownCode}</strong> non è presente tra gli articoli.</p><span>Vuoi aggiungerlo come nuovo articolo? Il codice verrà mantenuto e non sarà modificabile manualmente.</span><div className="form-actions"><button className="button button-quiet" onClick={() => { setPendingUnknownCode(''); setScannerSearch(''); }}>Annulla</button><button className="button button-primary" onClick={() => { setProductForm({ ...blankProduct, code: pendingUnknownCode }); setPendingUnknownCode(''); }}><Plus size={16} /> Aggiungi articolo</button></div></div></Modal>}
+    {pendingUnknownCode && <Modal title="Articolo non presente" wide close={() => { setPendingUnknownCode(''); setScannerSearch(''); }}><div className="unknown-code-message"><CircleAlert size={26} /><p>Il codice a barre <strong>{pendingUnknownCode}</strong> non è presente tra gli articoli.</p><span>Puoi aggiungerlo come nuovo articolo: il codice acquisito sarà già inserito nel modulo.</span><div className="form-actions"><button className="button button-quiet" onClick={() => { setPendingUnknownCode(''); setScannerSearch(''); }}>Annulla</button><button className="button button-primary" onClick={() => { setProductForm({ ...blankProduct, code: pendingUnknownCode }); setPendingUnknownCode(''); }}><Plus size={16} /> Aggiungi articolo</button></div></div></Modal>}
+    {measuredProduct && <Modal title={measuredProduct.unit === 'KG' ? `Inserisci il peso · ${measuredProduct.name}` : `Inserisci il volume · ${measuredProduct.name}`} close={() => setMeasuredProduct(null)}><form className="form-grid measured-quantity-form" onSubmit={confirmMeasuredQuantity}><p className="measured-price">{money.format(measuredProduct.sale_price)} / {measuredProduct.unit === 'KG' ? 'kg' : 'lit.'}</p><Field label={measuredProduct.unit === 'KG' ? 'Peso in kg' : 'Volume in litri'} type="number" min="0.001" step="any" value={measuredQuantity} onChange={(event) => setMeasuredQuantity(event.target.value)} required autoFocus placeholder={measuredProduct.unit === 'KG' ? 'Es. 0,750' : 'Es. 1,500'} /><div className="form-actions"><button className="button button-quiet full-width" type="button" onClick={() => setMeasuredProduct(null)}>Annulla</button><button className="button button-primary full-width"><Check size={16} /> Aggiungi al carrello</button></div></form></Modal>}
     {productForm && <ProductForm initial={productForm} save={saveProduct} close={() => setProductForm(null)} />}
     {stockProduct && <Modal title={`Aggiungi quantità · ${stockProduct.name}`} close={() => setStockProduct(null)}><form className="form-grid stock-form" onSubmit={(event) => void saveStock(event)}>
       <p className="stock-current">Giacenza attuale: <strong>{stockProduct.stock}</strong></p>
@@ -638,7 +805,7 @@ export default function App() {
       <div className="payment-note"><ShieldCheck size={16} />Lo scontrino viene registrato nel database locale.</div>
       <button className="button button-primary full-width" onClick={() => void checkout()}><Check size={17} /> Conferma e stampa scontrino</button>
     </div></Modal>}
-    {receipt && <Modal title={`Scontrino #${receipt.receipt_no}`} close={() => setReceipt(null)}><div className="receipt-print" id="receipt-print"><div className="receipt-shop">{data.settings.shop_name}</div><div className="receipt-spacer" /><div className="receipt-datetime"><span>{receiptDate.format(new Date(receipt.created_at))}</span><span>{receiptTime.format(new Date(receipt.created_at))}</span></div><div>Numero scontrino: {receipt.receipt_no}</div><div className="receipt-dash" /><div className="receipt-head"><span>Articolo</span><span>Qtà</span><span>Prezzo</span></div>{receipt.items.map((item, index) => <div className="receipt-item" key={`${item.code}-${index}`}><span>{item.name}</span><span>{item.quantity} {item.unit === 'PEZZO' || !item.unit ? '' : item.unit}</span><span>{money.format(item.unit_price * item.quantity)}</span></div>)}<div className="receipt-dash" /><div className="receipt-total"><strong>TOTALE</strong><strong>{money.format(receipt.total)}</strong></div><div>Pagamento: {receipt.payment_method}</div><div className="receipt-dash" /><div className="receipt-spacer" /><svg id="receipt-barcode" /><div className="receipt-spacer" /><div className="receipt-thanks">Grazie per averci scelto!</div></div><div className="receipt-actions"><button className="button button-primary full-width" onClick={printReceipt}><Printer size={16} /> Stampa scontrino</button></div></Modal>}
+    {receipt && <Modal title={`Scontrino #${receipt.receipt_no}`} close={() => setReceipt(null)}><div className="receipt-print" id="receipt-print"><div className="receipt-shop">{data.settings.shop_name}</div><div className="receipt-spacer" /><div className="receipt-datetime"><span>{receiptDate.format(new Date(receipt.created_at))}</span><span>{receiptTime.format(new Date(receipt.created_at))}</span></div><div>Numero scontrino: {receipt.receipt_no}</div><div className="receipt-dash" /><div className="receipt-head"><span>Articolo</span><span>Qtà</span><span>Prezzo</span></div>{receipt.items.map((item, index) => <div className="receipt-item" key={`${item.code}-${index}`}><span>{item.name}</span><span>{receiptQuantity.format(item.quantity)}{item.unit === 'KG' ? ' kg' : item.unit === 'LITRO' ? ' lit.' : ''}</span><span>{money.format(item.unit_price * item.quantity)}</span></div>)}<div className="receipt-dash" /><div className="receipt-total"><strong>TOTALE</strong><strong>{money.format(receipt.total)}</strong></div><div>Pagamento: {receipt.payment_method}</div><div className="receipt-dash" /><div className="receipt-spacer" /><svg id="receipt-barcode" /><div className="receipt-spacer" /><div className="receipt-thanks">Grazie per averci scelto!</div></div><div className="receipt-actions"><button className="button button-primary full-width" onClick={printReceipt}><Printer size={16} /> Stampa scontrino</button></div></Modal>}
     {saleDialog && <Modal title={`Vendita #${saleDialog.receipt_no}`} close={() => setSaleDialog(null)} wide><div className="sale-edit">
       <div className="sale-edit-fields">
         <SelectField label="Metodo di pagamento" value={saleDialog.payment_method} onChange={(value) => setSaleDialog({ ...saleDialog, payment_method: value })} options={['Carta', 'Contanti', 'Bancomat', 'Buono']} />
