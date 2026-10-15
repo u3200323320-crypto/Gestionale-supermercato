@@ -101,6 +101,7 @@ function ProductForm({ initial, save, close }: { initial: ProductInput; save: (p
 export default function App() {
   const [data, setData] = useState<AppState | null>(null);
   const [section, setSection] = useState<Section>('home');
+  const [extraMenuActive, setExtraMenuActive] = useState(false);
   const [stockMovementType, setStockMovementType] = useState<'Carico' | 'Scarico'>('Carico');
   const [stockMovementProduct, setStockMovementProduct] = useState('');
   const [stockMovementQuantity, setStockMovementQuantity] = useState('');
@@ -116,6 +117,7 @@ export default function App() {
   const [extraTab, setExtraTab] = useState<string | null>(null);
   const [extraInventoryOpen, setExtraInventoryOpen] = useState(false);
   const [extraOfferOpen, setExtraOfferOpen] = useState(false);
+  const [voucherPrintBatch, setVoucherPrintBatch] = useState<AppState['voucherBatches'][number] | null>(null);
   const [voucherPercentage, setVoucherPercentage] = useState('10');
   const [voucherQuantity, setVoucherQuantity] = useState('1');
   const [voucherStartsAt, setVoucherStartsAt] = useState(localDateKey());
@@ -170,13 +172,20 @@ export default function App() {
   const refresh = async () => { const next = await window.gestionale.getState(); setData(next); setShopName(next.settings.shop_name); setArchiveFolder(next.settings.archive_folder); return next; };
   const notify = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 3600); };
   useEffect(() => { void window.gestionale.hasPin().then((exists) => { setHasPin(exists); if (!exists) { setLocked(false); void refresh(); } }); }, []);
-  useEffect(() => { const openCash = (event: KeyboardEvent) => { if (event.key === 'F2') { event.preventDefault(); setSection('cash'); } }; window.addEventListener('keydown', openCash); return () => window.removeEventListener('keydown', openCash); }, []);
+  useEffect(() => { const openCash = (event: KeyboardEvent) => { if (event.key === 'F2') { event.preventDefault(); setExtraMenuActive(false); setSection('cash'); } }; window.addEventListener('keydown', openCash); return () => window.removeEventListener('keydown', openCash); }, []);
   useEffect(() => {
     if (section === 'cash' && !camera && !pendingUnknownCode && !productForm) {
       requestAnimationFrame(() => document.getElementById('scanner-field')?.focus());
     }
   }, [section, camera, pendingUnknownCode, productForm]);
   useEffect(() => { if (receipt) { const barcode = document.getElementById('receipt-barcode'); if (barcode) JsBarcode(barcode, receipt.receipt_no, { format: 'CODE128', width: 2.1, height: 48, displayValue: false, margin: 0 }); } }, [receipt]);
+  useEffect(() => {
+    if (!voucherPrintBatch) return;
+    const clearPrintBatch = () => setVoucherPrintBatch(null);
+    window.addEventListener('afterprint', clearPrintBatch);
+    window.print();
+    return () => window.removeEventListener('afterprint', clearPrintBatch);
+  }, [voucherPrintBatch]);
 
   const categories = [...new Set(data?.products.map((item) => item.category) ?? [])];
   const availableSaleProducts = data?.products.filter((product) => product.stock > 0) ?? [];
@@ -283,6 +292,22 @@ export default function App() {
     } catch (error) {
       notify(errorText(error));
     }
+  };
+  const downloadVoucherBatch = (batch: AppState['voucherBatches'][number]) => {
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text(`Buoni sconto gruppo ${batch.id}`, 14, 17);
+    doc.setFontSize(10);
+    doc.text(`Sconto: ${batch.discount_percentage}%`, 14, 25);
+    doc.text(`Validità: ${batch.starts_at} - ${batch.ends_at}`, 14, 31);
+    autoTable(doc, {
+      startY: 38,
+      head: [['Codice', 'Sconto', 'Data inizio', 'Data scadenza']],
+      body: batch.codes.map((code) => [code, `${batch.discount_percentage}%`, batch.starts_at, batch.ends_at]),
+      styles: { fontSize: 10 },
+      headStyles: { fillColor: [56, 104, 78] },
+    });
+    doc.save(`buoni-sconto-gruppo-${batch.id}.pdf`);
   };
   const handleScannedCode = (code: string) => {
     const normalized = code.trim();
@@ -780,13 +805,23 @@ export default function App() {
       <div className="nav-label">OPERATIVITÀ</div>
       <nav>{nav.map(({ section: target, label, icon: Icon }, index) => <Fragment key={target}>
         {index === 5 && <div className="nav-label">Servizio Clienti</div>}
-        <button className={`nav-item${section === target || (target === 'inventory' && section.startsWith('inventory')) ? ' active' : ''}`} onClick={() => { if (target === 'extras') { setExtraTab(null); setExtraInventoryOpen(false); setExtraOfferOpen(false); } setSection(target); }}>
+        <button className={`nav-item${section === target || (target === 'inventory' && section.startsWith('inventory')) ? ' active' : ''}`} onClick={() => { setExtraMenuActive(target === 'extras'); if (target === 'extras') { setExtraTab(null); setExtraInventoryOpen(false); setExtraOfferOpen(false); } setSection(target); }}>
           <Icon size={18} /><span>{label}</span>{target === 'cash' && <kbd>F2</kbd>}
         </button>
       </Fragment>)}</nav>
-      <div className="sidebar-bottom"><button className={`nav-item settings-link${section === 'settings' ? ' active' : ''}`} onClick={() => { setSettingsTab(null); setSection('settings'); }}><Settings size={18} /><span>Impostazioni</span></button><div className="user-card"><div className="user-avatar">{data.settings.shop_name.slice(0, 1).toUpperCase()}</div><div><strong>Gestore</strong><small>Account locale</small></div></div></div>
+      <div className="sidebar-bottom"><button className={`nav-item settings-link${section === 'settings' ? ' active' : ''}`} onClick={() => { setExtraMenuActive(false); setSettingsTab(null); setSection('settings'); }}><Settings size={18} /><span>Impostazioni</span></button><div className="user-card"><div className="user-avatar">{data.settings.shop_name.slice(0, 1).toUpperCase()}</div><div><strong>Gestore</strong><small>Account locale</small></div></div></div>
     </aside>
-    <main className="main-content"><header className="topbar"><h1>{sectionLabel}</h1>{data.settings.shop_logo ? <img className="topbar-logo" src={data.settings.shop_logo} alt="Logo negozio" /> : <div className="topbar-logo-fallback"><Store size={19} /></div>}<div className="topbar-right"><div className="today-date">{new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}</div><span className="store-chip"><span className="status-dot" />Operativo</span></div></header>
+    <main className={`main-content${extraMenuActive ? ' extra-menu-active' : ''}`}><header className="topbar"><h1>{sectionLabel}</h1>{data.settings.shop_logo ? <img className="topbar-logo" src={data.settings.shop_logo} alt="Logo negozio" /> : <div className="topbar-logo-fallback"><Store size={19} /></div>}<div className="topbar-right"><div className="today-date">{new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}</div><span className="store-chip"><span className="status-dot" />Operativo</span></div></header>
+      {extraMenuActive && <nav className="settings-nav extras-side-nav" aria-label="Menu Gestione Extra">
+        <button aria-expanded={extraOfferOpen} className={extraOfferOpen ? 'selected' : ''} onClick={() => { setSection('extras'); setExtraTab('Offerta'); setExtraOfferOpen((open) => !open); setExtraInventoryOpen(false); }}><TrendingUp size={17} />Offerta<ChevronDown className={`nav-chevron${extraOfferOpen ? ' open' : ''}`} size={15} /></button>
+        {extraOfferOpen && <div className="nav-submenu"><button className="nav-subitem" onClick={() => { setSection('promotions'); setExtraTab(null); }}>Crea offerta</button><button className="nav-subitem" onClick={() => { setSection('extras'); setExtraTab('Crea buoni sconto'); setVoucherPreview(null); }}>Crea buoni sconto</button><button className="nav-subitem" onClick={() => { setSection('extras'); setExtraTab('Lista buoni sconto'); }}>Lista buoni sconto</button></div>}
+        <button aria-expanded={extraInventoryOpen} className={extraInventoryOpen ? 'selected' : ''} onClick={() => { setSection('extras'); setExtraTab('Magazzino'); setExtraInventoryOpen((open) => !open); setExtraOfferOpen(false); }}><Package size={17} />Magazzino<ChevronDown className={`nav-chevron${extraInventoryOpen ? ' open' : ''}`} size={15} /></button>
+        {extraInventoryOpen && <div className="nav-submenu"><button className="nav-subitem" onClick={() => setSection('inventory')}>Magazzino</button><button className="nav-subitem" onClick={() => setSection('inventory-history')}>Storico Magazzino</button><button className="nav-subitem" onClick={() => { setStockMovementProduct(String(data.products[0]?.id ?? '')); setSection('stock-movement'); }}>Carica e scarica (Merce)</button></div>}
+        <button onClick={() => { setSection('sale-management'); setExtraTab(null); }}><ClipboardList size={17} />Modifica o Elimina</button>
+        <button onClick={() => { setSection('extras'); setExtraTab('Contabilità e finanza'); }}><Banknote size={17} />Contabilità e finanza</button>
+        <button onClick={() => { setSection('extras'); setExtraTab('Dipendenti'); }}><ClipboardList size={17} />Dipendenti</button>
+        <button onClick={() => { setSection('extras'); setExtraTab('Clienti'); }}><ShoppingBasket size={17} />Clienti</button>
+      </nav>}
 
       {section === 'home' && <div className="page-content home-page"><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length} scontrini emessi`} /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyTotal)} detail="Incasso al netto degli sconti" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString('it-IT')} detail="Pezzi registrati oggi" /></div><section className="expiry-alert expiry-home-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length} articoli sotto soglia`} action={<button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); setSection('inventory'); }}>Vai al magazzino →</button>} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => setSelectedProduct(p)}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock}</td><td>{p.low_stock_threshold}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => setSection('sales')}>Tutte le vendite →</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
 
@@ -849,18 +884,10 @@ export default function App() {
         </div>)}</div>
       </section></div>}
 
-      {section === 'extras' && <div className="page-content settings-page"><div className="settings-layout">
-        {extraTab === null && <nav className="settings-nav">
-          {[{ name: 'Contabilità e Finanzia', icon: Banknote }, { name: 'Fornitori e Ordini', icon: Package }, { name: 'Dipendenti', icon: ClipboardList }, { name: 'Clienti', icon: ShoppingBasket }].map(({ name, icon: Icon }) => <button key={name} onClick={() => setExtraTab(name)}><Icon size={17} />{name}</button>)}
-          <button aria-expanded={extraInventoryOpen} onClick={() => { setExtraInventoryOpen((open) => !open); setExtraOfferOpen(false); }}><Package size={17} />Magazzino<ChevronDown className={`nav-chevron${extraInventoryOpen ? ' open' : ''}`} size={15} /></button>
-          {extraInventoryOpen && <div className="nav-submenu"><button className="nav-subitem" onClick={() => setSection('inventory')}>Magazzino</button><button className="nav-subitem" onClick={() => setSection('inventory-history')}>Storico Magazzino</button><button className="nav-subitem" onClick={() => { setStockMovementProduct(String(data.products[0]?.id ?? '')); setSection('stock-movement'); }}>Carica e scarica (Merce)</button></div>}
-          <button onClick={() => setSection('sale-management')}><ClipboardList size={17} />Modifica o Elimina</button>
-          <button aria-expanded={extraOfferOpen} onClick={() => { setExtraOfferOpen((open) => !open); setExtraInventoryOpen(false); }}><TrendingUp size={17} />Offerta<ChevronDown className={`nav-chevron${extraOfferOpen ? ' open' : ''}`} size={15} /></button>
-          {extraOfferOpen && <div className="nav-submenu"><button className="nav-subitem" onClick={() => setSection('promotions')}>Crea offerta</button><button className="nav-subitem" onClick={() => { setVoucherPreview(null); setExtraTab('Crea buoni sconto'); }}>Crea buoni sconto</button><button className="nav-subitem" onClick={() => setExtraTab('Lista buoni sconto')}>Lista buoni sconto</button></div>}
-        </nav>}
-        {extraTab && !['Crea buoni sconto', 'Lista buoni sconto'].includes(extraTab) && <section className="settings-panel"><button className="settings-back" onClick={() => setExtraTab(null)}><ArrowLeft size={15} /> Gestione Extra</button><div className="settings-title"><h2>{extraTab}</h2><p>Area di gestione {extraTab.toLowerCase()}.</p></div><p className="muted">Sezione in preparazione.</p></section>}
-        {extraTab === 'Crea buoni sconto' && <section className="settings-panel">
-          <button className="settings-back" onClick={() => { cancelVoucherPreview(); setExtraTab(null); }}><ArrowLeft size={15} /> Gestione Extra</button>
+      {section === 'extras' && <div className="page-content settings-page"><section className="settings-panel extras-content-panel">
+        {(!extraTab || extraTab === 'Offerta' || extraTab === 'Magazzino') && <><div className="settings-title"><h2>Gestione Extra</h2><p>Seleziona una voce dal menu a sinistra per aprire la relativa sezione.</p></div><p className="muted">Le funzioni selezionate verranno visualizzate in questa area.</p></>}
+        {extraTab && !['Offerta', 'Magazzino', 'Crea buoni sconto', 'Lista buoni sconto'].includes(extraTab) && <><div className="settings-title"><h2>{extraTab}</h2><p>Area di gestione {extraTab.toLowerCase()}.</p></div><p className="muted">Sezione in preparazione.</p></>}
+        {extraTab === 'Crea buoni sconto' && <div className="voucher-section">
           <div className="settings-title"><h2>Crea buoni sconto</h2><p>Imposta le condizioni e genera codici univoci da stampare e distribuire.</p></div>
           {!voucherPreview ? <form className="form-grid promotion-form voucher-form" onSubmit={generateVoucherPreview}>
             <Field label="Percentuale di sconto (%)" type="number" min="1" max="100" step="1" value={voucherPercentage} onChange={(event) => setVoucherPercentage(event.target.value)} required />
@@ -873,16 +900,18 @@ export default function App() {
             <div id="voucher-print" className="table-wrap voucher-codes"><table><thead><tr><th>Codice</th><th>Sconto</th><th>Inizio</th><th>Scadenza</th></tr></thead><tbody>{voucherPreview.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td>{voucherPreview.discount_percentage}%</td><td>{voucherPreview.starts_at}</td><td>{voucherPreview.ends_at}</td></tr>)}</tbody></table></div>
             <div className="voucher-actions no-print"><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa codici</button><button className="button button-quiet" onClick={cancelVoucherPreview}>Annulla</button><button className="button button-primary" onClick={() => void confirmVoucherBatch()}><Check size={16} /> Conferma e salva</button></div>
           </>}
-        </section>}
-        {extraTab === 'Lista buoni sconto' && <section className="settings-panel">
-          <button className="settings-back" onClick={() => setExtraTab(null)}><ArrowLeft size={15} /> Gestione Extra</button>
+        </div>}
+        {extraTab === 'Lista buoni sconto' && <div className="voucher-section">
           <div className="settings-title"><h2>Lista buoni sconto</h2><p>Codici confermati, pronti per la stampa e la distribuzione.</p></div>
           {!data.voucherBatches.length ? <Empty icon={Barcode} title="Nessun buono sconto" detail="Crea e conferma un gruppo di codici per visualizzarlo qui." /> : <>
-            <div className="voucher-actions no-print"><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa tutti i codici</button></div>
-            <div id="voucher-print" className="table-wrap voucher-codes"><table><thead><tr><th>Codice</th><th>Sconto</th><th>Inizio</th><th>Scadenza</th></tr></thead><tbody>{data.voucherBatches.flatMap((batch) => batch.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td>{batch.discount_percentage}%</td><td>{batch.starts_at}</td><td>{batch.ends_at}</td></tr>))}</tbody></table></div>
+            <div className="voucher-batch-list">{data.voucherBatches.map((batch) => <div className="voucher-batch-row" key={batch.id}>
+              <div><strong>Gruppo {batch.id}</strong><span>{batch.codes.length} codici · {batch.discount_percentage}% di sconto</span><small>{batch.starts_at} — {batch.ends_at}</small></div>
+              <div className="voucher-actions no-print"><button className="button button-outline" onClick={() => setVoucherPrintBatch(batch)}><Printer size={15} /> Stampa</button><button className="button button-outline" onClick={() => downloadVoucherBatch(batch)}><ArrowDownToLine size={15} /> Scarica lista</button></div>
+            </div>)}</div>
+            {voucherPrintBatch && <div id="voucher-print" className="table-wrap voucher-codes voucher-print-only"><h2>Buoni sconto gruppo {voucherPrintBatch.id} · {voucherPrintBatch.discount_percentage}%</h2><p>{voucherPrintBatch.starts_at} — {voucherPrintBatch.ends_at}</p><table><thead><tr><th>Codice</th><th>Sconto</th><th>Inizio</th><th>Scadenza</th></tr></thead><tbody>{voucherPrintBatch.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td>{voucherPrintBatch.discount_percentage}%</td><td>{voucherPrintBatch.starts_at}</td><td>{voucherPrintBatch.ends_at}</td></tr>)}</tbody></table></div>}
           </>}
-        </section>}
-      </div></div>}
+        </div>}
+      </section></div>}
 
       {section === 'statistics' && <div className="page-content">
         <div className="page-toolbar"><div><h2>Rendimento e andamento</h2></div><span className="period-chip">Dati aggiornati in tempo reale</span></div>
