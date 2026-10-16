@@ -1,6 +1,6 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, InputHTMLAttributes, ReactNode } from 'react';
-import { Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Camera, Check, ChevronDown, CircleAlert, ClipboardList, CreditCard, House, LockKeyhole, Minus, Package, Pencil, Plus, Printer, Search, Settings, Share2, ShieldCheck, ShoppingBasket, Store, Trash2, TrendingUp, X } from 'lucide-react';
+import { Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Camera, Check, ChevronDown, CircleAlert, ClipboardList, CreditCard, Eye, House, LockKeyhole, Minus, Package, Pencil, Plus, Printer, Search, Settings, Share2, ShieldCheck, ShoppingBasket, Store, Trash2, TrendingUp, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -23,8 +23,14 @@ type PromotionMinimum = 'none' | 'spend' | 'kilograms' | 'pieces' | 'liters';
 const nav: { section: Section; label: string; icon: typeof House }[] = [
   { section: 'home', label: 'Homepage', icon: House }, { section: 'inventory', label: 'Magazzino', icon: Package },
   { section: 'cash', label: 'Cassa', icon: ShoppingBasket }, { section: 'sales', label: 'Vendite', icon: ClipboardList },
-  { section: 'statistics', label: 'Statistiche', icon: BarChart3 }, { section: 'extras', label: 'Gestione Extra', icon: Banknote },
+  { section: 'statistics', label: 'Statistiche', icon: BarChart3 },
 ];
+const sectionNames: Partial<Record<Section, string>> = {
+  'inventory-history': 'Storico Magazzino', 'stock-movement': 'Carica e scarica merce',
+  'sale-management': 'Modifica o Elimina', promotions: 'Offerta', 'vouchers-create': 'Crea buoni sconto',
+  'vouchers-list': 'Lista buoni sconto', accounting: 'Contabilità e finanza', clients: 'Clienti',
+  employees: 'Lista Dipendenti', 'employee-create': 'Crea Dipendente', payroll: 'Paga Stipendi',
+};
 const voucherCodePrefix = 'Co-di-ce-';
 const voucherCodeSpace = 100_000_000;
 function randomVoucherCode(usedCodes: Set<string>): string {
@@ -101,7 +107,7 @@ function ProductForm({ initial, save, close }: { initial: ProductInput; save: (p
 export default function App() {
   const [data, setData] = useState<AppState | null>(null);
   const [section, setSection] = useState<Section>('home');
-  const [extraMenuActive, setExtraMenuActive] = useState(false);
+  const [openSidebarMenu, setOpenSidebarMenu] = useState<'inventory' | 'offers' | 'employees' | null>('inventory');
   const [stockMovementType, setStockMovementType] = useState<'Carico' | 'Scarico'>('Carico');
   const [stockMovementProduct, setStockMovementProduct] = useState('');
   const [stockMovementQuantity, setStockMovementQuantity] = useState('');
@@ -114,10 +120,8 @@ export default function App() {
   const [statisticsPeriod, setStatisticsPeriod] = useState('Tutti');
   const [unsoldListOpen, setUnsoldListOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
-  const [extraTab, setExtraTab] = useState<string | null>(null);
-  const [extraInventoryOpen, setExtraInventoryOpen] = useState(false);
-  const [extraOfferOpen, setExtraOfferOpen] = useState(false);
   const [voucherPrintBatch, setVoucherPrintBatch] = useState<AppState['voucherBatches'][number] | null>(null);
+  const [voucherViewBatch, setVoucherViewBatch] = useState<AppState['voucherBatches'][number] | null>(null);
   const [voucherPercentage, setVoucherPercentage] = useState('10');
   const [voucherQuantity, setVoucherQuantity] = useState('1');
   const [voucherStartsAt, setVoucherStartsAt] = useState(localDateKey());
@@ -147,7 +151,9 @@ export default function App() {
   const [salesCategory, setSalesCategory] = useState('Tutte');
   const [category, setCategory] = useState('Tutte');
   const [paymentMethod, setPaymentMethod] = useState('Carta');
-  const [discount, setDiscount] = useState(0);
+  const [voucherCode, setVoucherCode] = useState('');
+  const [voucherMessage, setVoucherMessage] = useState('');
+  const [voucherDiscountPercentage, setVoucherDiscountPercentage] = useState(0);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [promotionDuration, setPromotionDuration] = useState('1 giorno');
   const [saleAddOpen, setSaleAddOpen] = useState(false);
@@ -172,7 +178,7 @@ export default function App() {
   const refresh = async () => { const next = await window.gestionale.getState(); setData(next); setShopName(next.settings.shop_name); setArchiveFolder(next.settings.archive_folder); return next; };
   const notify = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 3600); };
   useEffect(() => { void window.gestionale.hasPin().then((exists) => { setHasPin(exists); if (!exists) { setLocked(false); void refresh(); } }); }, []);
-  useEffect(() => { const openCash = (event: KeyboardEvent) => { if (event.key === 'F2') { event.preventDefault(); setExtraMenuActive(false); setSection('cash'); } }; window.addEventListener('keydown', openCash); return () => window.removeEventListener('keydown', openCash); }, []);
+  useEffect(() => { const openCash = (event: KeyboardEvent) => { if (event.key === 'F2') { event.preventDefault(); setSection('cash'); } }; window.addEventListener('keydown', openCash); return () => window.removeEventListener('keydown', openCash); }, []);
   useEffect(() => {
     if (section === 'cash' && !camera && !pendingUnknownCode && !productForm) {
       requestAnimationFrame(() => document.getElementById('scanner-field')?.focus());
@@ -287,7 +293,7 @@ export default function App() {
       await window.gestionale.saveVoucherBatch(voucherPreview);
       await refresh();
       cancelVoucherPreview();
-      setExtraTab('Lista buoni sconto');
+      setSection('vouchers-list');
       notify('Buoni sconto aggiunti alla lista.');
     } catch (error) {
       notify(errorText(error));
@@ -309,6 +315,23 @@ export default function App() {
     });
     doc.save(`buoni-sconto-gruppo-${batch.id}.pdf`);
   };
+  const applyVoucherCode = async (code: string) => {
+    const normalized = code.trim();
+    setVoucherCode(normalized);
+    setVoucherMessage('Verifica del buono in corso…');
+    setVoucherDiscountPercentage(0);
+    try {
+      const result = await window.gestionale.validateVoucher(normalized);
+      if (!result.valid) {
+        setVoucherMessage(result.message);
+        return;
+      }
+      setVoucherDiscountPercentage(result.discount_percentage);
+      setVoucherMessage(`Buono valido · sconto ${result.discount_percentage}%`);
+    } catch (error) {
+      setVoucherMessage(errorText(error));
+    }
+  };
   const handleScannedCode = (code: string) => {
     const normalized = code.trim();
     if (!normalized || !data?.settings.barcode_scanner_enabled) return;
@@ -316,7 +339,9 @@ export default function App() {
       setData((current) => current ? { ...current, settings: { ...current.settings, barcode_scanner_detected: true } } : current);
       void window.gestionale.saveSetting('barcode_scanner_detected', 'true').catch((error: unknown) => notify(errorText(error)));
     }
-    if (section === 'cash') scanCode(normalized);
+    if (checkoutOpen) void applyVoucherCode(normalized);
+    else if (section === 'cash') scanCode(normalized);
+    else if (section === 'inventory') setInventorySearch(normalized);
     else if (section === 'sales') setSaleSearch(normalized.replace(/\D/g, ''));
     else if (section === 'sale-management') {
       const receiptNumber = normalized.replace(/\D/g, '');
@@ -328,7 +353,7 @@ export default function App() {
   };
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!['cash', 'sales', 'sale-management'].includes(section) || !data?.settings.barcode_scanner_enabled) return;
+      if (!['cash', 'inventory', 'sales', 'sale-management'].includes(section) || !data?.settings.barcode_scanner_enabled) return;
       const now = performance.now();
       const sequence = scannerSequence.current;
       if (event.key === 'Enter') {
@@ -337,7 +362,7 @@ export default function App() {
           event.preventDefault();
           event.stopPropagation();
           handleScannedCode(sequence.value);
-          if (section === 'cash') requestAnimationFrame(() => document.getElementById('scanner-field')?.focus());
+          if (section === 'cash' && !checkoutOpen) requestAnimationFrame(() => document.getElementById('scanner-field')?.focus());
         }
         sequence.value = '';
         return;
@@ -352,7 +377,7 @@ export default function App() {
     };
     document.addEventListener('keydown', onKeyDown, true);
     return () => document.removeEventListener('keydown', onKeyDown, true);
-  }, [data, section]);
+  }, [data, section, checkoutOpen]);
   useEffect(() => {
     if (section !== 'settings' || settingsTab !== 'Dispositivi') return;
     void window.gestionale.getPrinters().then(setPrinters).catch((error: unknown) => notify(errorText(error)));
@@ -410,10 +435,9 @@ export default function App() {
     if (target === 'cash') addToCart(product);
     else addProductToSaleCart(product);
   };
-  const confirmMeasuredQuantity = (event: FormEvent) => {
-    event.preventDefault();
+  const addMeasuredQuantity = (quantityValue: number) => {
     if (!measuredProduct) return;
-    const quantity = roundQuantity(Number(measuredQuantity));
+    const quantity = roundQuantity(quantityValue);
     if (!Number.isFinite(quantity) || quantity <= 0) { notify('Inserisci un peso o un volume maggiore di zero.'); return; }
     if (measuredTarget === 'cash') {
       const inCart = cart.find((item) => item.product_id === measuredProduct.id)?.quantity ?? 0;
@@ -431,12 +455,16 @@ export default function App() {
     setMeasuredProduct(null);
     setMeasuredQuantity('');
   };
+  const confirmMeasuredQuantity = (event: FormEvent) => {
+    event.preventDefault();
+    addMeasuredQuantity(Number(measuredQuantity));
+  };
   const updateSale = async () => { if (!saleDialog) return; const items = saleDialog.items.filter((item) => item.quantity > 0); if (!items.length) { notify('Una vendita deve contenere almeno un articolo.'); return; } if (saleDiscountPercentage < 0 || saleDiscountPercentage > 100) { notify('Lo sconto deve essere compreso tra 0 e 100%.'); return; } try { const saleId = saleDialog.id; await window.gestionale.updateSale({ id: saleId, payment_method: saleDialog.payment_method, discount: saleDialog.discount, items }); const next = await refresh(); const updatedSale = next.sales.find((sale) => sale.id === saleId); setSaleLookup(''); setSaleDialog(null); if (!updatedSale) throw new Error('Vendita aggiornata ma non trovata nell’archivio.'); setReceipt(updatedSale); notify('Vendita aggiornata'); } catch (error) { notify(errorText(error)); await refresh(); } };
   const deleteSale = async (sale: Sale) => { if (!window.confirm(`Eliminare lo scontrino ${sale.receipt_no}? Le quantità verranno ripristinate.`)) return; try { await window.gestionale.deleteSale(sale.id); await refresh(); setSaleLookup(''); setSaleDialog(null); notify('Vendita eliminata'); } catch (error) { notify(errorText(error)); await refresh(); } };
   const subtotal = cart.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-  const totalBeforeAdditionalDiscount = Math.max(0, subtotal - automaticDiscount - manualDiscount);
-  const additionalDiscount = Math.round(totalBeforeAdditionalDiscount * Number(discount || 0)) / 100;
-  const total = Math.max(0, totalBeforeAdditionalDiscount - additionalDiscount);
+  const totalBeforeVoucher = Math.max(0, subtotal - automaticDiscount - manualDiscount);
+  const voucherDiscount = Math.round(totalBeforeVoucher * voucherDiscountPercentage) / 100;
+  const total = Math.max(0, totalBeforeVoucher - voucherDiscount);
   const changeQuantity = (id: number, amount: number) => {
     const line = cart.find((item) => item.product_id === id);
     const product = data?.products.find((item) => item.id === id);
@@ -445,15 +473,12 @@ export default function App() {
     setCart((current) => current.map((item) => item.product_id === id ? { ...item, quantity: Math.max(0, roundQuantity(item.quantity + amount * step)) } : item).filter((item) => item.quantity > 0));
   };
   const checkout = async () => {
-    const additionalDiscountPercentage = Number(discount || 0);
-    if (!Number.isFinite(additionalDiscountPercentage) || additionalDiscountPercentage < 0 || additionalDiscountPercentage > 100) {
-      notify('La percentuale di sconto aggiuntivo deve essere compresa tra 0 e 100.');
-      return;
-    }
     try {
-      const sale = await window.gestionale.checkout({ items: cart, payment_method: paymentMethod, additional_discount: additionalDiscount, manual_promotion_id: promotionDiscounts.manualPromotion?.id, automatic_promotion_id: automaticPromotionId });
+      const sale = await window.gestionale.checkout({ items: cart, payment_method: paymentMethod, voucher_code: voucherCode || undefined, manual_promotion_id: promotionDiscounts.manualPromotion?.id, automatic_promotion_id: automaticPromotionId });
       setCart([]);
-      setDiscount(0);
+      setVoucherCode('');
+      setVoucherMessage('');
+      setVoucherDiscountPercentage(0);
       setManualPromotionId(undefined);
       setAutomaticPromotionId(undefined);
       setCheckoutOpen(false);
@@ -612,7 +637,8 @@ export default function App() {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const todaySales = data?.sales.filter((sale) => new Date(sale.created_at).toDateString() === new Date().toDateString()) ?? [];
-  const dailyTotal = todaySales.reduce((sum, sale) => sum + sale.total, 0);
+  const dailyProfit = todaySales.reduce((sum, sale) =>
+    sum + sale.total - sale.items.reduce((cost, item) => cost + item.quantity * item.purchase_price, 0), 0);
   const dailyGross = todaySales.reduce((sum, sale) => sum + sale.gross_total, 0);
   const dailyUnits = todaySales.reduce((sum, sale) => sum + sale.item_count, 0);
   const statisticsStart = new Date();
@@ -721,12 +747,7 @@ export default function App() {
     matchesInventoryHistoryPeriod(movement.created_at)
     && [movement.product_name, movement.person, movement.note].some((value) => value.toLowerCase().includes(inventoryHistorySearch.toLowerCase()))
   ) ?? [];
-  const sectionLabel = section === 'inventory-history' ? 'Storico Magazzino'
-    : section === 'stock-movement' ? 'Carica e scarica (Merce)'
-      : section === 'extras' ? 'Gestione Extra'
-        : section === 'sale-management' ? 'Modifica o Elimina'
-          : section === 'promotions' ? 'Offerta'
-      : nav.find((item) => item.section === section)?.label ?? 'Impostazioni';
+  const sectionLabel = sectionNames[section] ?? nav.find((item) => item.section === section)?.label ?? 'Impostazioni';
   const printReceipt = () => {
     if (data?.settings.receipt_printer) {
       void window.gestionale.printReceipt().catch((error: unknown) => notify(errorText(error)));
@@ -734,7 +755,9 @@ export default function App() {
   };
   const scanCameraCode = (code: string) => {
     setCamera(false);
-    if (section === 'cash') scanCode(code);
+    if (checkoutOpen) void applyVoucherCode(code);
+    else if (section === 'cash') scanCode(code);
+    else if (section === 'inventory') setInventorySearch(code.trim());
     else if (section === 'sale-management') {
       const receiptNumber = code.replace(/\D/g, '');
       setSaleLookup(receiptNumber);
@@ -803,27 +826,24 @@ export default function App() {
     <aside className="sidebar">
       <div className="brand"><div className={`brand-mark${data.settings.shop_logo ? ' has-logo' : ''}`}>{data.settings.shop_logo ? <img src={data.settings.shop_logo} alt="Logo negozio" /> : <Store size={20} />}</div><div><strong>{data.settings.shop_name}</strong><small>GESTIONE NEGOZIO</small></div></div>
       <div className="nav-label">OPERATIVITÀ</div>
-      <nav>{nav.map(({ section: target, label, icon: Icon }, index) => <Fragment key={target}>
-        {index === 5 && <div className="nav-label">Servizio Clienti</div>}
-        <button className={`nav-item${section === target || (target === 'inventory' && section.startsWith('inventory')) ? ' active' : ''}`} onClick={() => { setExtraMenuActive(target === 'extras'); if (target === 'extras') { setExtraTab(null); setExtraInventoryOpen(false); setExtraOfferOpen(false); } setSection(target); }}>
-          <Icon size={18} /><span>{label}</span>{target === 'cash' && <kbd>F2</kbd>}
-        </button>
-      </Fragment>)}</nav>
-      <div className="sidebar-bottom"><button className={`nav-item settings-link${section === 'settings' ? ' active' : ''}`} onClick={() => { setExtraMenuActive(false); setSettingsTab(null); setSection('settings'); }}><Settings size={18} /><span>Impostazioni</span></button><div className="user-card"><div className="user-avatar">{data.settings.shop_name.slice(0, 1).toUpperCase()}</div><div><strong>Gestore</strong><small>Account locale</small></div></div></div>
+      <nav>
+        {nav.filter((item) => item.section === 'home').map(({ section: target, label, icon: Icon }) => <button key={target} className={`nav-item${section === target ? ' active' : ''}`} onClick={() => setSection(target)}><Icon size={18} /><span>{label}</span></button>)}
+        <button aria-expanded={openSidebarMenu === 'inventory'} className={`nav-item${section === 'inventory' || section === 'inventory-history' || section === 'stock-movement' ? ' active' : ''}`} onClick={() => { setSection('inventory'); setOpenSidebarMenu((current) => current === 'inventory' ? null : 'inventory'); }}><Package size={18} /><span>Magazzino</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'inventory' ? ' open' : ''}`} size={15} /></button>
+        {openSidebarMenu === 'inventory' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'inventory-history' ? ' selected' : ''}`} onClick={() => setSection('inventory-history')}>Storico Magazzino</button><button className={`sidebar-subitem${section === 'stock-movement' ? ' selected' : ''}`} onClick={() => { setStockMovementProduct(String(data.products[0]?.id ?? '')); setSection('stock-movement'); }}>Carica e scarica merce</button></div>}
+        {nav.filter((item) => ['cash', 'sales', 'statistics'].includes(item.section)).map(({ section: target, label, icon: Icon }) => <button key={target} className={`nav-item${section === target ? ' active' : ''}`} onClick={() => setSection(target)}><Icon size={18} /><span>{label}</span>{target === 'cash' && <kbd>F2</kbd>}</button>)}
+        <button className={`nav-item${section === 'sale-management' ? ' active' : ''}`} onClick={() => setSection('sale-management')}><ClipboardList size={18} /><span>Modifica o Elimina</span></button>
+        <button aria-expanded={openSidebarMenu === 'offers'} className={`nav-item${['promotions', 'vouchers-create', 'vouchers-list'].includes(section) ? ' active' : ''}`} onClick={() => { setSection('promotions'); setOpenSidebarMenu((current) => current === 'offers' ? null : 'offers'); }}><TrendingUp size={18} /><span>Offerta</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'offers' ? ' open' : ''}`} size={15} /></button>
+        {openSidebarMenu === 'offers' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'promotions' ? ' selected' : ''}`} onClick={() => setSection('promotions')}>Promozioni</button><button className={`sidebar-subitem${section === 'vouchers-create' ? ' selected' : ''}`} onClick={() => { setSection('vouchers-create'); setVoucherPreview(null); }}>Crea buoni sconto</button><button className={`sidebar-subitem${section === 'vouchers-list' ? ' selected' : ''}`} onClick={() => setSection('vouchers-list')}>Lista buoni sconto</button></div>}
+        <button className={`nav-item${section === 'accounting' ? ' active' : ''}`} onClick={() => setSection('accounting')}><Banknote size={18} /><span>Contabilità e finanza</span></button>
+        <button className={`nav-item${section === 'clients' ? ' active' : ''}`} onClick={() => setSection('clients')}><ShoppingBasket size={18} /><span>Clienti</span></button>
+        <button aria-expanded={openSidebarMenu === 'employees'} className={`nav-item${['employees', 'employee-create', 'payroll'].includes(section) ? ' active' : ''}`} onClick={() => { setSection('employees'); setOpenSidebarMenu((current) => current === 'employees' ? null : 'employees'); }}><ClipboardList size={18} /><span>Dipendenti</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'employees' ? ' open' : ''}`} size={15} /></button>
+        {openSidebarMenu === 'employees' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => setSection('employees')}>Lista Dipendenti</button><button className={`sidebar-subitem${section === 'employee-create' ? ' selected' : ''}`} onClick={() => setSection('employee-create')}>Crea Dipendente</button><button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => setSection('payroll')}>Paga Stipendi</button></div>}
+      </nav>
+      <div className="sidebar-bottom"><button className={`nav-item settings-link${section === 'settings' ? ' active' : ''}`} onClick={() => { setSettingsTab(null); setSection('settings'); }}><Settings size={18} /><span>Impostazioni</span></button><div className="user-card"><div className="user-avatar">{data.settings.shop_name.slice(0, 1).toUpperCase()}</div><div><strong>Gestore</strong><small>Account locale</small></div></div></div>
     </aside>
-    <main className={`main-content${extraMenuActive ? ' extra-menu-active' : ''}`}><header className="topbar"><h1>{sectionLabel}</h1>{data.settings.shop_logo ? <img className="topbar-logo" src={data.settings.shop_logo} alt="Logo negozio" /> : <div className="topbar-logo-fallback"><Store size={19} /></div>}<div className="topbar-right"><div className="today-date">{new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}</div><span className="store-chip"><span className="status-dot" />Operativo</span></div></header>
-      {extraMenuActive && <nav className="settings-nav extras-side-nav" aria-label="Menu Gestione Extra">
-        <button aria-expanded={extraOfferOpen} className={extraOfferOpen ? 'selected' : ''} onClick={() => { setSection('extras'); setExtraTab('Offerta'); setExtraOfferOpen((open) => !open); setExtraInventoryOpen(false); }}><TrendingUp size={17} />Offerta<ChevronDown className={`nav-chevron${extraOfferOpen ? ' open' : ''}`} size={15} /></button>
-        {extraOfferOpen && <div className="nav-submenu"><button className="nav-subitem" onClick={() => { setSection('promotions'); setExtraTab(null); }}>Crea offerta</button><button className="nav-subitem" onClick={() => { setSection('extras'); setExtraTab('Crea buoni sconto'); setVoucherPreview(null); }}>Crea buoni sconto</button><button className="nav-subitem" onClick={() => { setSection('extras'); setExtraTab('Lista buoni sconto'); }}>Lista buoni sconto</button></div>}
-        <button aria-expanded={extraInventoryOpen} className={extraInventoryOpen ? 'selected' : ''} onClick={() => { setSection('extras'); setExtraTab('Magazzino'); setExtraInventoryOpen((open) => !open); setExtraOfferOpen(false); }}><Package size={17} />Magazzino<ChevronDown className={`nav-chevron${extraInventoryOpen ? ' open' : ''}`} size={15} /></button>
-        {extraInventoryOpen && <div className="nav-submenu"><button className="nav-subitem" onClick={() => setSection('inventory')}>Magazzino</button><button className="nav-subitem" onClick={() => setSection('inventory-history')}>Storico Magazzino</button><button className="nav-subitem" onClick={() => { setStockMovementProduct(String(data.products[0]?.id ?? '')); setSection('stock-movement'); }}>Carica e scarica (Merce)</button></div>}
-        <button onClick={() => { setSection('sale-management'); setExtraTab(null); }}><ClipboardList size={17} />Modifica o Elimina</button>
-        <button onClick={() => { setSection('extras'); setExtraTab('Contabilità e finanza'); }}><Banknote size={17} />Contabilità e finanza</button>
-        <button onClick={() => { setSection('extras'); setExtraTab('Dipendenti'); }}><ClipboardList size={17} />Dipendenti</button>
-        <button onClick={() => { setSection('extras'); setExtraTab('Clienti'); }}><ShoppingBasket size={17} />Clienti</button>
-      </nav>}
+    <main className="main-content"><header className="topbar"><h1>{sectionLabel}</h1>{data.settings.shop_logo ? <img className="topbar-logo" src={data.settings.shop_logo} alt="Logo negozio" /> : <div className="topbar-logo-fallback"><Store size={19} /></div>}<div className="topbar-right"><div className="today-date">{new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}</div><span className="store-chip"><span className="status-dot" />Operativo</span></div></header>
 
-      {section === 'home' && <div className="page-content home-page"><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length} scontrini emessi`} /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyTotal)} detail="Incasso al netto degli sconti" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString('it-IT')} detail="Pezzi registrati oggi" /></div><section className="expiry-alert expiry-home-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length} articoli sotto soglia`} action={<button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); setSection('inventory'); }}>Vai al magazzino →</button>} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => setSelectedProduct(p)}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock}</td><td>{p.low_stock_threshold}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => setSection('sales')}>Tutte le vendite →</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
+      {section === 'home' && <div className="page-content home-page"><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length} scontrini emessi`} /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyProfit)} detail="Profitto dopo sconti e costo merce" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString('it-IT')} detail="Pezzi registrati oggi" /></div><section className="expiry-alert expiry-home-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length} articoli sotto soglia`} action={<button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); setSection('inventory'); }}>Vai al magazzino →</button>} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => setSelectedProduct(p)}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock}</td><td>{p.low_stock_threshold}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => setSection('sales')}>Tutte le vendite →</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
 
       {section === 'inventory' && <div className="page-content">
         <div className="page-toolbar inventory-toolbar"><div><h2>Articoli in magazzino</h2><p>{data.products.length} articoli registrati</p></div><div className="toolbar-actions"><button className="button button-outline" onClick={exportInventoryReport}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-primary" onClick={() => setProductForm({ ...blankProduct })}><Plus size={16} /> Aggiungi nuovo articolo</button></div></div>
@@ -846,15 +866,15 @@ export default function App() {
           <div className="cash-search-row"><label className="search-field"><Barcode size={17} /><input id="scanner-field" placeholder="Cerca o scansiona un codice a barre…" value={scannerSearch} onChange={(e) => setScannerSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scanCode(scannerSearch); } }} /></label><button className="icon-button camera-button" title="Scansiona con fotocamera" onClick={() => setCamera(true)}><Camera size={18} /></button></div>
           <div className="cash-product-grid">{data.products.filter((p) => (p.name.toLowerCase().includes(scannerSearch.toLowerCase()) || p.code.includes(scannerSearch)) && p.stock > 0).map((product) => { const remainingStock = Math.max(0, product.stock - (cart.find((item) => item.product_id === product.id)?.quantity ?? 0)); return <button className="cash-product" key={product.id} disabled={remainingStock === 0} onClick={() => addProductToCart(product)}><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="cash-product-bottom"><b>{money.format(product.sale_price)}{product.unit === 'KG' ? ' / kg' : product.unit === 'LITRO' ? ' / lit.' : ''}</b><small>{quantityFormat.format(remainingStock)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'lit.' : 'pz'}</small></span></button>; })}</div>
         </section>
-        <aside className="cart-panel"><div className="cart-heading"><div className="cart-heading-title"><h2>CARRELLO <span>{quantityFormat.format(cart.reduce((sum, item) => sum + item.quantity, 0))}</span></h2></div></div><div className="cart-lines">{cart.map((item) => <div className="cart-line" key={item.product_id}><div className="cart-line-name"><strong>{item.name}</strong><small>{quantityFormat.format(item.quantity)} {item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}</small></div><div className="quantity-control"><button onClick={() => changeQuantity(item.product_id, -1)} aria-label="Rimuovi uno"><Minus size={13} /></button><span>{quantityFormat.format(item.quantity)}</span><button onClick={() => changeQuantity(item.product_id, 1)} aria-label="Aggiungi uno"><Plus size={13} /></button></div><strong className="line-total">{money.format(item.quantity * item.unit_price)}</strong></div>)}{!cart.length && <div className="cart-empty"><ShoppingBasket size={25} /><span>Seleziona gli articoli<br />per iniziare una vendita</span></div>}</div><div className="receipt-summary"><div><span>Subtotale</span><span>{money.format(subtotal)}</span></div><div className="total-row"><strong>TOTALE</strong><strong>{money.format(subtotal)}</strong></div></div><button className="button button-primary checkout-button" disabled={!cart.length} onClick={() => setCheckoutOpen(true)}>Procedi al pagamento <span>→</span></button></aside>
+        <aside className="cart-panel"><div className="cart-heading"><div className="cart-heading-title"><h2>CARRELLO <span>{quantityFormat.format(cart.reduce((sum, item) => sum + item.quantity, 0))}</span></h2></div><button className="icon-button" title="Svuota carrello" aria-label="Svuota carrello" disabled={!cart.length} onClick={() => { setCart([]); setManualPromotionId(undefined); setAutomaticPromotionId(undefined); }}><Trash2 size={17} /></button></div><div className="cart-lines">{cart.map((item) => <div className="cart-line" key={item.product_id}><div className="cart-line-name"><strong>{item.name}</strong><small>{quantityFormat.format(item.quantity)} {item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}</small></div><div className="quantity-control"><button onClick={() => changeQuantity(item.product_id, -1)} aria-label="Rimuovi uno"><Minus size={13} /></button><span>{quantityFormat.format(item.quantity)}</span><button onClick={() => changeQuantity(item.product_id, 1)} aria-label="Aggiungi uno"><Plus size={13} /></button></div><strong className="line-total">{money.format(item.quantity * item.unit_price)}</strong></div>)}{!cart.length && <div className="cart-empty"><ShoppingBasket size={25} /><span>Seleziona gli articoli<br />per iniziare una vendita</span></div>}</div><div className="receipt-summary"><div><span>Subtotale</span><span>{money.format(subtotal)}</span></div><div className="total-row"><strong>TOTALE</strong><strong>{money.format(subtotal)}</strong></div></div><button className="button button-primary checkout-button" disabled={!cart.length} onClick={() => setCheckoutOpen(true)}>Procedi al pagamento <span>→</span></button></aside>
       </div></div>}
 
       {section === 'sales' && <div className="page-content"><div className="sale-tools"><button className="button button-outline sale-camera-button" onClick={() => setCamera(true)}><Camera size={16} /> Cerca con fotocamera</button><SearchInput value={saleSearch} onChange={setSaleSearch} placeholder="Cerca numero scontrino…" numericOnly /><button className="button button-outline" onClick={exportReport}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-outline" onClick={exportSalesCsv}><ArrowDownToLine size={16} /> Esporta CSV</button></div><div className="sale-filters"><SelectField label="Periodo" value={salesPeriod} onChange={setSalesPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A']} />{salesPeriod === 'Da - A' && <><Field label="Da" type="date" value={salesFrom} onChange={(event) => setSalesFrom(event.target.value)} /><Field label="A" type="date" value={salesTo} onChange={(event) => setSalesTo(event.target.value)} /></>}<SelectField label="Categoria" value={salesCategory} onChange={setSalesCategory} options={['Tutte', ...categories]} /></div><SalesTable sales={salesList} onSelect={setReceipt} /></div>}
 
-      {section === 'sale-management' && <div className="page-content settings-page"><section className="settings-panel"><button className="settings-back" onClick={() => { setSection('extras'); setExtraTab(null); }}><ArrowLeft size={15} /> Gestione Extra</button><div className="settings-title"><h2>Modifica o elimina una vendita</h2><p>Inserisci il numero a 5 cifre oppure leggilo con il lettore barcode.</p></div><div className="lookup-panel"><button className="button button-outline" onClick={() => setCamera(true)}><Camera size={16} /> Scansiona con fotocamera</button><Field label="Numero scontrino" type="text" inputMode="numeric" pattern="[0-9]*" maxLength={5} value={saleLookup} onChange={(e) => setSaleLookup(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => { if (e.key === 'Enter') findSale(); }} placeholder="Numero scontrino" /><button className="button button-primary" onClick={findSale}><Search size={16} /> Cerca scontrino</button></div></section></div>}
+      {section === 'sale-management' && <div className="page-content settings-page"><section className="settings-panel"><button className="settings-back" onClick={() => setSection('home')}><ArrowLeft size={15} /> Menu principale</button><div className="settings-title"><h2>Modifica o elimina una vendita</h2><p>Inserisci il numero a 5 cifre oppure leggilo con il lettore barcode.</p></div><div className="lookup-panel"><button className="button button-outline" onClick={() => setCamera(true)}><Camera size={16} /> Scansiona con fotocamera</button><Field label="Numero scontrino" type="text" inputMode="numeric" pattern="[0-9]*" maxLength={5} value={saleLookup} onChange={(e) => setSaleLookup(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => { if (e.key === 'Enter') findSale(); }} placeholder="Numero scontrino" /><button className="button button-primary" onClick={findSale}><Search size={16} /> Cerca scontrino</button></div></section></div>}
 
       {section === 'promotions' && <div className="page-content settings-page"><section className="settings-panel">
-        <button className="settings-back" onClick={() => { setSection('extras'); setExtraTab(null); }}><ArrowLeft size={15} /> Gestione Extra</button>
+        <button className="settings-back" onClick={() => setSection('home')}><ArrowLeft size={15} /> Menu principale</button>
         <div className="settings-title"><h2>Promozioni</h2><p>Crea offerte con periodo, categoria e condizioni di spesa.</p></div>
         <form className="form-grid promotion-form" onSubmit={savePromotion}>
           <Field label="Nome offerta" value={promotion.name} onChange={(e) => setPromotion({ ...promotion, name: e.target.value })} required />
@@ -884,10 +904,10 @@ export default function App() {
         </div>)}</div>
       </section></div>}
 
-      {section === 'extras' && <div className="page-content settings-page"><section className="settings-panel extras-content-panel">
-        {(!extraTab || extraTab === 'Offerta' || extraTab === 'Magazzino') && <><div className="settings-title"><h2>Gestione Extra</h2><p>Seleziona una voce dal menu a sinistra per aprire la relativa sezione.</p></div><p className="muted">Le funzioni selezionate verranno visualizzate in questa area.</p></>}
-        {extraTab && !['Offerta', 'Magazzino', 'Crea buoni sconto', 'Lista buoni sconto'].includes(extraTab) && <><div className="settings-title"><h2>{extraTab}</h2><p>Area di gestione {extraTab.toLowerCase()}.</p></div><p className="muted">Sezione in preparazione.</p></>}
-        {extraTab === 'Crea buoni sconto' && <div className="voucher-section">
+      {(section === 'accounting' || section === 'clients' || section === 'employees' || section === 'employee-create' || section === 'payroll') && <div className="page-content settings-page"><section className="settings-panel"><div className="settings-title"><h2>{sectionNames[section]}</h2><p>Sezione in preparazione.</p></div></section></div>}
+
+      {(section === 'vouchers-create' || section === 'vouchers-list') && <div className="page-content settings-page"><section className="settings-panel">
+        {section === 'vouchers-create' && <div className="voucher-section">
           <div className="settings-title"><h2>Crea buoni sconto</h2><p>Imposta le condizioni e genera codici univoci da stampare e distribuire.</p></div>
           {!voucherPreview ? <form className="form-grid promotion-form voucher-form" onSubmit={generateVoucherPreview}>
             <Field label="Percentuale di sconto (%)" type="number" min="1" max="100" step="1" value={voucherPercentage} onChange={(event) => setVoucherPercentage(event.target.value)} required />
@@ -901,12 +921,12 @@ export default function App() {
             <div className="voucher-actions no-print"><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa codici</button><button className="button button-quiet" onClick={cancelVoucherPreview}>Annulla</button><button className="button button-primary" onClick={() => void confirmVoucherBatch()}><Check size={16} /> Conferma e salva</button></div>
           </>}
         </div>}
-        {extraTab === 'Lista buoni sconto' && <div className="voucher-section">
-          <div className="settings-title"><h2>Lista buoni sconto</h2><p>Codici confermati, pronti per la stampa e la distribuzione.</p></div>
+        {section === 'vouchers-list' && <div className="voucher-section">
+          <div className="settings-title"><h2>Lista buoni sconto</h2></div>
           {!data.voucherBatches.length ? <Empty icon={Barcode} title="Nessun buono sconto" detail="Crea e conferma un gruppo di codici per visualizzarlo qui." /> : <>
             <div className="voucher-batch-list">{data.voucherBatches.map((batch) => <div className="voucher-batch-row" key={batch.id}>
               <div><strong>Gruppo {batch.id}</strong><span>{batch.codes.length} codici · {batch.discount_percentage}% di sconto</span><small>{batch.starts_at} — {batch.ends_at}</small></div>
-              <div className="voucher-actions no-print"><button className="button button-outline" onClick={() => setVoucherPrintBatch(batch)}><Printer size={15} /> Stampa</button><button className="button button-outline" onClick={() => downloadVoucherBatch(batch)}><ArrowDownToLine size={15} /> Scarica lista</button></div>
+              <div className="voucher-actions no-print"><button className="icon-button" title="Visualizza codici" aria-label={`Visualizza codici del gruppo ${batch.id}`} onClick={() => setVoucherViewBatch(batch)}><Eye size={17} /></button><button className="button button-outline" onClick={() => setVoucherPrintBatch(batch)}><Printer size={15} /> Stampa</button><button className="button button-outline" onClick={() => downloadVoucherBatch(batch)}><ArrowDownToLine size={15} /> Scarica lista</button></div>
             </div>)}</div>
             {voucherPrintBatch && <div id="voucher-print" className="table-wrap voucher-codes voucher-print-only"><h2>Buoni sconto gruppo {voucherPrintBatch.id} · {voucherPrintBatch.discount_percentage}%</h2><p>{voucherPrintBatch.starts_at} — {voucherPrintBatch.ends_at}</p><table><thead><tr><th>Codice</th><th>Sconto</th><th>Inizio</th><th>Scadenza</th></tr></thead><tbody>{voucherPrintBatch.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td>{voucherPrintBatch.discount_percentage}%</td><td>{voucherPrintBatch.starts_at}</td><td>{voucherPrintBatch.ends_at}</td></tr>)}</tbody></table></div>}
           </>}
@@ -932,15 +952,16 @@ export default function App() {
     </main>
 
     {unsoldListOpen && <Modal title="Articoli ancora in magazzino" close={() => setUnsoldListOpen(false)} wide><div id="unsold-list-print"><Table headings={['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']}><>{unsoldProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td>{product.category}</td><td>{product.stock} {product.unit ?? 'PEZZO'}</td><td>{money.format(product.sale_price)}</td></tr>)}</>{!unsoldProducts.length && <tr><td colSpan={4} className="empty-cell">Non risultano articoli rimanenti in magazzino.</td></tr>}</Table></div><div className="unsold-list-actions no-print"><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa</button><button className="button button-primary" onClick={() => void shareUnsoldList()}><Share2 size={16} /> Condividi</button></div></Modal>}
+    {voucherViewBatch && <Modal title={`Codici buono · Gruppo ${voucherViewBatch.id}`} close={() => setVoucherViewBatch(null)} wide><div className="voucher-preview-heading"><strong>{voucherViewBatch.discount_percentage}% di sconto</strong><span>{voucherViewBatch.starts_at} — {voucherViewBatch.ends_at}</span></div><Table headings={['Codice', 'Sconto', 'Inizio', 'Scadenza']}><>{voucherViewBatch.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td>{voucherViewBatch.discount_percentage}%</td><td>{voucherViewBatch.starts_at}</td><td>{voucherViewBatch.ends_at}</td></tr>)}</></Table></Modal>}
     {pendingUnknownCode && <Modal title="Articolo non presente" wide close={() => { setPendingUnknownCode(''); setScannerSearch(''); }}><div className="unknown-code-message"><CircleAlert size={26} /><p>Il codice a barre <strong>{pendingUnknownCode}</strong> non è presente tra gli articoli.</p><span>Puoi aggiungerlo come nuovo articolo: il codice acquisito sarà già inserito nel modulo.</span><div className="form-actions"><button className="button button-quiet" onClick={() => { setPendingUnknownCode(''); setScannerSearch(''); }}>Annulla</button><button className="button button-primary" onClick={() => { setProductForm({ ...blankProduct, code: pendingUnknownCode }); setPendingUnknownCode(''); }}><Plus size={16} /> Aggiungi articolo</button></div></div></Modal>}
-    {measuredProduct && <Modal title={measuredProduct.unit === 'KG' ? `Inserisci il peso · ${measuredProduct.name}` : `Inserisci il volume · ${measuredProduct.name}`} close={() => setMeasuredProduct(null)}><form className="form-grid measured-quantity-form" onSubmit={confirmMeasuredQuantity}><p className="measured-price">{money.format(measuredProduct.sale_price)} / {measuredProduct.unit === 'KG' ? 'kg' : 'lit.'}</p><Field label={measuredProduct.unit === 'KG' ? 'Peso in kg' : 'Volume in litri'} type="number" min="0.001" step="0.001" value={measuredQuantity} onChange={(event) => setMeasuredQuantity(event.target.value)} required autoFocus placeholder={measuredProduct.unit === 'KG' ? 'Es. 0,750' : 'Es. 1,500'} /><div className="measured-quantity-options">{(measuredProduct.unit === 'KG' ? [{ label: '50 g', quantity: 0.05 }, { label: '100 g', quantity: 0.1 }, { label: '250 g', quantity: 0.25 }, { label: '500 g', quantity: 0.5 }, { label: '1 kg', quantity: 1 }, { label: '2 kg', quantity: 2 }] : [{ label: '50 ml', quantity: 0.05 }, { label: '100 ml', quantity: 0.1 }, { label: '250 ml', quantity: 0.25 }, { label: '500 ml', quantity: 0.5 }, { label: '1 L', quantity: 1 }, { label: '2 L', quantity: 2 }]).map(({ label, quantity }) => <button className="button button-outline" key={label} type="button" onClick={() => setMeasuredQuantity(String(quantity))}>{label}</button>)}</div><div className="form-actions"><button className="button button-quiet full-width" type="button" onClick={() => setMeasuredProduct(null)}>Annulla</button><button className="button button-primary full-width"><Check size={16} /> Aggiungi al carrello</button></div></form></Modal>}
+    {measuredProduct && <Modal title={measuredProduct.unit === 'KG' ? `Inserisci il peso · ${measuredProduct.name}` : `Inserisci il volume · ${measuredProduct.name}`} close={() => setMeasuredProduct(null)}><form className="form-grid measured-quantity-form" onSubmit={confirmMeasuredQuantity}><p className="measured-price">{money.format(measuredProduct.sale_price)} / {measuredProduct.unit === 'KG' ? 'kg' : 'lit.'}</p><Field label={measuredProduct.unit === 'KG' ? 'Peso in kg' : 'Volume in litri'} type="number" min="0.001" step="0.001" value={measuredQuantity} onChange={(event) => setMeasuredQuantity(event.target.value)} required autoFocus placeholder={measuredProduct.unit === 'KG' ? 'Es. 0,750' : 'Es. 1,500'} /><div className="measured-quantity-options">{(measuredProduct.unit === 'KG' ? [{ label: '50 g', quantity: 0.05 }, { label: '100 g', quantity: 0.1 }, { label: '250 g', quantity: 0.25 }, { label: '500 g', quantity: 0.5 }, { label: '1 kg', quantity: 1 }, { label: '2 kg', quantity: 2 }] : [{ label: '50 ml', quantity: 0.05 }, { label: '100 ml', quantity: 0.1 }, { label: '250 ml', quantity: 0.25 }, { label: '500 ml', quantity: 0.5 }, { label: '1 L', quantity: 1 }, { label: '2 L', quantity: 2 }]).map(({ label, quantity }) => <button className="button button-outline" key={label} type="button" onClick={() => addMeasuredQuantity(quantity)}>{label}</button>)}</div><div className="form-actions"><button className="button button-quiet full-width" type="button" onClick={() => setMeasuredProduct(null)}>Annulla</button><button className="button button-primary full-width"><Check size={16} /> Aggiungi al carrello</button></div></form></Modal>}
     {productForm && <ProductForm initial={productForm} save={saveProduct} close={() => setProductForm(null)} />}
     {stockProduct && <Modal title={`Aggiungi quantità · ${stockProduct.name}`} close={() => setStockProduct(null)}><form className="form-grid stock-form" onSubmit={(event) => void saveStock(event)}>
       <p className="stock-current">Giacenza attuale: <strong>{stockProduct.stock}</strong></p>
       <Field label="Nuova quantità" type="number" min="0.01" step="any" value={stockInput} onChange={(event) => setStockInput(event.target.value)} required autoFocus placeholder="Quantità da aggiungere" />
       <div className="form-actions"><button className="button button-quiet full-width" type="button" onClick={() => setStockProduct(null)}>Annulla</button><button className="button button-primary full-width"><Check size={16} /> Conferma giacenza</button></div>
     </form></Modal>}{selectedProduct && <div className="drawer-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedProduct(null); }}><aside className="detail-drawer"><header className="drawer-header"><div><p className="eyebrow">DETTAGLIO ARTICOLO</p><h2>{selectedProduct.name}</h2></div><button className="icon-button" onClick={() => setSelectedProduct(null)}><X size={18} /></button></header><div className="drawer-content"><div className="detail-icon"><Package size={26} /></div><span className="stock-badge">{selectedProduct.category}</span><div className="detail-list"><Detail label="Codice a barre" value={selectedProduct.code} /><Detail label="Prezzo vendita" value={money.format(selectedProduct.sale_price)} /><Detail label="Prezzo acquisto" value={money.format(selectedProduct.purchase_price)} /><Detail label="Giacenza" value={`${selectedProduct.stock} ${selectedProduct.unit ?? 'PEZZO'}`} /><Detail label="Soglia minima" value={`${selectedProduct.low_stock_threshold} ${selectedProduct.unit ?? 'PEZZO'}`} />{selectedProduct.expiry_enabled && selectedProduct.expiry_date && <Detail label="Data di scadenza" value={receiptDate.format(new Date(`${selectedProduct.expiry_date}T00:00:00`))} />}<Detail label="Margine unitario" value={money.format(selectedProduct.sale_price - selectedProduct.purchase_price)} /></div></div><footer className="drawer-footer"><button className="button button-outline full-width" onClick={() => { setProductForm({ code: selectedProduct.code, name: selectedProduct.name, unit: selectedProduct.unit ?? 'PEZZO', category: selectedProduct.category, sale_price: selectedProduct.sale_price, purchase_price: selectedProduct.purchase_price, stock: selectedProduct.stock, low_stock_threshold: selectedProduct.low_stock_threshold, expiry_enabled: selectedProduct.expiry_enabled, expiry_date: selectedProduct.expiry_date }); setSelectedProduct(null); }}><Settings size={15} /> Modifica articolo</button><button className="button button-outline full-width" onClick={() => { setStockInput(''); setStockProduct(selectedProduct); setSelectedProduct(null); }}><Package size={15} /> Nuova quantità</button></footer></aside></div>}
-    {checkoutOpen && <Modal title="Pagamento" close={() => setCheckoutOpen(false)} rightHalf><div className="payment-content">
+    {checkoutOpen && <Modal title="Pagamento" close={() => { setCheckoutOpen(false); setVoucherCode(''); setVoucherMessage(''); setVoucherDiscountPercentage(0); }} rightHalf><div className="payment-content">
       <details className="payment-promotion-info">
         <summary><strong>Offerte automatiche applicate</strong></summary>
         <div className="payment-offer-list"><div className="payment-offer-toggle-row"><span>Applica sconti automatici</span><button className={`switch-button${automaticPromotionId !== null ? ' is-on' : ''}`} type="button" role="switch" aria-checked={automaticPromotionId !== null} onClick={() => setAutomaticPromotionId(automaticPromotionId === null ? undefined : null)}>{automaticPromotionId === null ? 'OFF' : 'ON'}</button></div>{automaticPromotionId !== null && (automaticApplicableOffers.length ? automaticApplicableOffers.map((offer) => <div className="payment-offer" key={offer.id}>
@@ -955,8 +976,8 @@ export default function App() {
           {manualDiscount > 0 && <small>Risparmio: {money.format(manualDiscount)}</small>}</div>
       </details>}
       <SelectField label="Metodo di pagamento" value={paymentMethod} onChange={setPaymentMethod} options={['Carta', 'Contanti', 'Bancomat', 'Buono']} />
-      <Field label="Sconto aggiuntivo (%)" type="number" min="0" max="100" step="0.01" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} />
-      <div className="payment-total">{total < subtotal && <div className="payment-total-before"><span>Prezzo prima dello sconto</span><strong>{money.format(subtotal)}</strong></div>}<div className="payment-total-after"><span>Totale da pagare</span><strong>{money.format(total)}</strong></div></div>
+      <div className="voucher-checkout"><Field label="Buono sconto" value={voucherCode} onChange={(event) => { setVoucherCode(event.target.value); setVoucherMessage(''); setVoucherDiscountPercentage(0); }} placeholder="Scansiona o inserisci il codice" /><button className="button button-outline" type="button" onClick={() => void applyVoucherCode(voucherCode)} disabled={!voucherCode.trim()}><Barcode size={16} /> Verifica</button>{voucherMessage && <small className={voucherDiscountPercentage > 0 ? 'voucher-status valid' : 'voucher-status invalid'}>{voucherMessage}</small>}</div>
+      <div className="payment-total">{total < subtotal && <div className="payment-total-before"><span>Prezzo prima dello sconto</span><strong>{money.format(subtotal)}</strong></div>}{voucherDiscount > 0 && <div className="payment-total-before"><span>Buono sconto ({voucherDiscountPercentage}%)</span><strong>− {money.format(voucherDiscount)}</strong></div>}<div className="payment-total-after"><span>Totale da pagare</span><strong>{money.format(total)}</strong></div></div>
       <div className="payment-note"><ShieldCheck size={16} />Lo scontrino viene registrato nel database locale.</div>
       <button className="button button-primary full-width" onClick={() => void checkout()}><Check size={17} /> Conferma e stampa scontrino</button>
     </div></Modal>}

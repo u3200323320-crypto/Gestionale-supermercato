@@ -1,4 +1,4 @@
-export type Section = 'home' | 'inventory' | 'inventory-history' | 'stock-movement' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'extras' | 'settings';
+export type Section = 'home' | 'inventory' | 'inventory-history' | 'stock-movement' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'accounting' | 'clients' | 'employees' | 'employee-create' | 'payroll' | 'settings';
 export type ProductUnit = 'KG' | 'LITRO' | 'PEZZO';
 export type Printer = { name: string; displayName: string };
 
@@ -78,7 +78,8 @@ export interface VoucherBatch {
 
 export type VoucherBatchInput = Pick<VoucherBatch, 'discount_percentage' | 'starts_at' | 'ends_at' | 'codes'>;
 export type PromotionInput = Omit<Promotion, 'id'> & { id?: number };
-export type CheckoutInput = { items: SaleItem[]; payment_method: string; additional_discount: number; manual_promotion_id?: number; automatic_promotion_id?: number | null };
+export type CheckoutInput = { items: SaleItem[]; payment_method: string; voucher_code?: string; manual_promotion_id?: number; automatic_promotion_id?: number | null };
+export type VoucherValidation = { valid: true; discount_percentage: number } | { valid: false; message: string };
 
 export interface AppState {
   products: Product[];
@@ -113,6 +114,7 @@ declare global {
     updateStock: (productId: number, stock: number) => Promise<void>;
     moveStock: (movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; person?: string; note: string }) => Promise<void>;
     checkout: (sale: CheckoutInput) => Promise<Sale>;
+    validateVoucher: (code: string) => Promise<VoucherValidation>;
     savePromotion: (promotion: PromotionInput) => Promise<void>;
     deletePromotion: (id: number) => Promise<void>;
     saveVoucherBatch: (batch: VoucherBatchInput) => Promise<void>;

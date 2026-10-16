@@ -5,7 +5,7 @@ import { randomInt, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto
 import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { calculatePromotionDiscounts } from '../shared/promotions';
-import type { CheckoutInput, Product, ProductInput, Promotion, PromotionInput, SaleItem, VoucherBatch, VoucherBatchInput } from '../shared/types';
+import type { CheckoutInput, Product, ProductInput, Promotion, PromotionInput, SaleItem, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
 
 let database: Database.Database;
 let mainWindow: BrowserWindow;
@@ -65,6 +65,21 @@ function allVoucherBatches(): VoucherBatch[] {
   }));
 }
 
+function removeExpiredVouchers(): void {
+  const today = localDate(new Date());
+  database.transaction(() => {
+    database.prepare('DELETE FROM vouchers WHERE batch_id IN (SELECT id FROM voucher_batches WHERE ends_at < ?)').run(today);
+    database.prepare('DELETE FROM voucher_batches WHERE NOT EXISTS (SELECT 1 FROM vouchers WHERE vouchers.batch_id = voucher_batches.id)').run();
+  })();
+}
+
+function findValidVoucher(code: string, today = localDate(new Date())): { id: number; batch_id: number; discount_percentage: number; starts_at: string; ends_at: string } | undefined {
+  return database.prepare(`SELECT v.id, v.batch_id, b.discount_percentage, b.starts_at, b.ends_at
+    FROM vouchers v JOIN voucher_batches b ON b.id = v.batch_id
+    WHERE v.code = ? AND b.starts_at <= ? AND b.ends_at >= ?`).get(code, today, today) as
+    { id: number; batch_id: number; discount_percentage: number; starts_at: string; ends_at: string } | undefined;
+}
+
 function allSales(): unknown[] {
   const sales = database.prepare(`SELECT s.*, COALESCE(SUM(i.quantity), 0) AS item_count
     FROM sales s LEFT JOIN sale_items i ON i.sale_id = s.id GROUP BY s.id ORDER BY s.created_at DESC`).all() as Array<Record<string, unknown>>;
@@ -72,6 +87,7 @@ function allSales(): unknown[] {
 }
 
 function state() {
+  removeExpiredVouchers();
   return {
     products: (database.prepare('SELECT * FROM products ORDER BY name').all() as Array<Omit<Product, 'expiry_enabled'> & { expiry_enabled: number }>).map((product) => ({ ...product, expiry_enabled: Boolean(product.expiry_enabled) })),
     sales: allSales(),
@@ -466,16 +482,25 @@ app.whenReady().then(() => {
     if (sale.manual_promotion_id !== undefined && !discounts.manualPromotion) {
       throw new Error('L’offerta selezionata non è più applicabile: controlla il periodo, la categoria e la spesa minima.');
     }
-    if (!Number.isFinite(sale.additional_discount) || sale.additional_discount < 0) throw new Error('Lo sconto aggiuntivo non è valido.');
+    const voucherCode = sale.voucher_code?.trim() ?? '';
+    if (voucherCode && !findValidVoucher(voucherCode)) throw new Error('Buono sconto non valido, scaduto o già utilizzato.');
     const grossTotal = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-    const discount = discounts.automaticDiscount + discounts.manualDiscount + sale.additional_discount;
-    if (discount > grossTotal) throw new Error('Lo sconto supera il totale della vendita.');
     const createSale = database.transaction(() => {
+      const voucher = voucherCode ? findValidVoucher(voucherCode) : undefined;
+      if (voucherCode && !voucher) throw new Error('Buono sconto non valido, scaduto o già utilizzato.');
+      const voucherDiscount = voucher
+        ? Math.round(Math.max(0, grossTotal - discounts.automaticDiscount - discounts.manualDiscount) * voucher.discount_percentage) / 100
+        : 0;
+      const discount = discounts.automaticDiscount + discounts.manualDiscount + voucherDiscount;
       const receiptNo = receiptNumber();
       const result = database.prepare('INSERT INTO sales (receipt_no, created_at, payment_method, discount, gross_total, total) VALUES (?, ?, ?, ?, ?, ?)')
         .run(receiptNo, new Date().toISOString(), sale.payment_method, discount, grossTotal, Math.max(0, grossTotal - discount));
       replaceItems(Number(result.lastInsertRowid), items);
       items.forEach((item) => recordStockMovement(item.product_id, item.name, 'Scarico', item.quantity, `Vendita #${receiptNo}`));
+      if (voucher) {
+        database.prepare('DELETE FROM vouchers WHERE id = ?').run(voucher.id);
+        database.prepare('DELETE FROM voucher_batches WHERE id = ? AND NOT EXISTS (SELECT 1 FROM vouchers WHERE batch_id = ?)').run(voucher.batch_id, voucher.batch_id);
+      }
       return Number(result.lastInsertRowid);
     });
     const id = createSale();
@@ -572,6 +597,21 @@ app.whenReady().then(() => {
       }
       throw error;
     }
+  });
+  ipcMain.handle('voucher:validate', (_event, code: string): VoucherValidation => {
+    const normalized = typeof code === 'string' ? code.trim() : '';
+    if (!/^Co-di-ce-\d{8}$/.test(normalized)) return { valid: false, message: 'Codice buono sconto non valido.' };
+    const today = localDate(new Date());
+    const voucher = database.prepare(`SELECT b.discount_percentage, b.starts_at, b.ends_at FROM vouchers v
+      JOIN voucher_batches b ON b.id = v.batch_id WHERE v.code = ?`).get(normalized) as
+      { discount_percentage: number; starts_at: string; ends_at: string } | undefined;
+    if (!voucher) return { valid: false, message: 'Buono sconto non trovato o già utilizzato.' };
+    if (voucher.starts_at > today) return { valid: false, message: 'Il buono sconto non è ancora valido.' };
+    if (voucher.ends_at < today) {
+      removeExpiredVouchers();
+      return { valid: false, message: 'Il buono sconto è scaduto.' };
+    }
+    return { valid: true, discount_percentage: voucher.discount_percentage };
   });
   ipcMain.handle('settings:save', (_event, key: string, value: string) => {
     if (!['shop_name', 'archive_folder', 'receipt_printer', 'barcode_scanner_enabled', 'barcode_scanner_detected'].includes(key)) throw new Error('Impostazione non valida.');
