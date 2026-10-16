@@ -5,7 +5,8 @@ import { randomInt, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto
 import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { calculatePromotionDiscounts } from '../shared/promotions';
-import type { CheckoutInput, Employee, EmployeeInput, Product, ProductInput, Promotion, PromotionInput, SaleItem, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
+import { voucherCodePrefix } from '../shared/vouchers';
+import type { CheckoutInput, Employee, EmployeeInput, Expense, Product, ProductInput, Promotion, PromotionInput, SaleItem, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
 
 let database: Database.Database;
 let mainWindow: BrowserWindow;
@@ -92,6 +93,7 @@ function state() {
     products: (database.prepare('SELECT * FROM products ORDER BY name').all() as Array<Omit<Product, 'expiry_enabled'> & { expiry_enabled: number }>).map((product) => ({ ...product, expiry_enabled: Boolean(product.expiry_enabled) })),
     sales: allSales(),
     stockMovements: database.prepare('SELECT * FROM stock_movements ORDER BY created_at DESC, id DESC').all(),
+    expenses: database.prepare('SELECT * FROM expenses ORDER BY expense_date DESC, id DESC').all() as Expense[],
     promotions: database.prepare('SELECT * FROM promotions ORDER BY starts_at DESC').all(),
     voucherBatches: allVoucherBatches(),
     employees: database.prepare(`SELECT id, first_name, last_name, age, gender, home_address, email, phone, operational_site,
@@ -144,6 +146,10 @@ function initDatabase(): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, product_name TEXT NOT NULL,
       movement_type TEXT NOT NULL CHECK(movement_type IN ('Carico', 'Scarico')),
       quantity REAL NOT NULL, created_at TEXT NOT NULL, person TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS expenses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, description TEXT NOT NULL, category TEXT NOT NULL,
+      amount REAL NOT NULL, expense_date TEXT NOT NULL, created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS voucher_batches (
       id INTEGER PRIMARY KEY AUTOINCREMENT, discount_percentage REAL NOT NULL,
@@ -590,7 +596,10 @@ app.whenReady().then(() => {
     const uniqueCodes = new Set(batch.codes);
     if (!Number.isFinite(batch.discount_percentage) || batch.discount_percentage < 1 || batch.discount_percentage > 100
       || !isValidDate(batch.starts_at) || !isValidDate(batch.ends_at) || batch.ends_at < batch.starts_at
-      || !batch.codes.length || batch.codes.some((code) => !/^Co-di-ce-\d{8}$/.test(code)) || uniqueCodes.size !== batch.codes.length) {
+      || !batch.codes.length || batch.codes.some((code) => {
+        const prefix = voucherCodePrefix(setting('shop_name', 'Il tuo supermercato'));
+        return !code.startsWith(prefix) || !/^\d{8}$/.test(code.slice(prefix.length));
+      }) || uniqueCodes.size !== batch.codes.length) {
       throw new Error('Controlla percentuale, date e codici del buono sconto.');
     }
     const transaction = database.transaction(() => {
@@ -598,6 +607,24 @@ app.whenReady().then(() => {
       const result = insertBatch.run(batch.discount_percentage, batch.starts_at, batch.ends_at, new Date().toISOString());
       const insertVoucher = database.prepare('INSERT INTO vouchers (batch_id, code) VALUES (?, ?)');
       for (const code of batch.codes) insertVoucher.run(result.lastInsertRowid, code);
+    });
+    ipcMain.handle('expense:save', (_event, expense: Pick<Expense, 'description' | 'category' | 'amount' | 'expense_date'>) => {
+      const isValidDate = (value: string) => {
+        const date = new Date(`${value}T00:00:00`);
+        return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(date.getTime()) && localDate(date) === value;
+      };
+      if (!expense || typeof expense.description !== 'string' || !expense.description.trim()
+        || typeof expense.category !== 'string' || !expense.category.trim()
+        || !Number.isFinite(expense.amount) || expense.amount <= 0 || !isValidDate(expense.expense_date)) {
+        throw new Error('Controlla descrizione, categoria, importo e data della spesa.');
+      }
+      database.prepare('INSERT INTO expenses (description, category, amount, expense_date, created_at) VALUES (?, ?, ?, ?, ?)')
+        .run(expense.description.trim(), expense.category.trim(), expense.amount, expense.expense_date, new Date().toISOString());
+    });
+    ipcMain.handle('expense:delete', (_event, id: number) => {
+      if (!Number.isInteger(id) || id < 1) throw new Error('Spesa non valida.');
+      const result = database.prepare('DELETE FROM expenses WHERE id = ?').run(id);
+      if (result.changes === 0) throw new Error('Spesa non trovata.');
     });
     try {
       transaction();
@@ -620,6 +647,15 @@ app.whenReady().then(() => {
       const encoded = value.slice(separator + 1);
       return /^[A-Za-z0-9+/]*={0,2}$/.test(encoded) && Math.floor(encoded.length * 3 / 4) <= maxBytes;
     };
+    let documentImages: unknown[] = [];
+    if (employee && typeof employee.documents_data === 'string') {
+      try {
+        const parsedDocuments: unknown = JSON.parse(employee.documents_data);
+        documentImages = Array.isArray(parsedDocuments) ? parsedDocuments : [employee.documents_data];
+      } catch {
+        documentImages = [employee.documents_data];
+      }
+    }
     if (!employee || requiredText.some((field) => typeof employee[field] !== 'string' || !employee[field].trim())
       || !Number.isInteger(employee.age) || employee.age < 16 || employee.age > 100
       || !Number.isFinite(employee.salary) || employee.salary < 0
@@ -628,7 +664,8 @@ app.whenReady().then(() => {
       || !/^[A-Z0-9 ]{15,34}$/i.test(employee.iban)
       || !/^DIP-\d{8}$/.test(employee.recognition_code) || !/^\d{12}$/.test(employee.barcode)
       || !isDataUrl(employee.photo_data, /^data:image\/(?:png|jpeg|webp);base64,/i, 5 * 1024 * 1024)
-      || !isDataUrl(employee.documents_data, /^data:image\/(?:png|jpeg|webp);base64,/i, 5 * 1024 * 1024)
+      || documentImages.length === 0 || documentImages.length > 20
+      || documentImages.some((image) => typeof image !== 'string' || !isDataUrl(image, /^data:image\/(?:png|jpeg|webp);base64,/i, 5 * 1024 * 1024))
       || !isDataUrl(employee.contract_pdf_data, /^data:application\/pdf;base64,/i, 10 * 1024 * 1024)) {
       throw new Error('Controlla i dati obbligatori, gli allegati e i codici del dipendente.');
     }
@@ -662,7 +699,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('voucher:validate', (_event, code: string): VoucherValidation => {
     const normalized = typeof code === 'string' ? code.trim() : '';
-    if (!/^Co-di-ce-\d{8}$/.test(normalized)) return { valid: false, message: 'Codice buono sconto non valido.' };
+    if (!normalized) return { valid: false, message: 'Codice buono sconto non valido.' };
     const today = localDate(new Date());
     const voucher = database.prepare(`SELECT b.discount_percentage, b.starts_at, b.ends_at FROM vouchers v
       JOIN voucher_batches b ON b.id = v.batch_id WHERE v.code = ?`).get(normalized) as

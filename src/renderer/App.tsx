@@ -6,7 +6,8 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import JsBarcode from 'jsbarcode';
 import { calculatePromotionDiscounts } from '../shared/promotions';
-import type { AppState, Employee, EmployeeInput, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, Sale, SaleItem, Section } from '../shared/types';
+import { voucherCodePrefix } from '../shared/vouchers';
+import type { AppState, Employee, EmployeeInput, Expense, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, Sale, SaleItem, Section } from '../shared/types';
 
 const money = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
 const dateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' });
@@ -19,6 +20,7 @@ const colors = ['#416e59', '#c17e4f', '#658499', '#a9aa64', '#8a7461', '#609085'
 const localDateKey = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const permanentPromotionEnd = '9999-12-31';
 const promotionDurations = ['1 giorno', '3 giorni', '7 giorni', '1 mese', 'Sempre', 'Personalizzata'];
+const expenseCategories = ['Affitto', 'Utenze', 'Forniture', 'Stipendi', 'Manutenzione', 'Trasporti', 'Altro'];
 type PromotionMinimum = 'none' | 'spend' | 'kilograms' | 'pieces' | 'liters';
 const nav: { section: Section; label: string; icon: typeof House }[] = [
   { section: 'home', label: 'Homepage', icon: House }, { section: 'inventory', label: 'Magazzino', icon: Package },
@@ -28,12 +30,12 @@ const nav: { section: Section; label: string; icon: typeof House }[] = [
 const sectionNames: Partial<Record<Section, string>> = {
   'inventory-history': 'Storico Magazzino', 'stock-movement': 'Carica e scarica merce',
   'sale-management': 'Modifica o Elimina', promotions: 'Offerta', 'vouchers-create': 'Crea buoni sconto',
-  'vouchers-list': 'Lista buoni sconto', accounting: 'Contabilità e finanza', clients: 'Clienti',
+  'vouchers-list': 'Lista buoni sconto', accounting: 'Contabilità e finanza',
+  'accounting-statistics': 'Statistiche', expenses: 'Spese', 'financial-balance': 'Bilancio gestionale', clients: 'Clienti',
   employees: 'Lista Dipendenti', 'employee-create': 'Crea Dipendente', payroll: 'Paga Stipendi',
 };
-const voucherCodePrefix = 'Co-di-ce-';
 const voucherCodeSpace = 100_000_000;
-function randomVoucherCode(usedCodes: Set<string>): string {
+function randomVoucherCode(prefix: string, usedCodes: Set<string>): string {
   const randomValues = new Uint32Array(1);
   const limit = Math.floor(0x1_0000_0000 / voucherCodeSpace) * voucherCodeSpace;
   let code = '';
@@ -43,10 +45,19 @@ function randomVoucherCode(usedCodes: Set<string>): string {
       window.crypto.getRandomValues(randomValues);
       value = randomValues[0];
     } while (value >= limit);
-    code = `${voucherCodePrefix}${String(value % voucherCodeSpace).padStart(8, '0')}`;
+    code = `${prefix}${String(value % voucherCodeSpace).padStart(8, '0')}`;
   } while (usedCodes.has(code));
   usedCodes.add(code);
   return code;
+}
+function employeeDocumentImages(documentsData: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(documentsData);
+    if (Array.isArray(parsed) && parsed.every((image) => typeof image === 'string')) return parsed;
+  } catch {
+    return documentsData ? [documentsData] : [];
+  }
+  return documentsData ? [documentsData] : [];
 }
 function newEmployeeDraft(employees: Employee[]): EmployeeInput {
   const usedRecognitionCodes = new Set(employees.map((employee) => employee.recognition_code));
@@ -64,7 +75,7 @@ function newEmployeeDraft(employees: Employee[]): EmployeeInput {
     first_name: '', last_name: '', age: 18, gender: '', home_address: '', email: '', initial_password: '',
     phone: '', operational_site: '', role: '', shift: '', salary: 0, iban: '',
     recognition_code: `DIP-${randomCode(8)}`, barcode: randomCode(12),
-    photo_data: '', documents_data: '', contract_pdf_data: '',
+    photo_data: '', documents_data: '[]', contract_pdf_data: '',
   };
 }
 function barcodePng(code: string): string {
@@ -143,7 +154,8 @@ function BarcodeImage({ value }: { value: string }) {
 function EmployeeForm({ initial, save, cancel, notify }: { initial: EmployeeInput; save: (employee: EmployeeInput) => Promise<void>; cancel: () => void; notify: (message: string) => void }) {
   const [employee, setEmployee] = useState(initial);
   const [saving, setSaving] = useState(false);
-  const setAttachment = async (field: 'photo_data' | 'documents_data' | 'contract_pdf_data', file: File | undefined) => {
+  const documentImages = employeeDocumentImages(employee.documents_data);
+  const setAttachment = async (field: 'photo_data' | 'contract_pdf_data', file: File | undefined) => {
     if (!file) return;
     const isContract = field === 'contract_pdf_data';
     const allowedType = isContract ? file.type === 'application/pdf' : ['image/png', 'image/jpeg', 'image/webp'].includes(file.type);
@@ -159,9 +171,33 @@ function EmployeeForm({ initial, save, cancel, notify }: { initial: EmployeeInpu
       notify(errorText(error));
     }
   };
+  const addDocumentImages = async (files: FileList | null) => {
+    if (!files?.length) return;
+    const selectedFiles = Array.from(files);
+    if (documentImages.length + selectedFiles.length > 20
+      || selectedFiles.some((file) => !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024)) {
+      notify('Puoi allegare fino a 20 immagini PNG, JPG o WEBP da massimo 5 MB ciascuna.');
+      return;
+    }
+    try {
+      const images = await Promise.all(selectedFiles.map(fileAsDataUrl));
+      setEmployee((current) => ({
+        ...current,
+        documents_data: JSON.stringify([...employeeDocumentImages(current.documents_data), ...images]),
+      }));
+    } catch (error) {
+      notify(errorText(error));
+    }
+  };
+  const removeDocumentImage = (index: number) => {
+    setEmployee((current) => ({
+      ...current,
+      documents_data: JSON.stringify(employeeDocumentImages(current.documents_data).filter((_, imageIndex) => imageIndex !== index)),
+    }));
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!employee.photo_data || !employee.documents_data || !employee.contract_pdf_data) {
+    if (!employee.photo_data || !documentImages.length || !employee.contract_pdf_data) {
       notify('Allega la foto del dipendente, la foto dei documenti e il contratto PDF.');
       return;
     }
@@ -176,14 +212,18 @@ function EmployeeForm({ initial, save, cancel, notify }: { initial: EmployeeInpu
   };
   return <form className="employee-form" onSubmit={submit}>
     <div className="employee-uploads">
-      {([
-        { field: 'photo_data', label: 'Foto del dipendente' },
-        { field: 'documents_data', label: 'Foto documenti' },
-      ] as const).map(({ field, label }) => <label className="employee-upload" key={field}>
-        <span>{label}</span>
-        <div className="employee-upload-box">{employee[field] ? <img src={employee[field]} alt={label} /> : <><Camera size={25} /><small>Seleziona immagine</small></>}</div>
-        <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void setAttachment(field, event.target.files?.[0])} />
-      </label>)}
+      <label className="employee-upload">
+        <span>Foto del dipendente</span>
+        <div className="employee-upload-box">{employee.photo_data ? <img src={employee.photo_data} alt="Foto del dipendente" /> : <><Camera size={25} /><small>Seleziona immagine</small></>}</div>
+        <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void setAttachment('photo_data', event.target.files?.[0])} />
+      </label>
+      <div className="employee-upload employee-document-upload">
+        <span>Foto documenti</span>
+        <div className="employee-document-images">{documentImages.map((image, index) => <div className="employee-document-image" key={`${index}-${image.slice(0, 32)}`}><img src={image} alt={`Documento ${index + 1}`} /><button type="button" className="icon-button small" aria-label={`Rimuovi documento ${index + 1}`} onClick={() => removeDocumentImage(index)}><X size={14} /></button></div>)}
+          <label className="employee-upload-box employee-document-add"><Camera size={25} /><small>Aggiungi immagini</small><input type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(event) => { void addDocumentImages(event.target.files); event.currentTarget.value = ''; }} /></label>
+        </div>
+        <small>PNG, JPG o WEBP · massimo 5 MB ciascuna</small>
+      </div>
     </div>
     <label className="field employee-contract"><span>Contratto in PDF</span><input type="file" accept="application/pdf,.pdf" onChange={(event) => void setAttachment('contract_pdf_data', event.target.files?.[0])} />{employee.contract_pdf_data && <small>Contratto PDF allegato</small>}</label>
     <div className="employee-fields">
@@ -235,7 +275,7 @@ function ProductForm({ initial, save, close }: { initial: ProductInput; save: (p
 export default function App() {
   const [data, setData] = useState<AppState | null>(null);
   const [section, setSection] = useState<Section>('home');
-  const [openSidebarMenu, setOpenSidebarMenu] = useState<'inventory' | 'offers' | 'employees' | null>('inventory');
+  const [openSidebarMenu, setOpenSidebarMenu] = useState<'inventory' | 'offers' | 'accounting' | 'employees' | null>('inventory');
   const [stockMovementType, setStockMovementType] = useState<'Carico' | 'Scarico'>('Carico');
   const [stockMovementProduct, setStockMovementProduct] = useState('');
   const [stockMovementQuantity, setStockMovementQuantity] = useState('');
@@ -272,6 +312,11 @@ export default function App() {
   const [inventorySearch, setInventorySearch] = useState('');
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [employeeDraft, setEmployeeDraft] = useState<EmployeeInput | null>(null);
+  const [expenseSearch, setExpenseSearch] = useState('');
+  const [expenseDescription, setExpenseDescription] = useState('');
+  const [expenseCategory, setExpenseCategory] = useState(expenseCategories[0]);
+  const [expenseAmount, setExpenseAmount] = useState('');
+  const [expenseDate, setExpenseDate] = useState(localDateKey());
   const [inventoryStatus, setInventoryStatus] = useState<'all' | 'available' | 'low' | 'out'>('all');
   const [saleSearch, setSaleSearch] = useState('');
   const [saleLookup, setSaleLookup] = useState('');
@@ -315,6 +360,33 @@ export default function App() {
     setOpenSidebarMenu(null);
     setEmployeeDraft(null);
     notify('Dipendente creato correttamente.');
+  };
+  const saveExpense = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      await window.gestionale.saveExpense({
+        description: expenseDescription,
+        category: expenseCategory,
+        amount: Number(expenseAmount),
+        expense_date: expenseDate,
+      });
+      await refresh();
+      setExpenseDescription('');
+      setExpenseAmount('');
+      notify('Spesa registrata correttamente.');
+    } catch (error) {
+      notify(errorText(error));
+    }
+  };
+  const deleteExpense = async (expense: Expense) => {
+    if (!window.confirm(`Eliminare la spesa "${expense.description}"?`)) return;
+    try {
+      await window.gestionale.deleteExpense(expense.id);
+      await refresh();
+      notify('Spesa eliminata.');
+    } catch (error) {
+      notify(errorText(error));
+    }
   };
   useEffect(() => { void window.gestionale.hasPin().then((exists) => { setHasPin(exists); if (!exists) { setLocked(false); void refresh(); } }); }, []);
   useEffect(() => { const openCash = (event: KeyboardEvent) => { if (event.key === 'F2') { event.preventDefault(); navigateTo('cash'); } }; window.addEventListener('keydown', openCash); return () => window.removeEventListener('keydown', openCash); }, []);
@@ -411,12 +483,14 @@ export default function App() {
       return;
     }
     const existingCodes = new Set(data?.voucherBatches.flatMap((batch) => batch.codes) ?? []);
-    if (quantity > voucherCodeSpace - existingCodes.size) {
+    const prefix = voucherCodePrefix(data?.settings.shop_name ?? 'Il tuo supermercato');
+    const usedShopCodes = [...existingCodes].filter((code) => code.startsWith(prefix)).length;
+    if (quantity > voucherCodeSpace - usedShopCodes) {
       notify('Non ci sono abbastanza codici univoci disponibili per questa quantità.');
       return;
     }
     const codes: string[] = [];
-    for (let index = 0; index < quantity; index += 1) codes.push(randomVoucherCode(existingCodes));
+    for (let index = 0; index < quantity; index += 1) codes.push(randomVoucherCode(prefix, existingCodes));
     setVoucherPreview({ discount_percentage: percentage, starts_at: voucherStartsAt, ends_at: voucherEndsAt, codes });
   };
   const cancelVoucherPreview = () => {
@@ -812,6 +886,29 @@ export default function App() {
     sum + sale.total - sale.items.reduce((cost, item) => cost + item.quantity * item.purchase_price, 0), 0);
   const dailyGross = todaySales.reduce((sum, sale) => sum + sale.gross_total, 0);
   const dailyUnits = todaySales.reduce((sum, sale) => sum + sale.item_count, 0);
+  const totalRevenue = data?.sales.reduce((sum, sale) => sum + sale.total, 0) ?? 0;
+  const costOfGoodsSold = data?.sales.reduce((sum, sale) =>
+    sum + sale.items.reduce((cost, item) => cost + item.quantity * item.purchase_price, 0), 0) ?? 0;
+  const totalExpenses = data?.expenses.reduce((sum, expense) => sum + expense.amount, 0) ?? 0;
+  const operatingResult = totalRevenue - costOfGoodsSold - totalExpenses;
+  const accountingMonthly = Array.from({ length: 6 }, (_, index) => {
+    const month = new Date(new Date().getFullYear(), new Date().getMonth() - 5 + index, 1);
+    const monthKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`;
+    const salesInMonth = data?.sales.filter((sale) => sale.created_at.slice(0, 7) === monthKey) ?? [];
+    const revenue = salesInMonth.reduce((sum, sale) => sum + sale.total, 0);
+    const goodsCost = salesInMonth.reduce((sum, sale) =>
+      sum + sale.items.reduce((cost, item) => cost + item.quantity * item.purchase_price, 0), 0);
+    const expenses = data?.expenses.filter((expense) => expense.expense_date.startsWith(monthKey))
+      .reduce((sum, expense) => sum + expense.amount, 0) ?? 0;
+    return {
+      mese: month.toLocaleDateString('it-IT', { month: 'short' }),
+      vendite: revenue,
+      spese: goodsCost + expenses,
+      risultato: revenue - goodsCost - expenses,
+      costiMerce: goodsCost,
+      speseOperative: expenses,
+    };
+  });
   const statisticsStart = new Date();
   statisticsStart.setHours(0, 0, 0, 0);
   const statisticsDays: Record<string, number> = { 'Ultimo giorno': 1, 'Ultimi 3 giorni': 3, 'Ultima settimana': 7 };
@@ -872,6 +969,9 @@ export default function App() {
   const employeeList = data?.employees.filter((employee) =>
     [employee.first_name, employee.last_name, employee.role, employee.shift, employee.operational_site, employee.email]
       .some((value) => value.toLocaleLowerCase('it').includes(employeeSearch.trim().toLocaleLowerCase('it')))
+  ) ?? [];
+  const expenseList = data?.expenses.filter((expense) =>
+    `${expense.description} ${expense.category}`.toLocaleLowerCase('it').includes(expenseSearch.trim().toLocaleLowerCase('it'))
   ) ?? [];
   const matchesSalesPeriod = (createdAt: string) => {
     const saleDate = new Date(createdAt);
@@ -1016,9 +1116,10 @@ export default function App() {
         {nav.filter((item) => ['cash', 'sales', 'statistics'].includes(item.section)).map(({ section: target, label, icon: Icon }) => <button key={target} className={`nav-item${section === target ? ' active' : ''}`} onClick={() => navigateTo(target)}><Icon size={18} /><span>{label}</span>{target === 'cash' && <kbd>F2</kbd>}</button>)}
         <div className="nav-label nav-label-extra">GESTIONE EXTRA</div>
         <button className={`nav-item${section === 'sale-management' ? ' active' : ''}`} onClick={() => navigateTo('sale-management')}><ClipboardList size={18} /><span>Modifica o Elimina</span></button>
+        <button aria-expanded={openSidebarMenu === 'accounting'} className={`nav-item${['accounting', 'accounting-statistics', 'expenses', 'financial-balance'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'accounting' ? null : 'accounting')}><Banknote size={18} /><span>Contabilità e finanza</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'accounting' ? ' open' : ''}`} size={15} /></button>
+        {openSidebarMenu === 'accounting' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'accounting-statistics' ? ' selected' : ''}`} onClick={() => navigateTo('accounting-statistics')}>Statistiche</button><button className={`sidebar-subitem${section === 'expenses' ? ' selected' : ''}`} onClick={() => navigateTo('expenses')}>Spese</button><button className={`sidebar-subitem${section === 'financial-balance' ? ' selected' : ''}`} onClick={() => navigateTo('financial-balance')}>Bilancio gestionale</button></div>}
         <button aria-expanded={openSidebarMenu === 'offers'} className={`nav-item${['promotions', 'vouchers-create', 'vouchers-list'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'offers' ? null : 'offers')}><TrendingUp size={18} /><span>Offerta</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'offers' ? ' open' : ''}`} size={15} /></button>
         {openSidebarMenu === 'offers' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'promotions' ? ' selected' : ''}`} onClick={() => navigateTo('promotions')}>Promozioni</button><button className={`sidebar-subitem${section === 'vouchers-create' ? ' selected' : ''}`} onClick={() => { setVoucherPreview(null); navigateTo('vouchers-create'); }}>Crea buoni sconto</button><button className={`sidebar-subitem${section === 'vouchers-list' ? ' selected' : ''}`} onClick={() => navigateTo('vouchers-list')}>Lista buoni sconto</button></div>}
-        <button className={`nav-item${section === 'accounting' ? ' active' : ''}`} onClick={() => navigateTo('accounting')}><Banknote size={18} /><span>Contabilità e finanza</span></button>
         <button className={`nav-item${section === 'clients' ? ' active' : ''}`} onClick={() => navigateTo('clients')}><ShoppingBasket size={18} /><span>Clienti</span></button>
         <button aria-expanded={openSidebarMenu === 'employees'} className={`nav-item${['employees', 'employee-create', 'payroll'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'employees' ? null : 'employees')}><ClipboardList size={18} /><span>Dipendenti</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'employees' ? ' open' : ''}`} size={15} /></button>
         {openSidebarMenu === 'employees' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => navigateTo('employees')}>Lista Dipendenti</button><button className={`sidebar-subitem${section === 'employee-create' ? ' selected' : ''}`} onClick={startEmployeeCreation}>Crea Dipendente</button><button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => navigateTo('payroll')}>Paga Stipendi</button></div>}
@@ -1047,7 +1148,7 @@ export default function App() {
 
       {section === 'cash' && <div className="page-content cash-content"><div className="cash-layout">
         <section className="cash-products">
-          <div className="cash-search-row"><label className="search-field"><Barcode size={17} /><input id="scanner-field" placeholder="Cerca o scansiona un codice a barre…" value={scannerSearch} onChange={(e) => setScannerSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scanCode(scannerSearch); } }} /></label><button className="icon-button camera-button" title="Scansiona con fotocamera" onClick={() => setCamera(true)}><Camera size={18} /></button></div>
+          <div className="cash-search-row"><div className="search-field"><Barcode size={17} /><input id="scanner-field" placeholder="Cerca o scansiona un codice a barre…" value={scannerSearch} onChange={(e) => setScannerSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scanCode(scannerSearch); } }} /><button type="button" className="search-clear" aria-label="Cancella ricerca" disabled={!scannerSearch} onClick={() => setScannerSearch('')}><X size={15} /></button></div><button className="icon-button camera-button" title="Scansiona con fotocamera" onClick={() => setCamera(true)}><Camera size={18} /></button></div>
           <div className="cash-product-grid">{data.products.filter((p) => (p.name.toLowerCase().includes(scannerSearch.toLowerCase()) || p.code.includes(scannerSearch)) && p.stock > 0).map((product) => { const remainingStock = Math.max(0, product.stock - (cart.find((item) => item.product_id === product.id)?.quantity ?? 0)); return <button className="cash-product" key={product.id} disabled={remainingStock === 0} onClick={() => addProductToCart(product)}><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="cash-product-bottom"><b>{money.format(product.sale_price)}{product.unit === 'KG' ? ' / kg' : product.unit === 'LITRO' ? ' / lit.' : ''}</b><small>{quantityFormat.format(remainingStock)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'lit.' : 'pz'}</small></span></button>; })}</div>
         </section>
         <aside className="cart-panel"><div className="cart-heading"><div className="cart-heading-title"><h2>CARRELLO <span>{quantityFormat.format(cart.reduce((sum, item) => sum + item.quantity, 0))}</span></h2></div><button className="icon-button" title="Svuota carrello" aria-label="Svuota carrello" disabled={!cart.length} onClick={() => { setCart([]); setManualPromotionId(undefined); setAutomaticPromotionId(undefined); }}><Trash2 size={17} /></button></div><div className="cart-lines">{cart.map((item) => <div className="cart-line" key={item.product_id}><div className="cart-line-name"><strong>{item.name}</strong><small>{quantityFormat.format(item.quantity)} {item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}</small></div><div className="quantity-control"><button onClick={() => changeQuantity(item.product_id, -1)} aria-label="Rimuovi uno"><Minus size={13} /></button><span>{quantityFormat.format(item.quantity)}</span><button onClick={() => changeQuantity(item.product_id, 1)} aria-label="Aggiungi uno"><Plus size={13} /></button></div><strong className="line-total">{money.format(item.quantity * item.unit_price)}</strong></div>)}{!cart.length && <div className="cart-empty"><ShoppingBasket size={25} /><span>Seleziona gli articoli<br />per iniziare una vendita</span></div>}</div><div className="receipt-summary"><div><span>Subtotale</span><span>{money.format(subtotal)}</span></div><div className="total-row"><strong>TOTALE</strong><strong>{money.format(subtotal)}</strong></div></div><button className="button button-primary checkout-button" disabled={!cart.length} onClick={() => setCheckoutOpen(true)}>Procedi al pagamento <span>→</span></button></aside>
@@ -1055,7 +1156,7 @@ export default function App() {
 
       {section === 'sales' && <div className="page-content"><div className="sale-tools"><button className="button button-outline sale-camera-button" onClick={() => setCamera(true)}><Camera size={16} /> Cerca con fotocamera</button><SearchInput value={saleSearch} onChange={setSaleSearch} placeholder="Cerca numero scontrino…" numericOnly /><button className="button button-outline" onClick={exportReport}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-outline" onClick={exportSalesCsv}><ArrowDownToLine size={16} /> Esporta CSV</button></div><div className="sale-filters"><SelectField label="Periodo" value={salesPeriod} onChange={setSalesPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A']} />{salesPeriod === 'Da - A' && <><Field label="Da" type="date" value={salesFrom} onChange={(event) => setSalesFrom(event.target.value)} /><Field label="A" type="date" value={salesTo} onChange={(event) => setSalesTo(event.target.value)} /></>}<SelectField label="Categoria" value={salesCategory} onChange={setSalesCategory} options={['Tutte', ...categories]} /></div><SalesTable sales={salesList} onSelect={setReceipt} /></div>}
 
-      {section === 'sale-management' && <div className="page-content settings-page"><section className="settings-panel"><button className="settings-back" onClick={() => setSection('home')}><ArrowLeft size={15} /> Menu principale</button><div className="settings-title"><h2>Modifica o elimina una vendita</h2><p>Inserisci il numero a 5 cifre oppure leggilo con il lettore barcode.</p></div><div className="lookup-panel"><button className="button button-outline" onClick={() => setCamera(true)}><Camera size={16} /> Scansiona con fotocamera</button><Field label="Numero scontrino" type="text" inputMode="numeric" pattern="[0-9]*" maxLength={5} value={saleLookup} onChange={(e) => setSaleLookup(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => { if (e.key === 'Enter') findSale(); }} placeholder="Numero scontrino" /><button className="button button-primary" onClick={findSale}><Search size={16} /> Cerca scontrino</button></div></section></div>}
+      {section === 'sale-management' && <div className="page-content settings-page"><section className="settings-panel"><button className="settings-back" onClick={() => setSection('home')}><ArrowLeft size={15} /> Menu principale</button><div className="settings-title"><h2>Modifica o elimina una vendita</h2><p>Inserisci il numero a 5 cifre oppure leggilo con il lettore barcode.</p></div><div className="lookup-panel"><button className="button button-outline" onClick={() => setCamera(true)}><Camera size={16} /> Scansiona con fotocamera</button><div className="receipt-search-field"><Field label="Numero scontrino" type="text" inputMode="numeric" pattern="[0-9]*" maxLength={5} value={saleLookup} onChange={(e) => setSaleLookup(e.target.value.replace(/\D/g, ''))} onKeyDown={(e) => { if (e.key === 'Enter') findSale(); }} placeholder="Numero scontrino" /><button type="button" className="search-clear" aria-label="Cancella ricerca" disabled={!saleLookup} onClick={() => setSaleLookup('')}><X size={15} /></button></div><button className="button button-primary" onClick={findSale}><Search size={16} /> Cerca scontrino</button></div></section></div>}
 
       {section === 'promotions' && <div className="page-content settings-page"><section className="settings-panel">
         <button className="settings-back" onClick={() => setSection('home')}><ArrowLeft size={15} /> Menu principale</button>
@@ -1089,15 +1190,59 @@ export default function App() {
       </section></div>}
 
       {section === 'employees' && <div className="page-content employee-page">
-        <div className="page-toolbar employee-toolbar"><div><h2>Lista Dipendenti</h2><p>{data.employees.length} dipendenti registrati</p></div><SearchInput value={employeeSearch} onChange={setEmployeeSearch} placeholder="Cerca dipendente, ruolo o sede…" /><div className="toolbar-actions"><button className="button button-outline" onClick={() => void exportEmployeeList()}><ArrowDownToLine size={16} /> Esporta Lista PDF</button><button className="button button-primary" onClick={startEmployeeCreation}><Plus size={16} /> Nuovo dipendente</button></div></div>
+        <div className="page-toolbar employee-toolbar"><SearchInput value={employeeSearch} onChange={setEmployeeSearch} placeholder="Cerca dipendente, ruolo o sede…" /><div className="toolbar-actions"><button className="button button-outline" onClick={() => void exportEmployeeList()}><ArrowDownToLine size={16} /> Esporta Lista PDF</button></div></div>
         <Table headings={['Foto dipendente', 'Nome', 'Ruolo', 'Turno', 'Sede']}><>{employeeList.map((employee) => <tr key={employee.id}><td><img className="employee-list-photo" src={employee.photo_data} alt={`Foto di ${employee.first_name} ${employee.last_name}`} /></td><td className="cell-primary">{employee.first_name} {employee.last_name}</td><td>{employee.role}</td><td>{employee.shift}</td><td>{employee.operational_site}</td></tr>)}</>{!employeeList.length && <tr><td colSpan={5} className="empty-cell">{data.employees.length ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente registrato.'}</td></tr>}</Table>
       </div>}
-      {section === 'employee-create' && employeeDraft && <div className="page-content settings-page"><section className="settings-panel employee-create-panel"><div className="settings-title"><h2>Crea Dipendente</h2><p>Inserisci i dati richiesti e allega foto, documenti e contratto.</p></div><EmployeeForm initial={employeeDraft} save={saveEmployee} cancel={() => { setEmployeeDraft(null); navigateTo('employees'); }} notify={notify} /></section></div>}
-      {(section === 'accounting' || section === 'clients' || section === 'payroll') && <div className="page-content settings-page"><section className="settings-panel"><div className="settings-title"><h2>{sectionNames[section]}</h2><p>Sezione in preparazione.</p></div></section></div>}
+      {section === 'employee-create' && employeeDraft && <div className="page-content settings-page"><section className="settings-panel employee-create-panel"><EmployeeForm initial={employeeDraft} save={saveEmployee} cancel={() => { setEmployeeDraft(null); navigateTo('employees'); }} notify={notify} /></section></div>}
+      {(section === 'clients' || section === 'payroll' || section === 'accounting') && <div className="page-content settings-page"><section className="settings-panel"><div className="settings-title"><h2>{sectionNames[section]}</h2><p>Sezione in preparazione.</p></div></section></div>}
+
+      {section === 'accounting-statistics' && <div className="page-content accounting-page">
+        <div className="page-toolbar"><div><h2>Andamento economico</h2><p>Riepilogo delle vendite, del costo merce e delle spese operative.</p></div></div>
+        <div className="metric-grid stats-metrics accounting-metrics">
+          <Metric icon={Banknote} label="Vendite nette" value={money.format(totalRevenue)} detail={`${data.sales.length} vendite registrate`} compact />
+          <Metric icon={Package} label="Costo della merce venduta" value={money.format(costOfGoodsSold)} detail="Costo d'acquisto degli articoli venduti" compact />
+          <Metric icon={ArrowDownToLine} label="Spese operative" value={money.format(totalExpenses)} detail={`${data.expenses.length} spese registrate`} compact />
+          <Metric icon={TrendingUp} label="Risultato operativo" value={money.format(operatingResult)} detail="Vendite meno costo merce e spese" compact />
+        </div>
+        <div className="analytics-grid">
+          <section className="panel chart-panel"><div className="panel-heading"><div><h3>Vendite e costi · ultimi 6 mesi</h3><p>Valori mensili in euro</p></div></div><ResponsiveContainer width="100%" height={245}><BarChart data={accountingMonthly}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="mese" /><YAxis /><Tooltip formatter={(value) => money.format(Number(value))} /><Bar dataKey="vendite" name="Vendite nette" fill="#416e59" radius={[3, 3, 0, 0]} /><Bar dataKey="spese" name="Costo merce e spese" fill="#c17e4f" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer></section>
+          <section className="panel chart-panel"><div className="panel-heading"><div><h3>Risultato operativo mensile</h3><p>Vendite meno costo merce e spese registrate</p></div></div><ResponsiveContainer width="100%" height={245}><LineChart data={accountingMonthly}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="mese" /><YAxis /><Tooltip formatter={(value) => money.format(Number(value))} /><Line type="monotone" dataKey="risultato" name="Risultato operativo" stroke="#416e59" strokeWidth={2} dot={{ r: 3 }} /></LineChart></ResponsiveContainer></section>
+        </div>
+      </div>}
+
+      {section === 'expenses' && <div className="page-content accounting-page">
+        <div className="page-toolbar"><div><h2>Spese</h2><p>Registra e consulta le uscite del negozio.</p></div><strong className="expenses-total">Totale registrato: {money.format(totalExpenses)}</strong></div>
+        <section className="panel expense-entry-panel"><div className="panel-heading"><div><h3>Registra una spesa</h3><p>Inserisci descrizione, categoria, importo e data.</p></div></div>
+          <form className="expense-form" onSubmit={(event) => void saveExpense(event)}>
+            <Field label="Descrizione" value={expenseDescription} onChange={(event) => setExpenseDescription(event.target.value)} required />
+            <SelectField label="Categoria" value={expenseCategory} onChange={setExpenseCategory} options={expenseCategories} />
+            <Field label="Importo (€)" type="number" min="0.01" step="0.01" value={expenseAmount} onChange={(event) => setExpenseAmount(event.target.value)} required />
+            <Field label="Data" type="date" value={expenseDate} onChange={(event) => setExpenseDate(event.target.value)} required />
+            <button className="button button-primary"><Plus size={16} /> Registra spesa</button>
+          </form>
+        </section>
+        <div className="expense-list-toolbar"><SearchInput value={expenseSearch} onChange={setExpenseSearch} placeholder="Cerca descrizione o categoria…" /></div>
+        <Table headings={['Data', 'Descrizione', 'Categoria', 'Importo', '']}>{expenseList.map((expense) => <tr key={expense.id}><td>{expense.expense_date}</td><td className="cell-primary">{expense.description}</td><td>{expense.category}</td><td className="align-right">{money.format(expense.amount)}</td><td><button className="icon-button small" title="Elimina spesa" aria-label={`Elimina la spesa ${expense.description}`} onClick={() => void deleteExpense(expense)}><Trash2 size={15} /></button></td></tr>)}{!expenseList.length && <tr><td colSpan={5} className="empty-cell">{data.expenses.length ? 'Nessuna spesa corrisponde alla ricerca.' : 'Nessuna spesa registrata.'}</td></tr>}</Table>
+      </div>}
+
+      {section === 'financial-balance' && <div className="page-content accounting-page">
+        <div className="page-toolbar"><div><h2>Bilancio gestionale</h2><p>Riepilogo complessivo delle entrate, dei costi e del valore delle scorte.</p></div></div>
+        <div className="metric-grid accounting-balance-metrics">
+          <Metric icon={Banknote} label="Ricavi da vendite" value={money.format(totalRevenue)} detail="Totale netto degli scontrini" />
+          <Metric icon={Package} label="Costo della merce venduta" value={money.format(costOfGoodsSold)} detail="Costo degli articoli venduti" />
+          <Metric icon={ArrowDownToLine} label="Spese operative" value={money.format(totalExpenses)} detail="Spese inserite nella sezione Spese" />
+          <Metric icon={TrendingUp} label="Risultato gestionale" value={money.format(operatingResult)} detail="Ricavi meno costi e spese" />
+        </div>
+        <div className="analytics-grid">
+          <section className="panel"><div className="panel-heading"><div><h3>Composizione del bilancio</h3><p>Dati complessivi dall'avvio dell'archivio</p></div></div><div className="balance-breakdown"><Detail label="Ricavi netti" value={money.format(totalRevenue)} /><Detail label="Costo del venduto" value={`− ${money.format(costOfGoodsSold)}`} /><Detail label="Margine lordo" value={money.format(totalRevenue - costOfGoodsSold)} /><Detail label="Spese operative" value={`− ${money.format(totalExpenses)}`} /><Detail label="Risultato gestionale" value={money.format(operatingResult)} /></div></section>
+          <section className="panel"><div className="panel-heading"><div><h3>Valore del magazzino</h3><p>Valorizzazione della giacenza attuale</p></div></div><div className="balance-breakdown"><Detail label="Valore a costo" value={money.format(stockCost)} /><Detail label="Valore potenziale di vendita" value={money.format(stockRetail)} /><Detail label="Articoli in giacenza" value={`${data.products.filter((product) => product.stock > 0).length}`} /><Detail label="Margine potenziale" value={money.format(stockRetail - stockCost)} /></div></section>
+        </div>
+        <section className="panel balance-monthly-panel"><div className="panel-heading"><div><h3>Dettaglio mensile · ultimi 6 mesi</h3><p>Ricavi, costo merce, spese operative e risultato</p></div></div><div className="table-wrap"><table><thead><tr><th>Mese</th><th className="align-right">Ricavi</th><th className="align-right">Costo merce</th><th className="align-right">Spese operative</th><th className="align-right">Risultato</th></tr></thead><tbody>{accountingMonthly.map((month) => <tr key={month.mese}><td className="cell-primary">{month.mese}</td><td className="align-right">{money.format(month.vendite)}</td><td className="align-right">{money.format(month.costiMerce)}</td><td className="align-right">{money.format(month.speseOperative)}</td><td className="align-right cell-primary">{money.format(month.risultato)}</td></tr>)}</tbody></table></div></section>
+      </div>}
 
       {(section === 'vouchers-create' || section === 'vouchers-list') && <div className="page-content settings-page"><section className="settings-panel">
         {section === 'vouchers-create' && <div className="voucher-section">
-          <div className="settings-title"><h2>Crea buoni sconto</h2><p>Imposta le condizioni e genera codici univoci da stampare e distribuire.</p></div>
+          <div className="settings-title"><h2>Crea buoni sconto</h2></div>
           {!voucherPreview ? <form className="form-grid promotion-form voucher-form" onSubmit={generateVoucherPreview}>
             <Field label="Percentuale di sconto (%)" type="number" min="1" max="100" step="1" value={voucherPercentage} onChange={(event) => setVoucherPercentage(event.target.value)} required />
             <Field label="Quantità di codici" type="number" min="1" step="1" value={voucherQuantity} onChange={(event) => setVoucherQuantity(event.target.value)} required />
@@ -1111,7 +1256,6 @@ export default function App() {
           </>}
         </div>}
         {section === 'vouchers-list' && <div className="voucher-section">
-          <div className="settings-title"><h2>Lista buoni sconto</h2></div>
           {!data.voucherBatches.length ? <Empty icon={Barcode} title="Nessun buono sconto" detail="Crea e conferma un gruppo di codici per visualizzarlo qui." /> : <>
             <div className="voucher-batch-list">{data.voucherBatches.map((batch) => <div className="voucher-batch-row" key={batch.id}>
               <div><strong>Gruppo {batch.id}</strong><span>{batch.codes.length} codici · {batch.discount_percentage}% di sconto</span><small>{batch.starts_at} — {batch.ends_at}</small></div>
@@ -1204,7 +1348,7 @@ function SalesTable({ sales, onSelect }: { sales: Sale[]; onSelect?: (sale: Sale
   return <div className="table-wrap"><table><thead><tr><th>Numero scontrino</th><th>Data e ora</th><th>Articoli</th><th>Pagamento</th><th className="align-right">Totale</th></tr></thead><tbody>{sales.map((sale) => <tr key={sale.id} onClick={onSelect ? () => onSelect(sale) : undefined}><td className="receipt-number">#{sale.receipt_no}</td><td>{dateTime.format(new Date(sale.created_at))}</td><td>{sale.item_count}</td><td><span className="payment-tag">{sale.payment_method}</span></td><td className="align-right cell-primary">{money.format(sale.total)}</td></tr>)}{!sales.length && <tr><td colSpan={5} className="empty-cell">Nessuna vendita registrata.</td></tr>}</tbody></table></div>;
 }
 function SearchInput({ value, onChange, placeholder, numericOnly = false }: { value: string; onChange: (value: string) => void; placeholder: string; numericOnly?: boolean }) {
-  return <label className="search-field"><Search size={17} /><input placeholder={placeholder} value={value} inputMode={numericOnly ? 'numeric' : undefined} pattern={numericOnly ? '[0-9]*' : undefined} onChange={(event) => onChange(numericOnly ? event.target.value.replace(/\D/g, '') : event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault(); }} /></label>;
+  return <div className="search-field"><Search size={17} /><input placeholder={placeholder} value={value} inputMode={numericOnly ? 'numeric' : undefined} pattern={numericOnly ? '[0-9]*' : undefined} onChange={(event) => onChange(numericOnly ? event.target.value.replace(/\D/g, '') : event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault(); }} /><button type="button" className="search-clear" aria-label="Cancella ricerca" disabled={!value} onClick={() => onChange('')}><X size={15} /></button></div>;
 }
 function SelectField({ label, value, onChange, options, labels }: { label: string; value: string; onChange: (value: string) => void; options: string[]; labels?: string[] }) {
   return <label className="field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option, index) => <option key={`${option}-${index}`} value={option}>{labels?.[index] ?? option}</option>)}</select></label>;

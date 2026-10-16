@@ -1,4 +1,4 @@
-export type Section = 'home' | 'inventory' | 'inventory-history' | 'stock-movement' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'accounting' | 'clients' | 'employees' | 'employee-create' | 'payroll' | 'settings';
+export type Section = 'home' | 'inventory' | 'inventory-history' | 'stock-movement' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'accounting' | 'accounting-statistics' | 'expenses' | 'financial-balance' | 'clients' | 'employees' | 'employee-create' | 'payroll' | 'settings';
 export type ProductUnit = 'KG' | 'LITRO' | 'PEZZO';
 export type Printer = { name: string; displayName: string };
 
@@ -48,6 +48,15 @@ export interface StockMovement {
   created_at: string;
   person: string;
   note: string;
+}
+
+export interface Expense {
+  id: number;
+  description: string;
+  category: string;
+  amount: number;
+  expense_date: string;
+  created_at: string;
 }
 
 export interface Promotion {
@@ -112,6 +121,7 @@ export interface AppState {
   employees: Employee[];
   settings: { shop_name: string; shop_logo?: string; archive_folder: string; database_file: string; receipt_printer: string; barcode_scanner_enabled: boolean; barcode_scanner_detected: boolean };
   stockMovements: StockMovement[];
+  expenses: Expense[];
 }
 
 export interface ProductInput {
@@ -148,6 +158,8 @@ declare global {
     printReceipt: () => Promise<void>;
     updateSale: (sale: Pick<Sale, 'id' | 'payment_method' | 'discount'> & { items: SaleItem[] }) => Promise<void>;
     deleteSale: (id: number) => Promise<void>;
+    saveExpense: (expense: Pick<Expense, 'description' | 'category' | 'amount' | 'expense_date'>) => Promise<void>;
+    deleteExpense: (id: number) => Promise<void>;
     chooseArchiveFolder: () => Promise<string | null>;
     chooseShopLogo: () => Promise<string | null>;
   }

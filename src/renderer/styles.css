@@ -34,7 +34,7 @@ h1, h2, h3, .brand strong { font-family: 'Manrope', 'Segoe UI', sans-serif; lett
 .brand > div:last-child { min-width: 0; }
 .brand strong { display: block; overflow: hidden; max-width: 168px; color: #29352e; font-size: 13px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
 .brand small { display: block; margin-top: 3px; color: #929b94; font-size: 9px; font-weight: 700; letter-spacing: 0; }
-.brand-mark { display: grid; overflow: hidden; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 7px; background: var(--green); color: white; }
+.brand-mark { display: grid; overflow: hidden; width: 44px; height: 44px; flex: 0 0 auto; place-items: center; border-radius: 7px; background: var(--green); color: white; }
 .brand-mark.has-logo { background: white; }
 .brand-mark img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .nav-label, .eyebrow { color: #969e98; font-size: 9px; font-weight: 700; letter-spacing: 0; }
@@ -148,6 +148,9 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .search-field { display: flex; min-width: 180px; height: 38px; flex: 1; align-items: center; gap: 9px; padding: 0 11px; border: 1px solid #dfe4de; border-radius: 4px; background: white; color: #7c877e; }
 .search-field:focus-within { border-color: #91ae9a; box-shadow: 0 0 0 2px rgb(56 104 78 / 12%); }
 .search-field input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 11px; }
+.search-clear { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; padding: 0; border: 0; border-radius: 3px; background: transparent; color: #89938b; cursor: pointer; }
+.search-clear:hover:not(:disabled) { background: #f0f2ef; color: var(--ink); }
+.search-clear:disabled { cursor: default; opacity: .35; }
 .search-field input::placeholder, .field input::placeholder { color: #a5aca6; }
 .select-wrap { position: relative; display: flex; height: 38px; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid #dfe4de; border-radius: 4px; background: white; color: #89928b; font-size: 10px; }
 .select-wrap select { min-width: 94px; appearance: none; border: 0; outline: 0; background: transparent; color: #445148; font-size: 10px; }
@@ -244,7 +247,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .settings-nav button { display: flex; width: 100%; min-height: 48px; align-items: center; gap: 10px; padding: 0 14px; border: 1px solid var(--line); border-radius: 4px; background: white; color: #536158; cursor: pointer; font-size: 11px; text-align: left; }
 .settings-nav button:hover { background: #ecefea; }
 .settings-nav button.selected { background: #e7efe8; color: #315d41; font-weight: 600; }
-.voucher-form { max-width: 650px; }
+.voucher-form { max-width: none; }
 .voucher-preview-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin: 18px 0 10px; color: #536158; font-size: 11px; }
 .voucher-codes { max-height: 55vh; }
 .voucher-print-only { display: none; }
@@ -314,6 +317,9 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .promotion-row b { color: var(--green); font-size: 11px; }
 .lookup-panel { display: flex; width: 100%; align-items: flex-end; gap: 9px; padding-top: 20px; }
 .lookup-panel .field { min-width: 0; flex: 1; }
+.receipt-search-field { position: relative; min-width: 0; flex: 1; }
+.receipt-search-field .field input { padding-right: 35px; }
+.receipt-search-field .search-clear { position: absolute; right: 5px; bottom: 6px; }
 .database-card { margin-bottom: 5px; }
 .settings-connection { margin-top: 14px; padding: 10px 0; color: #65736a; }
 .database-card .stock-badge { flex: 0 0 auto; }
@@ -586,16 +592,23 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .unsold-list-actions .button { width: 100%; }
 
 .sidebar nav .nav-label-extra { margin: 12px 9px 4px; }
-.employee-toolbar { display: grid; grid-template-columns: minmax(170px, auto) minmax(180px, 1fr) auto; }
-.employee-toolbar > .search-field { max-width: 360px; }
-.employee-create-panel { max-width: 900px; }
+.employee-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+.employee-toolbar > .search-field { max-width: none; }
+.employee-create-panel { max-width: none; }
 .employee-form { display: grid; gap: 17px; padding-top: 20px; }
-.employee-uploads { display: grid; grid-template-columns: repeat(2, minmax(0, 165px)); gap: 15px; }
+.employee-uploads { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
 .employee-upload { display: grid; min-width: 0; gap: 7px; color: #758078; font-size: 10px; font-weight: 500; }
-.employee-upload-box { display: grid; overflow: hidden; width: 100%; aspect-ratio: 1; place-items: center; gap: 8px; border: 1px dashed #cbd5cc; border-radius: 5px; background: #fafbf9; color: #849188; }
+.employee-upload-box { display: grid; overflow: hidden; width: 100%; min-height: 180px; aspect-ratio: 1; place-items: center; gap: 8px; border: 1px dashed #cbd5cc; border-radius: 5px; background: #fafbf9; color: #849188; }
 .employee-upload-box img { width: 100%; height: 100%; object-fit: cover; }
 .employee-upload-box small { font-size: 9px; }
 .employee-upload input { width: 100%; min-width: 0; color: #758078; font-size: 9px; }
+.employee-document-upload > small { color: #929b94; font-size: 9px; }
+.employee-document-images { display: grid; grid-template-columns: repeat(auto-fit, minmax(95px, 1fr)); align-content: start; gap: 8px; }
+.employee-document-image { position: relative; overflow: hidden; aspect-ratio: 1; border: 1px solid var(--line); border-radius: 5px; background: #fafbf9; }
+.employee-document-image > img { width: 100%; height: 100%; object-fit: cover; }
+.employee-document-image > .icon-button { position: absolute; top: 4px; right: 4px; background: rgb(255 255 255 / 90%); }
+.employee-upload-box.employee-document-add { position: relative; min-height: 0; aspect-ratio: 1; cursor: pointer; }
+.employee-document-add input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 .employee-contract input { height: auto; padding: 8px; }
 .employee-contract > small { color: var(--green); font-size: 9px; }
 .employee-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
@@ -611,8 +624,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 
 @media (max-width: 1120px) {
   .expiry-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .employee-toolbar { grid-template-columns: minmax(150px, auto) minmax(160px, 1fr); }
-  .employee-toolbar > .toolbar-actions { grid-column: 1 / -1; justify-content: flex-end; }
+  .employee-toolbar { grid-template-columns: minmax(0, 1fr) auto; }
 }
 @media (max-width: 850px) {
   .expiry-panels { grid-template-columns: 1fr; }
@@ -620,13 +632,39 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
   .promotion-bundle-fields { grid-template-columns: 1fr; }
   .inventory-history-actions { width: 100%; flex-wrap: wrap; }
   .employee-toolbar { display: flex; align-items: stretch; flex-wrap: wrap; }
-  .employee-toolbar > .search-field { max-width: none; }
-  .employee-toolbar > .toolbar-actions { width: 100%; flex-wrap: wrap; }
+  .employee-toolbar > .search-field { max-width: none; flex: 1 1 100%; }
+  .employee-toolbar > .toolbar-actions { width: auto; flex-wrap: wrap; }
 }
 @media (max-width: 600px) {
   .employee-fields { grid-template-columns: 1fr; }
   .employee-wide-field { grid-column: 1; }
-  .employee-uploads { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.accounting-page .page-toolbar p { margin-top: 5px; color: var(--muted); font-size: 11px; }
+.accounting-metrics, .accounting-balance-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.accounting-balance-metrics .metric-card { min-height: 130px; }
+.expense-entry-panel { margin-bottom: 14px; }
+.expense-form { display: grid; grid-template-columns: minmax(180px, 2fr) repeat(3, minmax(120px, 1fr)) auto; align-items: end; gap: 10px; }
+.expense-form > .button { min-height: 37px; }
+.expense-list-toolbar { display: flex; margin-bottom: 11px; }
+.expense-list-toolbar > .search-field { max-width: none; }
+.expenses-total { color: var(--green-dark); font-size: 12px; }
+.balance-breakdown { display: grid; margin-top: 8px; border-top: 1px solid var(--line); }
+.balance-breakdown .detail-row:last-child { border-bottom: 0; }
+.balance-breakdown .detail-row:last-child strong { color: var(--green-dark); font-weight: 700; }
+.balance-monthly-panel { margin-top: 14px; }
+
+@media (max-width: 1000px) {
+  .accounting-metrics, .accounting-balance-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .expense-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .expense-form > .button { grid-column: 1 / -1; }
+}
+@media (max-width: 700px) {
+  .analytics-grid { grid-template-columns: 1fr; }
+  .accounting-metrics, .accounting-balance-metrics { grid-template-columns: 1fr 1fr; }
+  .expense-form { grid-template-columns: 1fr; }
+  .expense-form > .button { grid-column: auto; }
+  .expenses-total { font-size: 10px; }
 }
 
 .home-page, .home-page * { color: #111 !important; font-weight: 700 !important; }

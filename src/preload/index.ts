@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { CheckoutInput, EmployeeInput, Printer, ProductInput, PromotionInput, SaleItem, VoucherBatchInput } from '../shared/types';
+import type { CheckoutInput, EmployeeInput, Expense, Printer, ProductInput, PromotionInput, SaleItem, VoucherBatchInput } from '../shared/types';
 
 contextBridge.exposeInMainWorld('gestionale', {
   getState: () => ipcRenderer.invoke('state:get'),
@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('gestionale', {
   printReceipt: (): Promise<void> => ipcRenderer.invoke('receipt:print'),
   updateSale: (sale: { id: number; payment_method: string; discount: number; items: SaleItem[] }) => ipcRenderer.invoke('sale:update', sale),
   deleteSale: (id: number) => ipcRenderer.invoke('sale:delete', id),
+  saveExpense: (expense: Pick<Expense, 'description' | 'category' | 'amount' | 'expense_date'>) => ipcRenderer.invoke('expense:save', expense),
+  deleteExpense: (id: number) => ipcRenderer.invoke('expense:delete', id),
   chooseArchiveFolder: () => ipcRenderer.invoke('archive:choose-folder'),
   chooseShopLogo: () => ipcRenderer.invoke('settings:choose-shop-logo'),
 });
