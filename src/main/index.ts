@@ -5,7 +5,7 @@ import { randomInt, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto
 import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { calculatePromotionDiscounts } from '../shared/promotions';
-import type { CheckoutInput, Product, ProductInput, Promotion, PromotionInput, SaleItem, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
+import type { CheckoutInput, Employee, EmployeeInput, Product, ProductInput, Promotion, PromotionInput, SaleItem, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
 
 let database: Database.Database;
 let mainWindow: BrowserWindow;
@@ -94,6 +94,9 @@ function state() {
     stockMovements: database.prepare('SELECT * FROM stock_movements ORDER BY created_at DESC, id DESC').all(),
     promotions: database.prepare('SELECT * FROM promotions ORDER BY starts_at DESC').all(),
     voucherBatches: allVoucherBatches(),
+    employees: database.prepare(`SELECT id, first_name, last_name, age, gender, home_address, email, phone, operational_site,
+      role, shift, salary, iban, recognition_code, barcode, photo_data, documents_data, contract_pdf_data, created_at
+      FROM employees ORDER BY last_name, first_name`).all() as Employee[],
     settings: {
       shop_name: setting('shop_name', 'Il tuo supermercato'),
       shop_logo: setting('shop_logo'),
@@ -149,6 +152,13 @@ function initDatabase(): void {
     CREATE TABLE IF NOT EXISTS vouchers (
       id INTEGER PRIMARY KEY AUTOINCREMENT, batch_id INTEGER NOT NULL REFERENCES voucher_batches(id) ON DELETE CASCADE,
       code TEXT NOT NULL UNIQUE
+    );
+    CREATE TABLE IF NOT EXISTS employees (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, first_name TEXT NOT NULL, last_name TEXT NOT NULL, age INTEGER NOT NULL,
+      gender TEXT NOT NULL, home_address TEXT NOT NULL, email TEXT NOT NULL UNIQUE, initial_password_hash TEXT NOT NULL,
+      phone TEXT NOT NULL, operational_site TEXT NOT NULL, role TEXT NOT NULL, shift TEXT NOT NULL, salary REAL NOT NULL,
+      iban TEXT NOT NULL, recognition_code TEXT NOT NULL UNIQUE, barcode TEXT NOT NULL UNIQUE,
+      photo_data TEXT NOT NULL, documents_data TEXT NOT NULL, contract_pdf_data TEXT NOT NULL, created_at TEXT NOT NULL
     );
   `);
   const stockMovementColumns = database.prepare('PRAGMA table_info(stock_movements)').all() as Array<{ name: string }>;
@@ -594,6 +604,58 @@ app.whenReady().then(() => {
     } catch (error) {
       if (error instanceof Error && error.message.includes('UNIQUE constraint failed: vouchers.code')) {
         throw new Error('Uno o più codici sono già presenti. Genera nuovamente i codici prima di confermare.');
+      }
+      throw error;
+    }
+  });
+  ipcMain.handle('employee:save', (_event, employee: EmployeeInput) => {
+    const requiredText: Array<keyof EmployeeInput> = [
+      'first_name', 'last_name', 'gender', 'home_address', 'email', 'phone', 'operational_site',
+      'role', 'shift', 'iban', 'recognition_code', 'barcode', 'photo_data', 'documents_data',
+      'contract_pdf_data', 'initial_password',
+    ];
+    const isDataUrl = (value: string, mime: RegExp, maxBytes: number) => {
+      if (!mime.test(value)) return false;
+      const separator = value.indexOf(',');
+      const encoded = value.slice(separator + 1);
+      return /^[A-Za-z0-9+/]*={0,2}$/.test(encoded) && Math.floor(encoded.length * 3 / 4) <= maxBytes;
+    };
+    if (!employee || requiredText.some((field) => typeof employee[field] !== 'string' || !employee[field].trim())
+      || !Number.isInteger(employee.age) || employee.age < 16 || employee.age > 100
+      || !Number.isFinite(employee.salary) || employee.salary < 0
+      || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(employee.email)
+      || employee.initial_password.length < 8 || employee.initial_password.length > 128
+      || !/^[A-Z0-9 ]{15,34}$/i.test(employee.iban)
+      || !/^DIP-\d{8}$/.test(employee.recognition_code) || !/^\d{12}$/.test(employee.barcode)
+      || !isDataUrl(employee.photo_data, /^data:image\/(?:png|jpeg|webp);base64,/i, 5 * 1024 * 1024)
+      || !isDataUrl(employee.documents_data, /^data:image\/(?:png|jpeg|webp);base64,/i, 5 * 1024 * 1024)
+      || !isDataUrl(employee.contract_pdf_data, /^data:application\/pdf;base64,/i, 10 * 1024 * 1024)) {
+      throw new Error('Controlla i dati obbligatori, gli allegati e i codici del dipendente.');
+    }
+    const { initial_password: initialPassword, ...employeeDetails } = employee;
+    const salt = randomBytes(16).toString('hex');
+    const passwordHash = `${salt}:${scryptSync(initialPassword, salt, 64).toString('hex')}`;
+    try {
+      database.prepare(`INSERT INTO employees (
+        first_name, last_name, age, gender, home_address, email, initial_password_hash, phone, operational_site,
+        role, shift, salary, iban, recognition_code, barcode, photo_data, documents_data, contract_pdf_data, created_at
+      ) VALUES (
+        @first_name, @last_name, @age, @gender, @home_address, @email, @initial_password_hash, @phone, @operational_site,
+        @role, @shift, @salary, @iban, @recognition_code, @barcode, @photo_data, @documents_data, @contract_pdf_data, @created_at
+      )`).run({
+        ...employeeDetails,
+        initial_password_hash: passwordHash,
+        created_at: new Date().toISOString(),
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('UNIQUE constraint failed: employees.email')) {
+        throw new Error('Esiste già un dipendente con questo indirizzo email.');
+      }
+      if (error instanceof Error && error.message.includes('UNIQUE constraint failed: employees.recognition_code')) {
+        throw new Error('Il codice di riconoscimento è già assegnato a un dipendente.');
+      }
+      if (error instanceof Error && error.message.includes('UNIQUE constraint failed: employees.barcode')) {
+        throw new Error('Il barcode è già assegnato a un dipendente.');
       }
       throw error;
     }

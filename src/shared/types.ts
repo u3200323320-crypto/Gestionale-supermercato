@@ -76,6 +76,29 @@ export interface VoucherBatch {
   codes: string[];
 }
 
+export interface Employee {
+  id: number;
+  first_name: string;
+  last_name: string;
+  age: number;
+  gender: string;
+  home_address: string;
+  email: string;
+  phone: string;
+  operational_site: string;
+  role: string;
+  shift: string;
+  salary: number;
+  iban: string;
+  recognition_code: string;
+  barcode: string;
+  photo_data: string;
+  documents_data: string;
+  contract_pdf_data: string;
+  created_at: string;
+}
+
+export type EmployeeInput = Omit<Employee, 'id' | 'created_at'> & { initial_password: string };
 export type VoucherBatchInput = Pick<VoucherBatch, 'discount_percentage' | 'starts_at' | 'ends_at' | 'codes'>;
 export type PromotionInput = Omit<Promotion, 'id'> & { id?: number };
 export type CheckoutInput = { items: SaleItem[]; payment_method: string; voucher_code?: string; manual_promotion_id?: number; automatic_promotion_id?: number | null };
@@ -86,6 +109,7 @@ export interface AppState {
   sales: Sale[];
   promotions: Promotion[];
   voucherBatches: VoucherBatch[];
+  employees: Employee[];
   settings: { shop_name: string; shop_logo?: string; archive_folder: string; database_file: string; receipt_printer: string; barcode_scanner_enabled: boolean; barcode_scanner_detected: boolean };
   stockMovements: StockMovement[];
 }
@@ -118,6 +142,7 @@ declare global {
     savePromotion: (promotion: PromotionInput) => Promise<void>;
     deletePromotion: (id: number) => Promise<void>;
     saveVoucherBatch: (batch: VoucherBatchInput) => Promise<void>;
+    saveEmployee: (employee: EmployeeInput) => Promise<void>;
     saveSetting: (key: 'shop_name' | 'archive_folder' | 'receipt_printer' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => Promise<void>;
     getPrinters: () => Promise<Printer[]>;
     printReceipt: () => Promise<void>;
