@@ -34,18 +34,21 @@ const sectionNames: Partial<Record<Section, string>> = {
   'accounting-statistics': 'Statistiche', expenses: 'Spese', 'financial-balance': 'Bilancio gestionale', clients: 'Clienti',
   employees: 'Lista Dipendenti', 'employee-create': 'Crea Dipendente', payroll: 'Paga Stipendi',
 };
-const voucherCodeSpace = 100_000_000;
+const voucherCodeSpace = 10_000_000_000;
 function randomVoucherCode(prefix: string, usedCodes: Set<string>): string {
-  const randomValues = new Uint32Array(1);
-  const limit = Math.floor(0x1_0000_0000 / voucherCodeSpace) * voucherCodeSpace;
+  const randomValues = new Uint8Array(1);
   let code = '';
   do {
-    let value: number;
-    do {
-      window.crypto.getRandomValues(randomValues);
-      value = randomValues[0];
-    } while (value >= limit);
-    code = `${prefix}${String(value % voucherCodeSpace).padStart(8, '0')}`;
+    let digits = '';
+    for (let index = 0; index < 10; index += 1) {
+      let value: number;
+      do {
+        window.crypto.getRandomValues(randomValues);
+        value = randomValues[0];
+      } while (value >= 250);
+      digits += String(value % 10);
+    }
+    code = `${prefix}${digits}`;
   } while (usedCodes.has(code));
   usedCodes.add(code);
   return code;
@@ -275,7 +278,7 @@ function ProductForm({ initial, save, close }: { initial: ProductInput; save: (p
 export default function App() {
   const [data, setData] = useState<AppState | null>(null);
   const [section, setSection] = useState<Section>('home');
-  const [openSidebarMenu, setOpenSidebarMenu] = useState<'inventory' | 'offers' | 'accounting' | 'employees' | null>('inventory');
+  const [openSidebarMenu, setOpenSidebarMenu] = useState<'inventory' | 'offers' | 'accounting' | 'employees' | null>(null);
   const [stockMovementType, setStockMovementType] = useState<'Carico' | 'Scarico'>('Carico');
   const [stockMovementProduct, setStockMovementProduct] = useState('');
   const [stockMovementQuantity, setStockMovementQuantity] = useState('');
@@ -295,6 +298,8 @@ export default function App() {
   const [voucherStartsAt, setVoucherStartsAt] = useState(localDateKey());
   const [voucherEndsAt, setVoucherEndsAt] = useState(localDateKey());
   const [voucherPreview, setVoucherPreview] = useState<{ discount_percentage: number; starts_at: string; ends_at: string; codes: string[] } | null>(null);
+  const [editingVoucherBatchId, setEditingVoucherBatchId] = useState<number | null>(null);
+  const [balancePeriod, setBalancePeriod] = useState<'Ultimi 3 mesi' | 'Ultimi 6 mesi' | 'Ultimo anno'>('Ultimi 6 mesi');
   const [printers, setPrinters] = useState<PrinterDevice[]>([]);
   const [locked, setLocked] = useState(true);
   const [hasPin, setHasPin] = useState(false);
@@ -473,6 +478,14 @@ export default function App() {
     setSaleDialog({ ...sale, items: sale.items.map((item) => ({ ...item })) });
   };
   const findSale = () => { const sale = data?.sales.find((item) => item.receipt_no === saleLookup.trim()); if (sale) openSaleForEditing(sale); else notify('Scontrino non trovato'); };
+  const startVoucherBatchEdit = (batch: AppState['voucherBatches'][number]) => {
+    setEditingVoucherBatchId(batch.id);
+    setVoucherPercentage(String(batch.discount_percentage));
+    setVoucherStartsAt(batch.starts_at);
+    setVoucherEndsAt(batch.ends_at);
+    setVoucherPreview(null);
+    navigateTo('vouchers-create');
+  };
   const generateVoucherPreview = (event: FormEvent) => {
     event.preventDefault();
     const percentage = Number(voucherPercentage);
@@ -495,6 +508,7 @@ export default function App() {
   };
   const cancelVoucherPreview = () => {
     setVoucherPreview(null);
+    setEditingVoucherBatchId(null);
     setVoucherPercentage('10');
     setVoucherQuantity('1');
     setVoucherStartsAt(localDateKey());
@@ -508,6 +522,40 @@ export default function App() {
       cancelVoucherPreview();
       setSection('vouchers-list');
       notify('Buoni sconto aggiunti alla lista.');
+    } catch (error) {
+      notify(errorText(error));
+    }
+  };
+  const saveVoucherBatchChanges = async (event: FormEvent) => {
+    event.preventDefault();
+    const batch = data?.voucherBatches.find((item) => item.id === editingVoucherBatchId);
+    const percentage = Number(voucherPercentage);
+    if (!batch || !Number.isInteger(percentage) || percentage < 1 || percentage > 100 || voucherEndsAt < voucherStartsAt) {
+      notify('Controlla percentuale e date del gruppo.');
+      return;
+    }
+    try {
+      await window.gestionale.saveVoucherBatch({
+        id: batch.id,
+        discount_percentage: percentage,
+        starts_at: voucherStartsAt,
+        ends_at: voucherEndsAt,
+        codes: batch.codes,
+      });
+      await refresh();
+      cancelVoucherPreview();
+      setSection('vouchers-list');
+      notify('Gruppo di buoni sconto aggiornato.');
+    } catch (error) {
+      notify(errorText(error));
+    }
+  };
+  const deleteVoucherBatch = async (batch: AppState['voucherBatches'][number]) => {
+    if (!window.confirm(`Eliminare il gruppo ${batch.id} e tutti i suoi buoni non utilizzati?`)) return;
+    try {
+      await window.gestionale.deleteVoucherBatch(batch.id);
+      await refresh();
+      notify('Gruppo di buoni sconto eliminato.');
     } catch (error) {
       notify(errorText(error));
     }
@@ -909,6 +957,44 @@ export default function App() {
       speseOperative: expenses,
     };
   });
+  const balanceMonthCount = balancePeriod === 'Ultimi 3 mesi' ? 3 : balancePeriod === 'Ultimi 6 mesi' ? 6 : 12;
+  const balanceRangeStart = new Date();
+  balanceRangeStart.setHours(0, 0, 0, 0);
+  const balanceStartDay = balanceRangeStart.getDate();
+  const balanceTargetMonth = new Date(balanceRangeStart.getFullYear(), balanceRangeStart.getMonth() - balanceMonthCount, 1);
+  balanceRangeStart.setFullYear(
+    balanceTargetMonth.getFullYear(),
+    balanceTargetMonth.getMonth(),
+    Math.min(balanceStartDay, new Date(balanceTargetMonth.getFullYear(), balanceTargetMonth.getMonth() + 1, 0).getDate()),
+  );
+  const balanceRangeStartKey = localDateKey(balanceRangeStart);
+  const balanceSales = data?.sales.filter((sale) => new Date(sale.created_at) >= balanceRangeStart) ?? [];
+  const balanceExpenses = data?.expenses.filter((expense) => expense.expense_date >= balanceRangeStartKey && expense.expense_date <= todayKey) ?? [];
+  const balanceRevenue = balanceSales.reduce((sum, sale) => sum + sale.total, 0);
+  const balanceGoodsCost = balanceSales.reduce((sum, sale) =>
+    sum + sale.items.reduce((cost, item) => cost + item.quantity * item.purchase_price, 0), 0);
+  const balanceOperatingExpenses = balanceExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const balanceOperatingResult = balanceRevenue - balanceGoodsCost - balanceOperatingExpenses;
+  const balanceFirstMonth = new Date(balanceRangeStart.getFullYear(), balanceRangeStart.getMonth(), 1);
+  const balanceMonthsInRange = (new Date().getFullYear() - balanceFirstMonth.getFullYear()) * 12
+    + new Date().getMonth() - balanceFirstMonth.getMonth() + 1;
+  const balanceMonthly = Array.from({ length: balanceMonthsInRange }, (_, index) => {
+    const month = new Date(balanceFirstMonth.getFullYear(), balanceFirstMonth.getMonth() + index, 1);
+    const monthKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`;
+    const salesInMonth = balanceSales.filter((sale) => sale.created_at.slice(0, 7) === monthKey);
+    const revenue = salesInMonth.reduce((sum, sale) => sum + sale.total, 0);
+    const goodsCost = salesInMonth.reduce((sum, sale) =>
+      sum + sale.items.reduce((cost, item) => cost + item.quantity * item.purchase_price, 0), 0);
+    const expenses = balanceExpenses.filter((expense) => expense.expense_date.startsWith(monthKey))
+      .reduce((sum, expense) => sum + expense.amount, 0);
+    return {
+      mese: month.toLocaleDateString('it-IT', { month: 'short', year: 'numeric' }),
+      vendite: revenue,
+      costiMerce: goodsCost,
+      speseOperative: expenses,
+      risultato: revenue - goodsCost - expenses,
+    };
+  });
   const statisticsStart = new Date();
   statisticsStart.setHours(0, 0, 0, 0);
   const statisticsDays: Record<string, number> = { 'Ultimo giorno': 1, 'Ultimi 3 giorni': 3, 'Ultima settimana': 7 };
@@ -929,8 +1015,11 @@ export default function App() {
   const statisticsSales = statisticsPeriod === 'Tutti'
     ? data?.sales ?? []
     : data?.sales.filter((sale) => new Date(sale.created_at) >= statisticsStart) ?? [];
+  const statisticsExpenses = (data?.expenses ?? []).filter((expense) =>
+    expense.expense_date <= todayKey && (statisticsPeriod === 'Tutti' || expense.expense_date >= localDateKey(statisticsStart)));
   const soldCost = statisticsSales.reduce((sum, sale) => sum + sale.items.reduce((subtotal, item) => subtotal + item.quantity * item.purchase_price, 0), 0);
   const soldTotal = statisticsSales.reduce((sum, sale) => sum + sale.total, 0);
+  const estimatedNet = soldTotal - soldCost - statisticsExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   const soldUnits = statisticsSales.reduce((sum, sale) => sum + sale.item_count, 0);
   const totalTrackedUnits = soldUnits + (data?.products.reduce((sum, product) => sum + product.stock, 0) ?? 0);
   const unsoldProducts = data?.products.filter((product) => product.stock > 0) ?? [];
@@ -949,6 +1038,39 @@ export default function App() {
     return { mese: month.toLocaleDateString('it-IT', { month: 'short' }), totale: monthSales.reduce((sum, sale) => sum + sale.total, 0) };
   });
   const chartDays = Array.from({ length: 7 }, (_, index) => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - 6 + index); const sales = statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()); return { giorno: date.toLocaleDateString('it-IT', { weekday: 'short' }), totale: sales.reduce((sum, sale) => sum + sale.total, 0) }; });
+  const downloadFinancialBalance = () => {
+    if (!data) return;
+    const report = document.getElementById('financial-balance-report');
+    if (!report) {
+      notify('Impossibile preparare il bilancio da scaricare.');
+      return;
+    }
+    const doc = new jsPDF({ orientation: 'landscape' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 14;
+    const filename = `bilancio-gestionale-${balancePeriod.toLowerCase().replaceAll(' ', '-')}-${todayKey}.pdf`;
+    doc.setFillColor(47, 91, 66);
+    doc.roundedRect(margin, 10, pageWidth - margin * 2, 17, 2, 2, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.text('Bilancio gestionale', margin + 5, 17);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.text(`${data.settings.shop_name} · ${balancePeriod} · Esportato il ${receiptDate.format(new Date())}`, margin + 5, 23);
+    void doc.html(report, {
+      x: margin,
+      y: 31,
+      width: pageWidth - margin * 2,
+      windowWidth: report.scrollWidth,
+      autoPaging: 'text',
+      html2canvas: {
+        scale: 2,
+        backgroundColor: '#f5f6f3',
+        ignoreElements: (element) => element.classList.contains('no-print'),
+      },
+    }).then(() => doc.save(filename)).catch((error: unknown) => notify(errorText(error)));
+  };
   const expiryLimit = new Date();
   expiryLimit.setDate(expiryLimit.getDate() + 10);
   const expiryLimitKey = localDateKey(expiryLimit);
@@ -1117,9 +1239,9 @@ export default function App() {
         <div className="nav-label nav-label-extra">GESTIONE EXTRA</div>
         <button className={`nav-item${section === 'sale-management' ? ' active' : ''}`} onClick={() => navigateTo('sale-management')}><ClipboardList size={18} /><span>Modifica o Elimina</span></button>
         <button aria-expanded={openSidebarMenu === 'accounting'} className={`nav-item${['accounting', 'accounting-statistics', 'expenses', 'financial-balance'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'accounting' ? null : 'accounting')}><Banknote size={18} /><span>Contabilità e finanza</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'accounting' ? ' open' : ''}`} size={15} /></button>
-        {openSidebarMenu === 'accounting' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'accounting-statistics' ? ' selected' : ''}`} onClick={() => navigateTo('accounting-statistics')}>Statistiche</button><button className={`sidebar-subitem${section === 'expenses' ? ' selected' : ''}`} onClick={() => navigateTo('expenses')}>Spese</button><button className={`sidebar-subitem${section === 'financial-balance' ? ' selected' : ''}`} onClick={() => navigateTo('financial-balance')}>Bilancio gestionale</button></div>}
+        {openSidebarMenu === 'accounting' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'expenses' ? ' selected' : ''}`} onClick={() => navigateTo('expenses')}>Spese</button><button className={`sidebar-subitem${section === 'financial-balance' ? ' selected' : ''}`} onClick={() => navigateTo('financial-balance')}>Bilancio gestionale</button></div>}
         <button aria-expanded={openSidebarMenu === 'offers'} className={`nav-item${['promotions', 'vouchers-create', 'vouchers-list'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'offers' ? null : 'offers')}><TrendingUp size={18} /><span>Offerta</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'offers' ? ' open' : ''}`} size={15} /></button>
-        {openSidebarMenu === 'offers' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'promotions' ? ' selected' : ''}`} onClick={() => navigateTo('promotions')}>Promozioni</button><button className={`sidebar-subitem${section === 'vouchers-create' ? ' selected' : ''}`} onClick={() => { setVoucherPreview(null); navigateTo('vouchers-create'); }}>Crea buoni sconto</button><button className={`sidebar-subitem${section === 'vouchers-list' ? ' selected' : ''}`} onClick={() => navigateTo('vouchers-list')}>Lista buoni sconto</button></div>}
+        {openSidebarMenu === 'offers' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'promotions' ? ' selected' : ''}`} onClick={() => navigateTo('promotions')}>Promozioni</button><button className={`sidebar-subitem${section === 'vouchers-create' ? ' selected' : ''}`} onClick={() => { cancelVoucherPreview(); navigateTo('vouchers-create'); }}>Crea buoni sconto</button><button className={`sidebar-subitem${section === 'vouchers-list' ? ' selected' : ''}`} onClick={() => navigateTo('vouchers-list')}>Lista buoni sconto</button></div>}
         <button className={`nav-item${section === 'clients' ? ' active' : ''}`} onClick={() => navigateTo('clients')}><ShoppingBasket size={18} /><span>Clienti</span></button>
         <button aria-expanded={openSidebarMenu === 'employees'} className={`nav-item${['employees', 'employee-create', 'payroll'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'employees' ? null : 'employees')}><ClipboardList size={18} /><span>Dipendenti</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'employees' ? ' open' : ''}`} size={15} /></button>
         {openSidebarMenu === 'employees' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => navigateTo('employees')}>Lista Dipendenti</button><button className={`sidebar-subitem${section === 'employee-create' ? ' selected' : ''}`} onClick={startEmployeeCreation}>Crea Dipendente</button><button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => navigateTo('payroll')}>Paga Stipendi</button></div>}
@@ -1225,30 +1347,37 @@ export default function App() {
         <Table headings={['Data', 'Descrizione', 'Categoria', 'Importo', '']}>{expenseList.map((expense) => <tr key={expense.id}><td>{expense.expense_date}</td><td className="cell-primary">{expense.description}</td><td>{expense.category}</td><td className="align-right">{money.format(expense.amount)}</td><td><button className="icon-button small" title="Elimina spesa" aria-label={`Elimina la spesa ${expense.description}`} onClick={() => void deleteExpense(expense)}><Trash2 size={15} /></button></td></tr>)}{!expenseList.length && <tr><td colSpan={5} className="empty-cell">{data.expenses.length ? 'Nessuna spesa corrisponde alla ricerca.' : 'Nessuna spesa registrata.'}</td></tr>}</Table>
       </div>}
 
-      {section === 'financial-balance' && <div className="page-content accounting-page">
-        <div className="page-toolbar"><div><h2>Bilancio gestionale</h2><p>Riepilogo complessivo delle entrate, dei costi e del valore delle scorte.</p></div></div>
+      {section === 'financial-balance' && <div id="financial-balance-report" className="page-content accounting-page">
+        <div className="page-toolbar balance-toolbar no-print">
+          <button className="button button-primary balance-download" onClick={downloadFinancialBalance}><ArrowDownToLine size={16} /> Scarica bilancio</button>
+          <div className="balance-periods" role="group" aria-label="Filtra bilancio per periodo">
+            {(['Ultimi 3 mesi', 'Ultimi 6 mesi', 'Ultimo anno'] as const).map((period) => <button key={period} className={`status-filter${balancePeriod === period ? ' active' : ''}`} aria-pressed={balancePeriod === period} onClick={() => setBalancePeriod(period)}>{period}</button>)}
+          </div>
+        </div>
         <div className="metric-grid accounting-balance-metrics">
-          <Metric icon={Banknote} label="Ricavi da vendite" value={money.format(totalRevenue)} detail="Totale netto degli scontrini" />
-          <Metric icon={Package} label="Costo della merce venduta" value={money.format(costOfGoodsSold)} detail="Costo degli articoli venduti" />
-          <Metric icon={ArrowDownToLine} label="Spese operative" value={money.format(totalExpenses)} detail="Spese inserite nella sezione Spese" />
-          <Metric icon={TrendingUp} label="Risultato gestionale" value={money.format(operatingResult)} detail="Ricavi meno costi e spese" />
+          <Metric icon={Banknote} label="Ricavi da vendite" value={money.format(balanceRevenue)} detail={balancePeriod} />
+          <Metric icon={Package} label="Costo della merce venduta" value={money.format(balanceGoodsCost)} detail={balancePeriod} />
+          <Metric icon={ArrowDownToLine} label="Spese operative" value={money.format(balanceOperatingExpenses)} detail={balancePeriod} />
+          <Metric icon={TrendingUp} label="Risultato gestionale" value={money.format(balanceOperatingResult)} detail="Ricavi meno costi e spese" />
         </div>
         <div className="analytics-grid">
-          <section className="panel"><div className="panel-heading"><div><h3>Composizione del bilancio</h3><p>Dati complessivi dall'avvio dell'archivio</p></div></div><div className="balance-breakdown"><Detail label="Ricavi netti" value={money.format(totalRevenue)} /><Detail label="Costo del venduto" value={`− ${money.format(costOfGoodsSold)}`} /><Detail label="Margine lordo" value={money.format(totalRevenue - costOfGoodsSold)} /><Detail label="Spese operative" value={`− ${money.format(totalExpenses)}`} /><Detail label="Risultato gestionale" value={money.format(operatingResult)} /></div></section>
+          <section className="panel"><div className="panel-heading"><div><h3>Composizione del bilancio</h3><p>{balancePeriod}</p></div></div><div className="balance-breakdown"><Detail label="Ricavi netti" value={money.format(balanceRevenue)} /><Detail label="Costo del venduto" value={`− ${money.format(balanceGoodsCost)}`} /><Detail label="Margine lordo" value={money.format(balanceRevenue - balanceGoodsCost)} /><Detail label="Spese operative" value={`− ${money.format(balanceOperatingExpenses)}`} /><Detail label="Risultato gestionale" value={money.format(balanceOperatingResult)} /></div></section>
           <section className="panel"><div className="panel-heading"><div><h3>Valore del magazzino</h3><p>Valorizzazione della giacenza attuale</p></div></div><div className="balance-breakdown"><Detail label="Valore a costo" value={money.format(stockCost)} /><Detail label="Valore potenziale di vendita" value={money.format(stockRetail)} /><Detail label="Articoli in giacenza" value={`${data.products.filter((product) => product.stock > 0).length}`} /><Detail label="Margine potenziale" value={money.format(stockRetail - stockCost)} /></div></section>
         </div>
-        <section className="panel balance-monthly-panel"><div className="panel-heading"><div><h3>Dettaglio mensile · ultimi 6 mesi</h3><p>Ricavi, costo merce, spese operative e risultato</p></div></div><div className="table-wrap"><table><thead><tr><th>Mese</th><th className="align-right">Ricavi</th><th className="align-right">Costo merce</th><th className="align-right">Spese operative</th><th className="align-right">Risultato</th></tr></thead><tbody>{accountingMonthly.map((month) => <tr key={month.mese}><td className="cell-primary">{month.mese}</td><td className="align-right">{money.format(month.vendite)}</td><td className="align-right">{money.format(month.costiMerce)}</td><td className="align-right">{money.format(month.speseOperative)}</td><td className="align-right cell-primary">{money.format(month.risultato)}</td></tr>)}</tbody></table></div></section>
+        <section className="panel balance-monthly-panel"><div className="panel-heading"><div><h3>Dettaglio mensile · {balancePeriod.toLowerCase()}</h3><p>Ricavi, costo merce, spese operative e risultato</p></div></div><div className="table-wrap"><table><thead><tr><th>Mese</th><th className="align-right">Ricavi</th><th className="align-right">Costo merce</th><th className="align-right">Spese operative</th><th className="align-right">Risultato</th></tr></thead><tbody>{balanceMonthly.map((month) => <tr key={month.mese}><td className="cell-primary">{month.mese}</td><td className="align-right">{money.format(month.vendite)}</td><td className="align-right">{money.format(month.costiMerce)}</td><td className="align-right">{money.format(month.speseOperative)}</td><td className="align-right cell-primary">{money.format(month.risultato)}</td></tr>)}</tbody></table></div></section>
       </div>}
 
       {(section === 'vouchers-create' || section === 'vouchers-list') && <div className="page-content settings-page"><section className="settings-panel">
         {section === 'vouchers-create' && <div className="voucher-section">
-          <div className="settings-title"><h2>Crea buoni sconto</h2></div>
-          {!voucherPreview ? <form className="form-grid promotion-form voucher-form" onSubmit={generateVoucherPreview}>
+          <div className="settings-title"><h2>{editingVoucherBatchId ? `Modifica gruppo ${editingVoucherBatchId}` : 'Crea buoni sconto'}</h2></div>
+          {!voucherPreview ? <form className="form-grid promotion-form voucher-form" onSubmit={editingVoucherBatchId ? saveVoucherBatchChanges : generateVoucherPreview}>
             <Field label="Percentuale di sconto (%)" type="number" min="1" max="100" step="1" value={voucherPercentage} onChange={(event) => setVoucherPercentage(event.target.value)} required />
-            <Field label="Quantità di codici" type="number" min="1" step="1" value={voucherQuantity} onChange={(event) => setVoucherQuantity(event.target.value)} required />
+            {!editingVoucherBatchId && <Field label="Quantità di codici" type="number" min="1" step="1" value={voucherQuantity} onChange={(event) => setVoucherQuantity(event.target.value)} required />}
             <Field label="Data di inizio" type="date" value={voucherStartsAt} onChange={(event) => setVoucherStartsAt(event.target.value)} required />
             <Field label="Data di scadenza" type="date" value={voucherEndsAt} onChange={(event) => setVoucherEndsAt(event.target.value)} required />
-            <button className="button button-primary"><Check size={16} /> Genera codici</button>
+            {editingVoucherBatchId
+              ? <div className="voucher-edit-actions"><button className="button button-quiet" type="button" onClick={() => { cancelVoucherPreview(); navigateTo('vouchers-list'); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Salva modifiche</button></div>
+              : <button className="button button-primary"><Check size={16} /> Genera codici</button>}
           </form> : <>
             <div className="voucher-preview-heading"><strong>{voucherPreview.codes.length} codici · {voucherPreview.discount_percentage}% di sconto</strong><span>{voucherPreview.starts_at} — {voucherPreview.ends_at}</span></div>
             <div id="voucher-print" className="table-wrap voucher-codes"><table><thead><tr><th>Codice</th><th>Barcode</th><th>Sconto</th><th>Inizio</th><th>Scadenza</th></tr></thead><tbody>{voucherPreview.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td><BarcodeImage value={code} /></td><td>{voucherPreview.discount_percentage}%</td><td>{voucherPreview.starts_at}</td><td>{voucherPreview.ends_at}</td></tr>)}</tbody></table></div>
@@ -1259,7 +1388,7 @@ export default function App() {
           {!data.voucherBatches.length ? <Empty icon={Barcode} title="Nessun buono sconto" detail="Crea e conferma un gruppo di codici per visualizzarlo qui." /> : <>
             <div className="voucher-batch-list">{data.voucherBatches.map((batch) => <div className="voucher-batch-row" key={batch.id}>
               <div><strong>Gruppo {batch.id}</strong><span>{batch.codes.length} codici · {batch.discount_percentage}% di sconto</span><small>{batch.starts_at} — {batch.ends_at}</small></div>
-              <div className="voucher-actions no-print"><button className="icon-button" title="Visualizza codici" aria-label={`Visualizza codici del gruppo ${batch.id}`} onClick={() => setVoucherViewBatch(batch)}><Eye size={17} /></button><button className="button button-outline" onClick={() => setVoucherPrintBatch(batch)}><Printer size={15} /> Stampa</button><button className="button button-outline" onClick={() => downloadVoucherBatch(batch)}><ArrowDownToLine size={15} /> Scarica lista</button></div>
+              <div className="voucher-actions no-print"><button className="icon-button" title="Visualizza codici" aria-label={`Visualizza codici del gruppo ${batch.id}`} onClick={() => setVoucherViewBatch(batch)}><Eye size={17} /></button><button className="button button-outline" onClick={() => startVoucherBatchEdit(batch)}><Pencil size={15} /> Modifica</button><button className="button button-outline" onClick={() => setVoucherPrintBatch(batch)}><Printer size={15} /> Stampa</button><button className="button button-outline" onClick={() => downloadVoucherBatch(batch)}><ArrowDownToLine size={15} /> Scarica lista</button><button className="button button-danger" onClick={() => void deleteVoucherBatch(batch)}><Trash2 size={15} /> Elimina</button></div>
             </div>)}</div>
             {voucherPrintBatch && <div id="voucher-print" className="table-wrap voucher-codes voucher-print-only"><h2>Buoni sconto gruppo {voucherPrintBatch.id} · {voucherPrintBatch.discount_percentage}%</h2><p>{voucherPrintBatch.starts_at} — {voucherPrintBatch.ends_at}</p><table><thead><tr><th>Codice</th><th>Barcode</th><th>Sconto</th><th>Inizio</th><th>Scadenza</th></tr></thead><tbody>{voucherPrintBatch.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td><BarcodeImage value={code} /></td><td>{voucherPrintBatch.discount_percentage}%</td><td>{voucherPrintBatch.starts_at}</td><td>{voucherPrintBatch.ends_at}</td></tr>)}</tbody></table></div>}
           </>}
@@ -1269,7 +1398,7 @@ export default function App() {
       {section === 'statistics' && <div className="page-content">
         <div className="page-toolbar"><div><h2>Rendimento e andamento</h2></div><span className="period-chip">Dati aggiornati in tempo reale</span></div>
         <div className="statistics-periods" role="group" aria-label="Filtra statistiche per periodo">{statisticsPeriods.map((period) => <button key={period} className={`status-filter${statisticsPeriod === period ? ' active' : ''}`} aria-pressed={statisticsPeriod === period} onClick={() => setStatisticsPeriod(period)}>{period}</button>)}</div>
-        <div className="metric-grid stats-metrics"><Metric icon={Banknote} label="Vendite" value={money.format(soldTotal)} detail="Incassi registrati nel periodo" /><Metric icon={CreditCard} label="Acquisto merce venduta" value={money.format(soldCost)} detail="Costo degli articoli venduti" /><Metric icon={TrendingUp} label="Netto stimato" value={money.format(soldTotal - soldCost)} detail="Ricavi meno costo del venduto" /><Metric icon={ShoppingBasket} label="Quantità vendite" value={`${soldUnits.toLocaleString('it-IT')} di ${totalTrackedUnits.toLocaleString('it-IT')}`} detail="Articoli venduti rispetto a quelli ancora in magazzino" action={<button className="text-button metric-action" onClick={() => setUnsoldListOpen(true)}>Vedi lista</button>} /></div>
+        <div className="metric-grid stats-metrics"><Metric icon={Banknote} label="Vendite" value={money.format(soldTotal)} detail="Incassi registrati nel periodo" /><Metric icon={CreditCard} label="Acquisto merce venduta" value={money.format(soldCost)} detail="Costo degli articoli venduti" /><Metric icon={TrendingUp} label="Netto stimato" value={money.format(estimatedNet)} detail="Ricavi meno costo del venduto e spese" /><Metric icon={ShoppingBasket} label="Quantità vendite" value={`${soldUnits.toLocaleString('it-IT')} di ${totalTrackedUnits.toLocaleString('it-IT')}`} detail="Articoli venduti rispetto a quelli ancora in magazzino" action={<button className="text-button metric-action" onClick={() => setUnsoldListOpen(true)}>Vedi lista</button>} /></div>
         <div className="metric-grid inventory-values"><Metric icon={Package} label="Valore vendita in magazzino" value={money.format(stockRetail)} detail="Valore al prezzo di vendita" compact /><Metric icon={Archive} label="Valore acquisto in magazzino" value={money.format(stockCost)} detail="Costo delle scorte attuali" compact /><Metric icon={TrendingUp} label="Netto potenziale" value={money.format(stockRetail - stockCost)} detail="Margine potenziale delle scorte" compact /></div>
         <div className="analytics-grid"><section className="panel calendar-panel"><div className="panel-heading"><div><h3>Calendario vendite</h3><p>Incasso per giorno</p></div><div className="month-controls"><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}>‹</button><strong>{calendarMonth.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</strong><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}>›</button></div></div><div className="calendar-grid">{['L', 'M', 'M', 'G', 'V', 'S', 'D'].map((day, index) => <span className="calendar-weekday" key={`${day}${index}`}>{day}</span>)}{calendarDays().map((day, index) => { const date = day ? new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day) : null; const revenue = date ? statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()).reduce((sum, sale) => sum + sale.total, 0) : 0; return <div key={index} className={`calendar-day${revenue ? ' has-sales' : ''}${date?.toDateString() === new Date().toDateString() ? ' today' : ''}`}>{day && <><span>{day}</span>{revenue > 0 && <small>{money.format(revenue)}</small>}</>}</div>; })}</div></section><section className="panel chart-panel"><div className="panel-heading"><div><h3>Vendite giornaliere</h3><p>Ultimi sette giorni nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><BarChart data={chartDays} margin={{ top: 14, right: 8, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="giorno" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value}€`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Bar dataKey="totale" fill="#38684e" radius={[4, 4, 0, 0]} maxBarSize={34} /></BarChart></ResponsiveContainer></section></div>
         <div className="analytics-grid statistics-extra"><section className="panel chart-panel"><div className="panel-heading"><div><h3>Andamento mensile</h3><p>Incasso per mese nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><LineChart data={monthlySales} margin={{ top: 14, right: 12, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="mese" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value}€`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Line type="monotone" dataKey="totale" stroke="#38684e" strokeWidth={3} dot={{ fill: '#38684e', r: 4 }} /></LineChart></ResponsiveContainer></section><section className="panel payment-panel"><div className="panel-heading"><div><h3>Pagamenti per metodo</h3><p>Totale incassato nel periodo</p></div></div><div className="payment-totals">{Object.entries(paymentTotals).length ? Object.entries(paymentTotals).map(([method, amount], index) => <div key={method}><span className="payment-dot" style={{ backgroundColor: colors[index % colors.length] }} /><span>{method}</span><strong>{money.format(amount)}</strong></div>) : <span className="muted">Nessun pagamento nel periodo selezionato.</span>}</div></section></div>

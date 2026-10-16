@@ -593,38 +593,29 @@ app.whenReady().then(() => {
       const date = new Date(`${value}T00:00:00`);
       return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(date.getTime()) && localDate(date) === value;
     };
+    if (!batch || !Array.isArray(batch.codes) || (batch.id !== undefined && (!Number.isInteger(batch.id) || batch.id < 1))) {
+      throw new Error('Gruppo di buoni sconto non valido.');
+    }
     const uniqueCodes = new Set(batch.codes);
     if (!Number.isFinite(batch.discount_percentage) || batch.discount_percentage < 1 || batch.discount_percentage > 100
       || !isValidDate(batch.starts_at) || !isValidDate(batch.ends_at) || batch.ends_at < batch.starts_at
-      || !batch.codes.length || batch.codes.some((code) => {
+      || (batch.id === undefined && !batch.codes.length) || (batch.id === undefined && batch.codes.some((code) => {
         const prefix = voucherCodePrefix(setting('shop_name', 'Il tuo supermercato'));
-        return !code.startsWith(prefix) || !/^\d{8}$/.test(code.slice(prefix.length));
-      }) || uniqueCodes.size !== batch.codes.length) {
+        return typeof code !== 'string' || !code.startsWith(prefix) || !/^\d{10}$/.test(code.slice(prefix.length));
+      })) || (batch.id === undefined && uniqueCodes.size !== batch.codes.length)) {
       throw new Error('Controlla percentuale, date e codici del buono sconto.');
     }
     const transaction = database.transaction(() => {
+      if (batch.id !== undefined) {
+        const result = database.prepare('UPDATE voucher_batches SET discount_percentage = ?, starts_at = ?, ends_at = ? WHERE id = ?')
+          .run(batch.discount_percentage, batch.starts_at, batch.ends_at, batch.id);
+        if (result.changes === 0) throw new Error('Gruppo di buoni sconto non trovato.');
+        return;
+      }
       const insertBatch = database.prepare('INSERT INTO voucher_batches (discount_percentage, starts_at, ends_at, created_at) VALUES (?, ?, ?, ?)');
       const result = insertBatch.run(batch.discount_percentage, batch.starts_at, batch.ends_at, new Date().toISOString());
       const insertVoucher = database.prepare('INSERT INTO vouchers (batch_id, code) VALUES (?, ?)');
       for (const code of batch.codes) insertVoucher.run(result.lastInsertRowid, code);
-    });
-    ipcMain.handle('expense:save', (_event, expense: Pick<Expense, 'description' | 'category' | 'amount' | 'expense_date'>) => {
-      const isValidDate = (value: string) => {
-        const date = new Date(`${value}T00:00:00`);
-        return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(date.getTime()) && localDate(date) === value;
-      };
-      if (!expense || typeof expense.description !== 'string' || !expense.description.trim()
-        || typeof expense.category !== 'string' || !expense.category.trim()
-        || !Number.isFinite(expense.amount) || expense.amount <= 0 || !isValidDate(expense.expense_date)) {
-        throw new Error('Controlla descrizione, categoria, importo e data della spesa.');
-      }
-      database.prepare('INSERT INTO expenses (description, category, amount, expense_date, created_at) VALUES (?, ?, ?, ?, ?)')
-        .run(expense.description.trim(), expense.category.trim(), expense.amount, expense.expense_date, new Date().toISOString());
-    });
-    ipcMain.handle('expense:delete', (_event, id: number) => {
-      if (!Number.isInteger(id) || id < 1) throw new Error('Spesa non valida.');
-      const result = database.prepare('DELETE FROM expenses WHERE id = ?').run(id);
-      if (result.changes === 0) throw new Error('Spesa non trovata.');
     });
     try {
       transaction();
@@ -634,6 +625,33 @@ app.whenReady().then(() => {
       }
       throw error;
     }
+  });
+  ipcMain.handle('voucher-batch:delete', (_event, id: number) => {
+    if (!Number.isInteger(id) || id < 1) throw new Error('Gruppo di buoni sconto non valido.');
+    const deleteBatch = database.transaction(() => {
+      database.prepare('DELETE FROM vouchers WHERE batch_id = ?').run(id);
+      const result = database.prepare('DELETE FROM voucher_batches WHERE id = ?').run(id);
+      if (result.changes === 0) throw new Error('Gruppo di buoni sconto non trovato.');
+    });
+    deleteBatch();
+  });
+  ipcMain.handle('expense:save', (_event, expense: Pick<Expense, 'description' | 'category' | 'amount' | 'expense_date'>) => {
+    const isValidDate = (value: string) => {
+      const date = new Date(`${value}T00:00:00`);
+      return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(date.getTime()) && localDate(date) === value;
+    };
+    if (!expense || typeof expense.description !== 'string' || !expense.description.trim()
+      || typeof expense.category !== 'string' || !expense.category.trim()
+      || !Number.isFinite(expense.amount) || expense.amount <= 0 || !isValidDate(expense.expense_date)) {
+      throw new Error('Controlla descrizione, categoria, importo e data della spesa.');
+    }
+    database.prepare('INSERT INTO expenses (description, category, amount, expense_date, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(expense.description.trim(), expense.category.trim(), expense.amount, expense.expense_date, new Date().toISOString());
+  });
+  ipcMain.handle('expense:delete', (_event, id: number) => {
+    if (!Number.isInteger(id) || id < 1) throw new Error('Spesa non valida.');
+    const result = database.prepare('DELETE FROM expenses WHERE id = ?').run(id);
+    if (result.changes === 0) throw new Error('Spesa non trovata.');
   });
   ipcMain.handle('employee:save', (_event, employee: EmployeeInput) => {
     const requiredText: Array<keyof EmployeeInput> = [

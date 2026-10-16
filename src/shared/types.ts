@@ -108,7 +108,7 @@ export interface Employee {
 }
 
 export type EmployeeInput = Omit<Employee, 'id' | 'created_at'> & { initial_password: string };
-export type VoucherBatchInput = Pick<VoucherBatch, 'discount_percentage' | 'starts_at' | 'ends_at' | 'codes'>;
+export type VoucherBatchInput = Pick<VoucherBatch, 'discount_percentage' | 'starts_at' | 'ends_at' | 'codes'> & { id?: number };
 export type PromotionInput = Omit<Promotion, 'id'> & { id?: number };
 export type CheckoutInput = { items: SaleItem[]; payment_method: string; voucher_code?: string; manual_promotion_id?: number; automatic_promotion_id?: number | null };
 export type VoucherValidation = { valid: true; discount_percentage: number } | { valid: false; message: string };
@@ -152,6 +152,7 @@ declare global {
     savePromotion: (promotion: PromotionInput) => Promise<void>;
     deletePromotion: (id: number) => Promise<void>;
     saveVoucherBatch: (batch: VoucherBatchInput) => Promise<void>;
+    deleteVoucherBatch: (id: number) => Promise<void>;
     saveEmployee: (employee: EmployeeInput) => Promise<void>;
     saveSetting: (key: 'shop_name' | 'archive_folder' | 'receipt_printer' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => Promise<void>;
     getPrinters: () => Promise<Printer[]>;

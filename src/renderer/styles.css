@@ -29,12 +29,13 @@ h1, h2, h3, p { margin: 0; }
 h1, h2, h3, .brand strong { font-family: 'Manrope', 'Segoe UI', sans-serif; letter-spacing: 0; }
 
 .app-shell { min-height: 100vh; }
-.sidebar { position: fixed; inset: 0 auto 0 0; z-index: 5; display: flex; width: 225px; flex-direction: column; padding: 26px 16px 15px; border-right: 1px solid var(--line); background: #fff; }
-.brand { display: flex; min-height: 46px; align-items: center; gap: 11px; padding: 0 8px; }
+.sidebar { position: fixed; inset: 0 auto 0 0; z-index: 5; display: flex; width: 235px; flex-direction: column; padding: 26px 16px 15px; border-right: 1px solid var(--line); background: #fff; }
+.brand { display: flex; min-height: 50px; align-items: center; gap: 11px; padding: 0 8px; }
 .brand > div:last-child { min-width: 0; }
 .brand strong { display: block; overflow: hidden; max-width: 168px; color: #29352e; font-size: 13px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
 .brand small { display: block; margin-top: 3px; color: #929b94; font-size: 9px; font-weight: 700; letter-spacing: 0; }
 .brand-mark { display: grid; overflow: hidden; width: 44px; height: 44px; flex: 0 0 auto; place-items: center; border-radius: 7px; background: var(--green); color: white; }
+.brand .brand-mark { width: 48px; height: 48px; }
 .brand-mark.has-logo { background: white; }
 .brand-mark img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .nav-label, .eyebrow { color: #969e98; font-size: 9px; font-weight: 700; letter-spacing: 0; }
@@ -55,7 +56,7 @@ kbd { margin-left: auto; padding: 2px 5px; border: 1px solid #e5e8e4; border-rad
 .user-card > div:nth-child(2) { min-width: 0; flex: 1; }
 .user-card strong, .user-card small { display: block; font-size: 11px; }
 .user-card small { margin-top: 2px; color: var(--muted); font-size: 9px; }
-.main-content { min-height: 100vh; margin-left: 225px; }
+.main-content { min-height: 100vh; margin-left: 235px; }
 .topbar { position: sticky; top: 0; z-index: 3; display: flex; min-height: 78px; align-items: center; justify-content: space-between; padding: 12px 42px; border-bottom: 1px solid var(--line); background: rgb(255 255 255 / 96%); backdrop-filter: blur(14px); }
 .topbar-logo, .topbar-logo-fallback { position: absolute; left: 50%; width: auto; max-width: min(160px, 25vw); height: 42px; object-fit: contain; transform: translateX(-50%); }
 .topbar-logo { display: block; }
@@ -259,6 +260,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .voucher-batch-row strong { color: #37433a; font-size: 11px; }
 .voucher-batch-row span, .voucher-batch-row small { color: var(--muted); font-size: 9px; }
 .voucher-batch-row .voucher-actions { margin-top: 0; }
+.voucher-edit-actions { display: flex; grid-column: 1 / -1; justify-content: flex-end; gap: 8px; }
 .settings-back { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 15px; padding: 0; border: 0; background: transparent; color: var(--green); cursor: pointer; font-size: 10px; font-weight: 600; }
 .settings-panel { min-height: 475px; padding: 25px; border: 1px solid var(--line); border-radius: 5px; background: white; }
 .settings-title { padding-bottom: 17px; border-bottom: 1px solid var(--line); }
@@ -653,11 +655,19 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .balance-breakdown .detail-row:last-child { border-bottom: 0; }
 .balance-breakdown .detail-row:last-child strong { color: var(--green-dark); font-weight: 700; }
 .balance-monthly-panel { margin-top: 14px; }
+.balance-toolbar { align-items: stretch; }
+.balance-download { flex: 0 0 auto; }
+.balance-periods { display: grid; min-width: 0; flex: 1; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.balance-periods .status-filter { width: 100%; min-height: 37px; padding: 0 8px; white-space: normal; }
 
 @media (max-width: 1000px) {
   .accounting-metrics, .accounting-balance-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .expense-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .expense-form > .button { grid-column: 1 / -1; }
+}
+@media (max-width: 850px) {
+  .balance-toolbar { flex-wrap: wrap; }
+  .balance-download, .balance-periods { width: 100%; }
 }
 @media (max-width: 700px) {
   .analytics-grid { grid-template-columns: 1fr; }
