@@ -58,6 +58,8 @@ export interface Expense {
   amount: number;
   expense_date: string;
   created_at: string;
+  site: string;
+  receipt_data: string;
 }
 
 export interface Promotion {
@@ -207,8 +209,9 @@ declare global {
     printReceipt: () => Promise<void>;
     updateSale: (sale: Pick<Sale, 'id' | 'payment_method' | 'discount'> & { items: SaleItem[] }) => Promise<void>;
     deleteSale: (id: number) => Promise<void>;
-    saveExpense: (expense: Pick<Expense, 'description' | 'category' | 'amount' | 'expense_date'>) => Promise<void>;
+    saveExpense: (expense: Pick<Expense, 'description' | 'category' | 'amount' | 'expense_date' | 'site' | 'receipt_data'>) => Promise<void>;
     deleteExpense: (id: number) => Promise<void>;
+    deleteLoyaltyCard: (id: number) => Promise<void>;
     chooseArchiveFolder: () => Promise<string | null>;
     chooseShopLogo: () => Promise<string | null>;
   }

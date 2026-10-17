@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" fill="none">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1200" y2="300" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E7F0E5"/>
+      <stop offset="1" stop-color="#F5EBDD"/>
+    </linearGradient>
+    <linearGradient id="awning" x1="760" y1="38" x2="1118" y2="134" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#477458"/>
+      <stop offset="1" stop-color="#2F5B42"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="300" rx="12" fill="url(#background)"/>
+  <circle cx="177" cy="55" r="92" fill="#D3E4D2"/>
+  <circle cx="1082" cy="280" r="143" fill="#F0DDC5"/>
+  <path d="M0 231C148 195 257 223 390 202c136-21 265-4 401 10 151 16 268-18 409-4v92H0v-69Z" fill="#D5E5D4"/>
+  <path d="M654 91h482v172H654V91Z" fill="#FFFDF8"/>
+  <path d="M626 99 682 40h424l57 59H626Z" fill="url(#awning)"/>
+  <path d="M680 42h45v57h-45zM771 42h45v57h-45zM862 42h45v57h-45zM953 42h45v57h-45zM1044 42h45v57h-45z" fill="#F7F2E7"/>
+  <path d="M688 117h180v112H688V117Z" fill="#E8F1E7"/>
+  <path d="M708 137h140v92H708v-92Z" fill="#C9DED0"/>
+  <path d="M890 117h108v146H890V117Z" fill="#F2E5CE"/>
+  <path d="M1015 117h99v146h-99V117Z" fill="#E9EFE5"/>
+  <path d="M725 229v-48a32 32 0 0 1 64 0v48" stroke="#477458" stroke-width="7"/>
+  <path d="M748 229v-39a10 10 0 0 1 20 0v39" fill="#F9F5E9"/>
+  <path d="M919 139h50v8h-50zM919 163h50v8h-50zM919 187h50v8h-50zM919 211h50v8h-50z" fill="#9B7A50"/>
+  <path d="M1035 137h57v11h-57zM1035 163h57v11h-57zM1035 189h57v11h-57zM1035 215h57v11h-57z" fill="#7D9B77"/>
+  <path d="M105 218c18-38 44-51 77-39 0 29-25 52-77 39Z" fill="#5A8A5C"/>
+  <path d="M150 218c6-44 27-66 64-65 8 28-11 53-64 65Z" fill="#83A96D"/>
+  <path d="M127 221c-3-47-22-70-59-71-10 28 7 54 59 71Z" fill="#A9C57E"/>
+  <path d="M92 221h80l-11 39h-58l-11-39Z" fill="#B7794D"/>
+  <path d="M265 226c0-24 18-43 41-43s41 19 41 43v30h-82v-30Z" fill="#D68857"/>
+  <path d="M278 188c0-19 12-33 28-33s28 14 28 33" stroke="#5F803F" stroke-width="9"/>
+  <path d="M405 233c0-29 22-53 49-53s49 24 49 53v27H405v-27Z" fill="#E8C26F"/>
+  <path d="M430 181c0-20 10-34 24-34s24 14 24 34" stroke="#6D8D53" stroke-width="8"/>
+  <path d="M533 231c0-23 17-41 39-41s39 18 39 41v28h-78v-28Z" fill="#A6BF84"/>
+  <path d="M552 192c0-16 8-27 20-27s20 11 20 27" stroke="#5F803F" stroke-width="7"/>
+  <text x="83" y="95" fill="#315B43" font-family="Arial, sans-serif" font-size="23" font-weight="700">Ogni giorno, la qualità che scegli</text>
+  <text x="84" y="126" fill="#63796A" font-family="Arial, sans-serif" font-size="14">Benvenuto nel tuo punto vendita</text>
+</svg>

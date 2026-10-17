@@ -31,6 +31,13 @@ function localDayBounds(day: string): [string, string] {
   return [start.toISOString(), end.toISOString()];
 }
 
+function localDateMonthsBefore(date: Date, months: number): Date {
+  const target = new Date(date.getFullYear(), date.getMonth() - months, 1);
+  target.setDate(Math.min(date.getDate(), new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()));
+  target.setHours(date.getHours(), date.getMinutes(), date.getSeconds(), date.getMilliseconds());
+  return target;
+}
+
 const seedProducts: ProductInput[] = [
   { code: '8000500031123', name: 'Latte intero 1 L', category: 'Latticini', sale_price: 1.49, purchase_price: 0.92, stock: 36, low_stock_threshold: 8 },
   { code: '8000430132246', name: 'Pasta penne 500 g', category: 'Dispensa', sale_price: 0.89, purchase_price: 0.43, stock: 52, low_stock_threshold: 12 },
@@ -79,6 +86,16 @@ function removeExpiredVouchers(): void {
   })();
 }
 
+function removeExpiredRecords(): void {
+  const now = new Date();
+  const saleCutoff = localDateMonthsBefore(now, 1);
+  const movementCutoff = localDateMonthsBefore(now, 12);
+  database.transaction(() => {
+    database.prepare('DELETE FROM sales WHERE created_at < ?').run(saleCutoff.toISOString());
+    database.prepare('DELETE FROM stock_movements WHERE created_at < ?').run(movementCutoff.toISOString());
+  })();
+}
+
 function findValidVoucher(code: string, today = localDate(new Date())): { id: number; batch_id: number; discount_percentage: number; starts_at: string; ends_at: string } | undefined {
   return database.prepare(`SELECT v.id, v.batch_id, b.discount_percentage, b.starts_at, b.ends_at
     FROM vouchers v JOIN voucher_batches b ON b.id = v.batch_id
@@ -94,6 +111,7 @@ function allSales(): unknown[] {
 
 function state() {
   removeExpiredVouchers();
+  removeExpiredRecords();
   return {
     products: (database.prepare('SELECT * FROM products ORDER BY name').all() as Array<Omit<Product, 'expiry_enabled'> & { expiry_enabled: number }>).map((product) => ({ ...product, expiry_enabled: Boolean(product.expiry_enabled) })),
     sales: allSales(),
@@ -162,7 +180,8 @@ function initDatabase(): void {
     );
     CREATE TABLE IF NOT EXISTS expenses (
       id INTEGER PRIMARY KEY AUTOINCREMENT, description TEXT NOT NULL, category TEXT NOT NULL,
-      amount REAL NOT NULL, expense_date TEXT NOT NULL, created_at TEXT NOT NULL
+      amount REAL NOT NULL, expense_date TEXT NOT NULL, created_at TEXT NOT NULL,
+      site TEXT NOT NULL DEFAULT 'Non assegnata', receipt_data TEXT NOT NULL DEFAULT ''
     );
     CREATE TABLE IF NOT EXISTS voucher_batches (
       id INTEGER PRIMARY KEY AUTOINCREMENT, discount_percentage REAL NOT NULL,
@@ -225,6 +244,13 @@ function initDatabase(): void {
       total + discount
     )`);
   }
+  const expenseColumns = database.prepare('PRAGMA table_info(expenses)').all() as Array<{ name: string }>;
+  if (!expenseColumns.some((column) => column.name === 'site')) {
+    database.exec("ALTER TABLE expenses ADD COLUMN site TEXT NOT NULL DEFAULT 'Non assegnata'");
+  }
+  if (!expenseColumns.some((column) => column.name === 'receipt_data')) {
+    database.exec("ALTER TABLE expenses ADD COLUMN receipt_data TEXT NOT NULL DEFAULT ''");
+  }
   const promotionColumns = database.prepare('PRAGMA table_info(promotions)').all() as Array<{ name: string }>;
   for (const [column, definition] of [
     ['discount_type', "TEXT NOT NULL DEFAULT 'percentage'"],
@@ -273,6 +299,7 @@ function initDatabase(): void {
     const insert = database.prepare('INSERT INTO products (code, name, category, sale_price, purchase_price, stock, low_stock_threshold) VALUES (@code, @name, @category, @sale_price, @purchase_price, @stock, @low_stock_threshold)');
     database.transaction(() => seedProducts.forEach((product) => insert.run(product)))();
   }
+  removeExpiredRecords();
 }
 
 function receiptNumber(): string {
@@ -730,18 +757,23 @@ app.whenReady().then(() => {
     });
     deleteBatch();
   });
-  ipcMain.handle('expense:save', (_event, expense: Pick<Expense, 'description' | 'category' | 'amount' | 'expense_date'>) => {
+  ipcMain.handle('expense:save', (_event, expense: Pick<Expense, 'description' | 'category' | 'amount' | 'expense_date' | 'site' | 'receipt_data'>) => {
     const isValidDate = (value: string) => {
       const date = new Date(`${value}T00:00:00`);
       return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(date.getTime()) && localDate(date) === value;
     };
     if (!expense || typeof expense.description !== 'string' || !expense.description.trim()
       || typeof expense.category !== 'string' || !expense.category.trim()
+      || typeof expense.site !== 'string' || !expense.site.trim()
+      || typeof expense.receipt_data !== 'string'
+      || (expense.receipt_data && !/^data:(?:image\/(?:png|jpeg|webp)|application\/pdf);base64,[A-Za-z0-9+/]*={0,2}$/i.test(expense.receipt_data))
+      || Buffer.byteLength(expense.receipt_data, 'utf8') > 14 * 1024 * 1024
+      || (expense.category === 'Affitto' && !expense.receipt_data)
       || !Number.isFinite(expense.amount) || expense.amount <= 0 || !isValidDate(expense.expense_date)) {
-      throw new Error('Controlla descrizione, categoria, importo e data della spesa.');
+      throw new Error('Controlla descrizione, categoria, sede, ricevuta, importo e data della spesa.');
     }
-    database.prepare('INSERT INTO expenses (description, category, amount, expense_date, created_at) VALUES (?, ?, ?, ?, ?)')
-      .run(expense.description.trim(), expense.category.trim(), expense.amount, expense.expense_date, new Date().toISOString());
+    database.prepare('INSERT INTO expenses (description, category, amount, expense_date, created_at, site, receipt_data) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(expense.description.trim(), expense.category.trim(), expense.amount, expense.expense_date, new Date().toISOString(), expense.site.trim(), expense.receipt_data);
   });
   ipcMain.handle('expense:delete', (_event, id: number) => {
     if (!Number.isInteger(id) || id < 1) throw new Error('Spesa non valida.');
@@ -850,6 +882,11 @@ app.whenReady().then(() => {
       }
     })();
   });
+  ipcMain.handle('loyalty-card:delete', (_event, id: number) => {
+    if (!Number.isInteger(id) || id < 1) throw new Error('Tessera non valida.');
+    const result = database.prepare("DELETE FROM loyalty_cards WHERE id = ? AND status = 'Sviluppata'").run(id);
+    if (!result.changes) throw new Error('La tessera non esiste o è già attiva.');
+  });
   ipcMain.handle('loyalty-card:activate', (_event, input: { card_id: number; customer_id: number }) => {
     if (!input || !Number.isInteger(input.card_id) || !Number.isInteger(input.customer_id)) {
       throw new Error('Seleziona una tessera e un cliente validi.');
@@ -883,41 +920,41 @@ app.whenReady().then(() => {
       if (!result.changes) throw new Error('Punti insufficienti o tessera attiva non trovata.');
       database.prepare(`INSERT INTO loyalty_point_transactions
         (card_id, transaction_type, points, amount_eur, created_at) VALUES (?, 'Riscatto', ?, ?, ?)`)
-        .run(input.card_id, input.points, input.points * 0.2, new Date().toISOString());
+        .run(input.card_id, input.points, input.points * 0.1, new Date().toISOString());
     })();
   });
   ipcMain.handle('payroll:pay', (_event, input: PayrollPaymentInput) => {
     if (!input || !Number.isInteger(input.employee_id) || !/^\d{4}-\d{2}$/.test(input.pay_month)
       || !isValidLocalDate(input.payment_date)) throw new Error('Dati del pagamento stipendio non validi.');
-    const employee = database.prepare('SELECT first_name, last_name, salary, payment_method FROM employees WHERE id = ?')
-      .get(input.employee_id) as { first_name: string; last_name: string; salary: number; payment_method: 'Bonifico' | 'Contanti' } | undefined;
+    const employee = database.prepare('SELECT first_name, last_name, salary, payment_method, operational_site FROM employees WHERE id = ?')
+      .get(input.employee_id) as { first_name: string; last_name: string; salary: number; payment_method: 'Bonifico' | 'Contanti'; operational_site: string } | undefined;
     if (!employee) throw new Error('Dipendente non trovato.');
     database.transaction(() => {
       database.prepare(`INSERT INTO payroll_payments (employee_id, pay_month, amount, payment_date, payment_method)
         VALUES (?, ?, ?, ?, ?)`).run(input.employee_id, input.pay_month, employee.salary, input.payment_date, employee.payment_method);
-      database.prepare(`INSERT INTO expenses (description, category, amount, expense_date, created_at)
-        VALUES (?, 'Stipendi', ?, ?, ?)`).run(`Stipendio ${employee.first_name} ${employee.last_name} · ${input.pay_month}`,
-        employee.salary, input.payment_date, new Date().toISOString());
+      database.prepare(`INSERT INTO expenses (description, category, amount, expense_date, created_at, site)
+        VALUES (?, 'Stipendi', ?, ?, ?, ?)`).run(`Stipendio ${employee.first_name} ${employee.last_name} · ${input.pay_month}`,
+        employee.salary, input.payment_date, new Date().toISOString(), employee.operational_site);
     })();
   });
   ipcMain.handle('payroll:pay-all', (_event, input: { pay_month: string; payment_date: string }) => {
     if (!input || !/^\d{4}-\d{2}$/.test(input.pay_month) || !isValidLocalDate(input.payment_date)) {
       throw new Error('Mese o data del pagamento non validi.');
     }
-    const employees = database.prepare(`SELECT id, first_name, last_name, salary, payment_method FROM employees
+    const employees = database.prepare(`SELECT id, first_name, last_name, salary, payment_method, operational_site FROM employees
       WHERE id NOT IN (SELECT employee_id FROM payroll_payments WHERE pay_month = ?)`).all(input.pay_month) as
-      Array<{ id: number; first_name: string; last_name: string; salary: number; payment_method: 'Bonifico' | 'Contanti' }>;
+      Array<{ id: number; first_name: string; last_name: string; salary: number; payment_method: 'Bonifico' | 'Contanti'; operational_site: string }>;
     if (!employees.length) throw new Error('Tutti gli stipendi di questo mese risultano già pagati.');
     const pay = database.transaction(() => {
       const insertPayment = database.prepare(`INSERT INTO payroll_payments
         (employee_id, pay_month, amount, payment_date, payment_method) VALUES (?, ?, ?, ?, ?)`);
-      const insertExpense = database.prepare(`INSERT INTO expenses (description, category, amount, expense_date, created_at)
-        VALUES (?, 'Stipendi', ?, ?, ?)`);
+      const insertExpense = database.prepare(`INSERT INTO expenses (description, category, amount, expense_date, created_at, site)
+        VALUES (?, 'Stipendi', ?, ?, ?, ?)`);
       const createdAt = new Date().toISOString();
       for (const employee of employees) {
         insertPayment.run(employee.id, input.pay_month, employee.salary, input.payment_date, employee.payment_method);
         insertExpense.run(`Stipendio ${employee.first_name} ${employee.last_name} · ${input.pay_month}`,
-          employee.salary, input.payment_date, createdAt);
+          employee.salary, input.payment_date, createdAt, employee.operational_site);
       }
     });
     pay();
