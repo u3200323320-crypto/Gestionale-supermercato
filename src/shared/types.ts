@@ -200,7 +200,6 @@ declare global {
     redeemLoyaltyPoints: (input: { card_id: number; points: number }) => Promise<void>;
     paySalary: (input: PayrollPaymentInput) => Promise<void>;
     payAllSalaries: (input: { pay_month: string; payment_date: string }) => Promise<void>;
-    exportPayrollReceipts: (input: { pay_month: string }) => Promise<void>;
     saveSetting: (key: 'shop_name' | 'archive_folder' | 'receipt_printer' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => Promise<void>;
     getPrinters: () => Promise<Printer[]>;
     printReceipt: () => Promise<void>;
