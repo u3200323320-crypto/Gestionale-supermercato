@@ -76,7 +76,7 @@ function newEmployeeDraft(employees: Employee[]): EmployeeInput {
   };
   return {
     first_name: '', last_name: '', age: 18, gender: '', home_address: '', email: '', initial_password: '',
-    phone: '', operational_site: '', role: '', shift: '', salary: 0, iban: '',
+    phone: '', operational_site: '', role: '', shift: '', salary: 0, payment_method: 'Contanti', iban: '',
     recognition_code: `DIP-${randomCode(8)}`, barcode: randomCode(12),
     photo_data: '', documents_data: '[]', contract_pdf_data: '',
   };

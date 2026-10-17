@@ -6,7 +6,7 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, un
 import { join } from 'node:path';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
-import type { CheckoutInput, Employee, EmployeeInput, Expense, Product, ProductInput, Promotion, PromotionInput, SaleItem, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
+import type { CheckoutInput, Customer, CustomerInput, Employee, EmployeeInput, Expense, LoyaltyCard, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, SaleItem, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
 
 let database: Database.Database;
 let mainWindow: BrowserWindow;
@@ -17,6 +17,11 @@ function localDate(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function isValidLocalDate(value: string): boolean {
+  const date = new Date(`${value}T00:00:00`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(date.getTime()) && localDate(date) === value;
 }
 
 function localDayBounds(day: string): [string, string] {
@@ -97,8 +102,15 @@ function state() {
     promotions: database.prepare('SELECT * FROM promotions ORDER BY starts_at DESC').all(),
     voucherBatches: allVoucherBatches(),
     employees: database.prepare(`SELECT id, first_name, last_name, age, gender, home_address, email, phone, operational_site,
-      role, shift, salary, iban, recognition_code, barcode, photo_data, documents_data, contract_pdf_data, created_at
+      role, shift, salary, payment_method, iban, recognition_code, barcode, photo_data, documents_data, contract_pdf_data, created_at
       FROM employees ORDER BY last_name, first_name`).all() as Employee[],
+    customers: database.prepare('SELECT * FROM customers ORDER BY last_name, first_name').all() as Customer[],
+    loyaltyCards: database.prepare(`SELECT cards.*, customers.first_name, customers.last_name
+      FROM loyalty_cards cards LEFT JOIN customers ON customers.id = cards.customer_id
+      ORDER BY cards.created_at DESC, cards.id DESC`).all() as LoyaltyCard[],
+    payrollPayments: database.prepare(`SELECT payments.*, employees.first_name, employees.last_name
+      FROM payroll_payments payments JOIN employees ON employees.id = payments.employee_id
+      ORDER BY payments.pay_month DESC, employees.last_name, employees.first_name`).all() as PayrollPayment[],
     settings: {
       shop_name: setting('shop_name', 'Il tuo supermercato'),
       shop_logo: setting('shop_logo'),
@@ -164,9 +176,33 @@ function initDatabase(): void {
       gender TEXT NOT NULL, home_address TEXT NOT NULL, email TEXT NOT NULL UNIQUE, initial_password_hash TEXT NOT NULL,
       phone TEXT NOT NULL, operational_site TEXT NOT NULL, role TEXT NOT NULL, shift TEXT NOT NULL, salary REAL NOT NULL,
       iban TEXT NOT NULL, recognition_code TEXT NOT NULL UNIQUE, barcode TEXT NOT NULL UNIQUE,
-      photo_data TEXT NOT NULL, documents_data TEXT NOT NULL, contract_pdf_data TEXT NOT NULL, created_at TEXT NOT NULL
+      photo_data TEXT NOT NULL, documents_data TEXT NOT NULL, contract_pdf_data TEXT NOT NULL, created_at TEXT NOT NULL,
+      payment_method TEXT NOT NULL DEFAULT 'Contanti'
+    );
+    CREATE TABLE IF NOT EXISTS customers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, first_name TEXT NOT NULL, last_name TEXT NOT NULL,
+      phone TEXT NOT NULL, email TEXT NOT NULL, address TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS loyalty_cards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, discount_percentage REAL NOT NULL,
+      customer_id INTEGER REFERENCES customers(id), status TEXT NOT NULL DEFAULT 'Sviluppata',
+      points INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, activated_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS loyalty_point_transactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, card_id INTEGER NOT NULL REFERENCES loyalty_cards(id),
+      transaction_type TEXT NOT NULL CHECK(transaction_type IN ('Raccolta', 'Riscatto')),
+      points INTEGER NOT NULL, amount_eur REAL NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS payroll_payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL REFERENCES employees(id),
+      pay_month TEXT NOT NULL, amount REAL NOT NULL, payment_date TEXT NOT NULL, payment_method TEXT NOT NULL,
+      UNIQUE(employee_id, pay_month)
     );
   `);
+  const employeeColumns = database.prepare('PRAGMA table_info(employees)').all() as Array<{ name: string }>;
+  if (!employeeColumns.some((column) => column.name === 'payment_method')) {
+    database.exec("ALTER TABLE employees ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'Contanti'");
+  }
   const stockMovementColumns = database.prepare('PRAGMA table_info(stock_movements)').all() as Array<{ name: string }>;
   if (!stockMovementColumns.some((column) => column.name === 'person')) {
     database.exec("ALTER TABLE stock_movements ADD COLUMN person TEXT NOT NULL DEFAULT ''");
@@ -463,6 +499,27 @@ app.whenReady().then(() => {
       expiry_date: product.expiry_enabled ? product.expiry_date : null,
     });
   });
+  ipcMain.handle('product:delete', (_event, productId: number) => {
+    if (!Number.isInteger(productId) || productId < 1) throw new Error('Articolo non valido.');
+    const product = database.prepare('SELECT name, stock FROM products WHERE id = ?').get(productId) as { name: string; stock: number } | undefined;
+    if (!product) throw new Error('Articolo non trovato.');
+    database.transaction(() => {
+      if (product.stock > 0) recordStockMovement(productId, product.name, 'Scarico', product.stock, 'Articolo eliminato dal magazzino');
+      database.prepare('DELETE FROM products WHERE id = ?').run(productId);
+    })();
+  });
+  ipcMain.handle('product:dispose-expired', (_event, productId: number) => {
+    if (!Number.isInteger(productId) || productId < 1) throw new Error('Articolo scaduto non valido.');
+    const product = database.prepare(`SELECT name, stock FROM products
+      WHERE id = ? AND expiry_enabled = 1 AND expiry_date < ?`).get(productId, localDate(new Date())) as
+      { name: string; stock: number } | undefined;
+    if (!product) throw new Error('Articolo non trovato o non scaduto.');
+    if (product.stock <= 0) throw new Error('L’articolo scaduto non ha giacenza da smaltire.');
+    database.transaction(() => {
+      database.prepare('UPDATE products SET stock = 0 WHERE id = ?').run(productId);
+      recordStockMovement(productId, product.name, 'Scarico', product.stock, 'Smaltimento prodotto scaduto');
+    })();
+  });
   ipcMain.handle('product:stock', (_event, productId: number, stock: number) => {
     if (!Number.isInteger(productId) || productId < 1 || !Number.isFinite(stock) || stock < 0) {
       throw new Error('La nuova giacenza non è valida.');
@@ -656,7 +713,7 @@ app.whenReady().then(() => {
   ipcMain.handle('employee:save', (_event, employee: EmployeeInput) => {
     const requiredText: Array<keyof EmployeeInput> = [
       'first_name', 'last_name', 'gender', 'home_address', 'email', 'phone', 'operational_site',
-      'role', 'shift', 'iban', 'recognition_code', 'barcode', 'photo_data', 'documents_data',
+      'role', 'shift', 'payment_method', 'recognition_code', 'barcode', 'photo_data', 'documents_data',
       'contract_pdf_data', 'initial_password',
     ];
     const isDataUrl = (value: string, mime: RegExp, maxBytes: number) => {
@@ -677,9 +734,11 @@ app.whenReady().then(() => {
     if (!employee || requiredText.some((field) => typeof employee[field] !== 'string' || !employee[field].trim())
       || !Number.isInteger(employee.age) || employee.age < 16 || employee.age > 100
       || !Number.isFinite(employee.salary) || employee.salary < 0
+      || !['Bonifico', 'Contanti'].includes(employee.payment_method)
       || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(employee.email)
       || employee.initial_password.length < 8 || employee.initial_password.length > 128
-      || !/^[A-Z0-9 ]{15,34}$/i.test(employee.iban)
+      || (employee.payment_method === 'Bonifico' && !/^[A-Z0-9 ]{15,34}$/i.test(employee.iban))
+      || (employee.payment_method === 'Contanti' && employee.iban !== '')
       || !/^DIP-\d{8}$/.test(employee.recognition_code) || !/^\d{12}$/.test(employee.barcode)
       || !isDataUrl(employee.photo_data, /^data:image\/(?:png|jpeg|webp);base64,/i, 5 * 1024 * 1024)
       || documentImages.length === 0 || documentImages.length > 20
@@ -693,10 +752,10 @@ app.whenReady().then(() => {
     try {
       database.prepare(`INSERT INTO employees (
         first_name, last_name, age, gender, home_address, email, initial_password_hash, phone, operational_site,
-        role, shift, salary, iban, recognition_code, barcode, photo_data, documents_data, contract_pdf_data, created_at
+        role, shift, salary, payment_method, iban, recognition_code, barcode, photo_data, documents_data, contract_pdf_data, created_at
       ) VALUES (
         @first_name, @last_name, @age, @gender, @home_address, @email, @initial_password_hash, @phone, @operational_site,
-        @role, @shift, @salary, @iban, @recognition_code, @barcode, @photo_data, @documents_data, @contract_pdf_data, @created_at
+        @role, @shift, @salary, @payment_method, @iban, @recognition_code, @barcode, @photo_data, @documents_data, @contract_pdf_data, @created_at
       )`).run({
         ...employeeDetails,
         initial_password_hash: passwordHash,
@@ -714,6 +773,110 @@ app.whenReady().then(() => {
       }
       throw error;
     }
+  });
+  ipcMain.handle('customer:save', (_event, customer: CustomerInput) => {
+    if (!customer || [customer.first_name, customer.last_name, customer.phone, customer.email, customer.address]
+      .some((value) => typeof value !== 'string' || !value.trim())
+      || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email.trim())) {
+      throw new Error('Inserisci nome, cognome, telefono, email e indirizzo validi.');
+    }
+    database.prepare(`INSERT INTO customers (first_name, last_name, phone, email, address, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)`).run(customer.first_name.trim(), customer.last_name.trim(),
+      customer.phone.trim(), customer.email.trim(), customer.address.trim(), new Date().toISOString());
+  });
+  ipcMain.handle('loyalty-cards:generate', (_event, input: { quantity: number; discount_percentage: number }) => {
+    if (!input || !Number.isInteger(input.quantity) || input.quantity < 1 || input.quantity > 5000
+      || !Number.isFinite(input.discount_percentage) || input.discount_percentage < 0 || input.discount_percentage > 100) {
+      throw new Error('Inserisci una quantità da 1 a 5000 e uno sconto tra 0 e 100%.');
+    }
+    const storeName = setting('shop_name', 'Il tuo supermercato').replace(/[^a-z0-9]/gi, '');
+    if (!storeName) throw new Error('Imposta un nome negozio composto da lettere o numeri prima di generare tessere.');
+    const insert = database.prepare(`INSERT INTO loyalty_cards (code, discount_percentage, status, created_at)
+      VALUES (?, ?, 'Sviluppata', ?)`);
+    const usedCodes = new Set((database.prepare('SELECT code FROM loyalty_cards').all() as Array<{ code: string }>).map(({ code }) => code));
+    const createdAt = new Date().toISOString();
+    database.transaction(() => {
+      for (let index = 0; index < input.quantity; index += 1) {
+        let code = '';
+        do {
+          code = `${String(randomInt(0, 100000)).padStart(5, '0')}${storeName}${String(randomInt(0, 100000000)).padStart(8, '0')}`;
+        } while (usedCodes.has(code));
+        usedCodes.add(code);
+        insert.run(code, input.discount_percentage, createdAt);
+      }
+    })();
+  });
+  ipcMain.handle('loyalty-card:activate', (_event, input: { card_id: number; customer_id: number }) => {
+    if (!input || !Number.isInteger(input.card_id) || !Number.isInteger(input.customer_id)) {
+      throw new Error('Seleziona una tessera e un cliente validi.');
+    }
+    const result = database.prepare(`UPDATE loyalty_cards SET customer_id = ?, status = 'Attiva', activated_at = ?
+      WHERE id = ? AND status = 'Sviluppata' AND customer_id IS NULL AND EXISTS (SELECT 1 FROM customers WHERE id = ?)`)
+      .run(input.customer_id, new Date().toISOString(), input.card_id, input.customer_id);
+    if (result.changes === 0) throw new Error('Tessera già attivata o cliente non trovato.');
+  });
+  ipcMain.handle('loyalty-card:collect-points', (_event, input: { card_id: number; amount_spent: number }) => {
+    if (!input || !Number.isInteger(input.card_id) || !Number.isFinite(input.amount_spent) || input.amount_spent < 1) {
+      throw new Error('Inserisci un importo speso di almeno 1 euro.');
+    }
+    const points = Math.floor(input.amount_spent);
+    database.transaction(() => {
+      const result = database.prepare(`UPDATE loyalty_cards SET points = points + ?
+        WHERE id = ? AND status = 'Attiva'`).run(points, input.card_id);
+      if (!result.changes) throw new Error('Tessera attiva non trovata.');
+      database.prepare(`INSERT INTO loyalty_point_transactions
+        (card_id, transaction_type, points, amount_eur, created_at) VALUES (?, 'Raccolta', ?, ?, ?)`)
+        .run(input.card_id, points, input.amount_spent, new Date().toISOString());
+    })();
+  });
+  ipcMain.handle('loyalty-card:redeem-points', (_event, input: { card_id: number; points: number }) => {
+    if (!input || !Number.isInteger(input.card_id) || !Number.isInteger(input.points) || input.points < 1) {
+      throw new Error('Inserisci un numero di punti valido.');
+    }
+    database.transaction(() => {
+      const result = database.prepare(`UPDATE loyalty_cards SET points = points - ?
+        WHERE id = ? AND status = 'Attiva' AND points >= ?`).run(input.points, input.card_id, input.points);
+      if (!result.changes) throw new Error('Punti insufficienti o tessera attiva non trovata.');
+      database.prepare(`INSERT INTO loyalty_point_transactions
+        (card_id, transaction_type, points, amount_eur, created_at) VALUES (?, 'Riscatto', ?, ?, ?)`)
+        .run(input.card_id, input.points, input.points * 0.2, new Date().toISOString());
+    })();
+  });
+  ipcMain.handle('payroll:pay', (_event, input: PayrollPaymentInput) => {
+    if (!input || !Number.isInteger(input.employee_id) || !/^\d{4}-\d{2}$/.test(input.pay_month)
+      || !isValidLocalDate(input.payment_date)) throw new Error('Dati del pagamento stipendio non validi.');
+    const employee = database.prepare('SELECT first_name, last_name, salary, payment_method FROM employees WHERE id = ?')
+      .get(input.employee_id) as { first_name: string; last_name: string; salary: number; payment_method: 'Bonifico' | 'Contanti' } | undefined;
+    if (!employee) throw new Error('Dipendente non trovato.');
+    database.transaction(() => {
+      database.prepare(`INSERT INTO payroll_payments (employee_id, pay_month, amount, payment_date, payment_method)
+        VALUES (?, ?, ?, ?, ?)`).run(input.employee_id, input.pay_month, employee.salary, input.payment_date, employee.payment_method);
+      database.prepare(`INSERT INTO expenses (description, category, amount, expense_date, created_at)
+        VALUES (?, 'Stipendi', ?, ?, ?)`).run(`Stipendio ${employee.first_name} ${employee.last_name} · ${input.pay_month}`,
+        employee.salary, input.payment_date, new Date().toISOString());
+    })();
+  });
+  ipcMain.handle('payroll:pay-all', (_event, input: { pay_month: string; payment_date: string }) => {
+    if (!input || !/^\d{4}-\d{2}$/.test(input.pay_month) || !isValidLocalDate(input.payment_date)) {
+      throw new Error('Mese o data del pagamento non validi.');
+    }
+    const employees = database.prepare(`SELECT id, first_name, last_name, salary, payment_method FROM employees
+      WHERE id NOT IN (SELECT employee_id FROM payroll_payments WHERE pay_month = ?)`).all(input.pay_month) as
+      Array<{ id: number; first_name: string; last_name: string; salary: number; payment_method: 'Bonifico' | 'Contanti' }>;
+    if (!employees.length) throw new Error('Tutti gli stipendi di questo mese risultano già pagati.');
+    const pay = database.transaction(() => {
+      const insertPayment = database.prepare(`INSERT INTO payroll_payments
+        (employee_id, pay_month, amount, payment_date, payment_method) VALUES (?, ?, ?, ?, ?)`);
+      const insertExpense = database.prepare(`INSERT INTO expenses (description, category, amount, expense_date, created_at)
+        VALUES (?, 'Stipendi', ?, ?, ?)`);
+      const createdAt = new Date().toISOString();
+      for (const employee of employees) {
+        insertPayment.run(employee.id, input.pay_month, employee.salary, input.payment_date, employee.payment_method);
+        insertExpense.run(`Stipendio ${employee.first_name} ${employee.last_name} · ${input.pay_month}`,
+          employee.salary, input.payment_date, createdAt);
+      }
+    });
+    pay();
   });
   ipcMain.handle('voucher:validate', (_event, code: string): VoucherValidation => {
     const normalized = typeof code === 'string' ? code.trim() : '';

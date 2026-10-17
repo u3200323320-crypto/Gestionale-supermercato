@@ -15,9 +15,10 @@
     "@fontsource/dm-sans": "^5.2.6",
     "@fontsource/manrope": "^5.2.6",
     "better-sqlite3": "^12.4.1",
+    "jsbarcode": "^3.12.1",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.2",
-    "jsbarcode": "^3.12.1",
+    "jszip": "^3.10.2",
     "lucide-react": "^0.468.0",
     "pdfkit": "^0.17.2",
     "react": "^19.1.1",
@@ -41,12 +42,24 @@
   "build": {
     "appId": "it.gestionale.supermercato",
     "productName": "Gestione Supermercato",
-    "directories": { "output": "release" },
-    "files": ["out/**/*", "package.json"],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
     "asar": true,
     "npmRebuild": true,
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "artifactName": "Gestione-Supermercato-Setup-${version}.${ext}"
     },
     "nsis": {
