@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld('gestionale', {
   setPin: (pin: string) => ipcRenderer.invoke('pin:set', pin),
   saveProduct: (product: ProductInput) => ipcRenderer.invoke('product:save', product),
   updateStock: (productId: number, stock: number) => ipcRenderer.invoke('product:stock', productId, stock),
-  moveStock: (movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; note: string }) => ipcRenderer.invoke('product:move-stock', movement),
+  moveStock: (movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; employee_barcode: string; destination?: string; note: string }) => ipcRenderer.invoke('product:move-stock', movement),
   checkout: (sale: CheckoutInput) => ipcRenderer.invoke('sale:checkout', sale),
   validateVoucher: (code: string) => ipcRenderer.invoke('voucher:validate', code),
   savePromotion: (promotion: PromotionInput) => ipcRenderer.invoke('promotion:save', promotion),

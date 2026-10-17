@@ -288,7 +288,8 @@ export default function App() {
   const [stockMovementProduct, setStockMovementProduct] = useState('');
   const [stockMovementQuantity, setStockMovementQuantity] = useState('');
   const [stockMovementNote, setStockMovementNote] = useState('');
-  const [stockMovementPerson, setStockMovementPerson] = useState('');
+  const [stockMovementEmployeeBarcode, setStockMovementEmployeeBarcode] = useState('');
+  const [stockMovementDestination, setStockMovementDestination] = useState('');
   const [inventoryHistoryPeriod, setInventoryHistoryPeriod] = useState('Tutti');
   const [inventoryHistoryFrom, setInventoryHistoryFrom] = useState('');
   const [inventoryHistoryTo, setInventoryHistoryTo] = useState('');
@@ -331,9 +332,10 @@ export default function App() {
   const [cardDiscount, setCardDiscount] = useState('0');
   const [activationCardId, setActivationCardId] = useState('');
   const [activationCustomerId, setActivationCustomerId] = useState('');
-  const [pointsCardId, setPointsCardId] = useState('');
-  const [pointsAmount, setPointsAmount] = useState('');
-  const [redeemPoints, setRedeemPoints] = useState('');
+  const [cardSearch, setCardSearch] = useState('');
+  const [developedCardSearch, setDevelopedCardSearch] = useState('');
+  const [checkoutCardBarcode, setCheckoutCardBarcode] = useState('');
+  const [checkoutRedeemPoints, setCheckoutRedeemPoints] = useState('');
   const [payrollMonth, setPayrollMonth] = useState(localDateKey().slice(0, 7));
   const [payrollDate, setPayrollDate] = useState(localDateKey());
   const [expenseSearch, setExpenseSearch] = useState('');
@@ -613,6 +615,8 @@ export default function App() {
     try {
       await window.gestionale.generateLoyaltyCards({ quantity: Number(cardQuantity), discount_percentage: Number(cardDiscount) });
       await refresh();
+      setCardQuantity('');
+      setCardDiscount('');
       notify('Tessere sviluppate correttamente.');
     } catch (error) {
       notify(errorText(error));
@@ -629,23 +633,16 @@ export default function App() {
       notify(errorText(error));
     }
   };
-  const collectPoints = async (event: FormEvent) => {
-    event.preventDefault();
+  const redeemCheckoutPoints = async () => {
+    const card = data?.loyaltyCards.find((candidate) => candidate.barcode === checkoutCardBarcode.trim() && candidate.status === 'Attiva');
+    if (!card) { notify('Scansiona il barcode di una tessera attiva.'); return; }
+    const points = Number(checkoutRedeemPoints);
+    if (!Number.isInteger(points) || points < 1 || points > card.points) { notify('Inserisci un numero di punti valido e disponibile.'); return; }
     try {
-      await window.gestionale.collectLoyaltyPoints({ card_id: Number(pointsCardId), amount_spent: Number(pointsAmount) });
+      await window.gestionale.redeemLoyaltyPoints({ card_id: card.id, points });
       await refresh();
-      setPointsAmount('');
-      notify('Punti caricati sulla tessera.');
-    } catch (error) {
-      notify(errorText(error));
-    }
-  };
-  const redeemCardPoints = async (card: LoyaltyCard) => {
-    try {
-      await window.gestionale.redeemLoyaltyPoints({ card_id: card.id, points: Number(redeemPoints) });
-      await refresh();
-      setRedeemPoints('');
-      notify(`Sconto applicato: ${money.format(Number(redeemPoints) * 0.2)}.`);
+      setCheckoutRedeemPoints('');
+      notify('Punti scaricati dalla tessera.');
     } catch (error) {
       notify(errorText(error));
     }
@@ -657,6 +654,9 @@ export default function App() {
       requestAnimationFrame(() => document.getElementById('scanner-field')?.focus());
     }
   }, [section, camera, pendingUnknownCode, productForm]);
+  useEffect(() => {
+    if (stockProduct) setStockMovementEmployeeBarcode('');
+  }, [stockProduct]);
   useEffect(() => { if (receipt) { const barcode = document.getElementById('receipt-barcode'); if (barcode) JsBarcode(barcode, receipt.receipt_no, { format: 'CODE128', width: 2.1, height: 48, displayValue: false, margin: 0 }); } }, [receipt]);
   useEffect(() => {
     if (!voucherPrintBatch) return;
@@ -699,10 +699,12 @@ export default function App() {
     if (!stockProduct) return;
     const quantity = Number(stockInput);
     if (!Number.isFinite(quantity) || quantity <= 0) { notify('Inserisci una quantità maggiore di zero.'); return; }
+    if (!stockMovementEmployeeBarcode) { notify('Scansiona il barcode del personale prima di registrare il carico.'); return; }
     try {
-      await window.gestionale.moveStock({ productId: stockProduct.id, type: 'Carico', quantity, note: 'Carico da dettaglio articolo' });
+      await window.gestionale.moveStock({ productId: stockProduct.id, type: 'Carico', quantity, employee_barcode: stockMovementEmployeeBarcode, note: 'Carico da dettaglio articolo' });
       await refresh();
       setStockProduct(null);
+      setStockMovementEmployeeBarcode('');
       notify('Giacenza aggiornata');
     } catch (error) {
       notify(errorText(error));
@@ -717,12 +719,21 @@ export default function App() {
       return;
     }
     try {
-      if (stockMovementType === 'Scarico' && !stockMovementPerson.trim()) { notify('Inserisci il nome della persona che prende la merce.'); return; }
-      await window.gestionale.moveStock({ productId, type: stockMovementType, quantity: roundQuantity(quantity), person: stockMovementPerson.trim(), note: stockMovementNote });
+      if (!stockMovementEmployeeBarcode) { notify('Scansiona il barcode del personale prima di registrare il movimento.'); return; }
+      if (stockMovementType === 'Scarico' && !stockMovementDestination) { notify('Seleziona la sede di destinazione della merce.'); return; }
+      await window.gestionale.moveStock({
+        productId,
+        type: stockMovementType,
+        quantity: roundQuantity(quantity),
+        employee_barcode: stockMovementEmployeeBarcode,
+        destination: stockMovementDestination,
+        note: stockMovementNote,
+      });
       await refresh();
       setStockMovementQuantity('');
       setStockMovementNote('');
-      setStockMovementPerson('');
+      setStockMovementEmployeeBarcode('');
+      setStockMovementDestination('');
       notify(`${stockMovementType} registrato`);
     } catch (error) {
       notify(errorText(error));
@@ -839,6 +850,29 @@ export default function App() {
     });
     doc.save(`buoni-sconto-gruppo-${batch.id}.pdf`);
   };
+  const exportLoyaltyCards = (cards: LoyaltyCard[]) => {
+    if (!cards.length) {
+      notify('Non ci sono tessere da scaricare per questa ricerca.');
+      return;
+    }
+    const doc = new jsPDF();
+    const barcodes = cards.map((card) => barcodePng(card.barcode));
+    doc.setFontSize(16);
+    doc.text('Lista tessere fedeltà', 14, 17);
+    autoTable(doc, {
+      startY: 25,
+      head: [['Codice tessera', 'Barcode', 'Cliente', 'Sconto', 'Punti']],
+      body: cards.map((card) => [card.code, '', `${card.first_name ?? ''} ${card.last_name ?? ''}`.trim(), `${card.discount_percentage}%`, String(card.points)]),
+      styles: { fontSize: 8, minCellHeight: 18 },
+      headStyles: { fillColor: [56, 104, 78] },
+      didDrawCell: (cell) => {
+        if (cell.section === 'body' && cell.column.index === 1) {
+          doc.addImage(barcodes[cell.row.index], 'PNG', cell.cell.x + 2, cell.cell.y + 3, cell.cell.width - 4, 12);
+        }
+      },
+    });
+    doc.save('lista-tessere-fedelta.pdf');
+  };
   const applyVoucherCode = async (code: string) => {
     const normalized = code.trim();
     setVoucherCode(normalized);
@@ -863,9 +897,32 @@ export default function App() {
       setData((current) => current ? { ...current, settings: { ...current.settings, barcode_scanner_detected: true } } : current);
       void window.gestionale.saveSetting('barcode_scanner_detected', 'true').catch((error: unknown) => notify(errorText(error)));
     }
-    if (checkoutOpen) void applyVoucherCode(normalized);
+    if (checkoutOpen) {
+      if (data.loyaltyCards.some((card) => card.barcode === normalized && card.status === 'Attiva')) setCheckoutCardBarcode(normalized);
+      else void applyVoucherCode(normalized);
+    }
+    else if (section === 'stock-movement') {
+      const employee = data.employees.find((item) => item.barcode === normalized);
+      if (!employee) {
+        setStockMovementEmployeeBarcode('');
+        notify('Barcode personale non riconosciuto. Scansiona il badge di un dipendente registrato.');
+        return;
+      }
+      setStockMovementEmployeeBarcode(normalized);
+      notify(`Personale riconosciuto: ${employee.first_name} ${employee.last_name}.`);
+    }
     else if (section === 'cash') scanCode(normalized);
-    else if (section === 'inventory') setInventorySearch(normalized);
+    else if (section === 'inventory' && stockProduct) {
+      const employee = data.employees.find((item) => item.barcode === normalized);
+      if (!employee) {
+        setStockMovementEmployeeBarcode('');
+        notify('Barcode personale non riconosciuto. Scansiona il badge di un dipendente registrato.');
+        return;
+      }
+      setStockMovementEmployeeBarcode(normalized);
+      notify(`Personale riconosciuto: ${employee.first_name} ${employee.last_name}.`);
+    } else if (section === 'inventory') setInventorySearch(normalized);
+    else if (section === 'cards-list') setCardSearch(normalized);
     else if (section === 'sales') setSaleSearch(normalized.replace(/\D/g, ''));
     else if (section === 'sale-management') {
       const receiptNumber = normalized.replace(/\D/g, '');
@@ -877,7 +934,7 @@ export default function App() {
   };
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!['cash', 'inventory', 'sales', 'sale-management'].includes(section) || !data?.settings.barcode_scanner_enabled) return;
+      if (!['cash', 'inventory', 'sales', 'sale-management', 'stock-movement', 'cards-list'].includes(section) || !data?.settings.barcode_scanner_enabled) return;
       const now = performance.now();
       const sequence = scannerSequence.current;
       if (event.key === 'Enter') {
@@ -901,7 +958,7 @@ export default function App() {
     };
     document.addEventListener('keydown', onKeyDown, true);
     return () => document.removeEventListener('keydown', onKeyDown, true);
-  }, [data, section, checkoutOpen]);
+  }, [data, section, checkoutOpen, stockProduct]);
   useEffect(() => {
     if (section !== 'settings' || settingsTab !== 'Dispositivi') return;
     void window.gestionale.getPrinters().then(setPrinters).catch((error: unknown) => notify(errorText(error)));
@@ -989,6 +1046,14 @@ export default function App() {
   const totalBeforeVoucher = Math.max(0, subtotal - automaticDiscount - manualDiscount);
   const voucherDiscount = Math.round(totalBeforeVoucher * voucherDiscountPercentage) / 100;
   const total = Math.max(0, totalBeforeVoucher - voucherDiscount);
+  const checkoutLoyaltyCard = data?.loyaltyCards.find((card) => card.barcode === checkoutCardBarcode.trim() && card.status === 'Attiva');
+  const activeLoyaltyCards = (data?.loyaltyCards ?? []).filter((card) => card.status === 'Attiva');
+  const developedLoyaltyCards = (data?.loyaltyCards ?? []).filter((card) => card.status === 'Sviluppata');
+  const filteredDevelopedLoyaltyCards = developedLoyaltyCards.filter((card) =>
+    `${card.code} ${card.barcode}`.toLowerCase().includes(developedCardSearch.trim().toLowerCase()));
+  const filteredLoyaltyCards = activeLoyaltyCards.filter((card) =>
+    `${card.code} ${card.barcode} ${card.first_name ?? ''} ${card.last_name ?? ''}`.toLowerCase().includes(cardSearch.trim().toLowerCase()));
+  const stockMovementSites = [...new Set((data?.employees ?? []).map((employee) => employee.operational_site.trim()).filter(Boolean))];
   const changeQuantity = (id: number, amount: number) => {
     const line = cart.find((item) => item.product_id === id);
     const product = data?.products.find((item) => item.id === id);
@@ -998,11 +1063,20 @@ export default function App() {
   };
   const checkout = async () => {
     try {
-      const sale = await window.gestionale.checkout({ items: cart, payment_method: paymentMethod, voucher_code: voucherCode || undefined, manual_promotion_id: promotionDiscounts.manualPromotion?.id, automatic_promotion_id: automaticPromotionId });
+      const sale = await window.gestionale.checkout({
+        items: cart,
+        payment_method: paymentMethod,
+        voucher_code: voucherCode || undefined,
+        loyalty_card_id: checkoutLoyaltyCard?.id,
+        manual_promotion_id: promotionDiscounts.manualPromotion?.id,
+        automatic_promotion_id: automaticPromotionId,
+      });
       setCart([]);
       setVoucherCode('');
       setVoucherMessage('');
       setVoucherDiscountPercentage(0);
+      setCheckoutCardBarcode('');
+      setCheckoutRedeemPoints('');
       setManualPromotionId(undefined);
       setAutomaticPromotionId(undefined);
       setCheckoutOpen(false);
@@ -1552,7 +1626,7 @@ export default function App() {
       <nav>
         {nav.filter((item) => item.section === 'home').map(({ section: target, label, icon: Icon }) => <button key={target} className={`nav-item${section === target ? ' active' : ''}`} onClick={() => navigateTo(target)}><Icon size={18} /><span>{label}</span></button>)}
         <button aria-expanded={openSidebarMenu === 'inventory'} className={`nav-item${section === 'inventory' || section === 'expired-products' || section === 'inventory-history' || section === 'stock-movement' ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'inventory' ? null : 'inventory')}><Package size={18} /><span>Magazzino</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'inventory' ? ' open' : ''}`} size={15} /></button>
-        {openSidebarMenu === 'inventory' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'inventory' ? ' selected' : ''}`} onClick={() => navigateTo('inventory')}>Magazzino</button><button className={`sidebar-subitem${section === 'expired-products' ? ' selected' : ''}`} onClick={() => navigateTo('expired-products')}>Gestisci articoli scaduti</button><button className={`sidebar-subitem${section === 'inventory-history' ? ' selected' : ''}`} onClick={() => navigateTo('inventory-history')}>Storico Magazzino</button><button className={`sidebar-subitem${section === 'stock-movement' ? ' selected' : ''}`} onClick={() => { setStockMovementProduct(String(data.products[0]?.id ?? '')); navigateTo('stock-movement'); }}>Carica e scarica merce</button></div>}
+        {openSidebarMenu === 'inventory' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'inventory' ? ' selected' : ''}`} onClick={() => navigateTo('inventory')}>Magazzino</button><button className={`sidebar-subitem${section === 'inventory-history' ? ' selected' : ''}`} onClick={() => navigateTo('inventory-history')}>Storico Magazzino</button><button className={`sidebar-subitem${section === 'stock-movement' ? ' selected' : ''}`} onClick={() => { setStockMovementProduct(String(data.products[0]?.id ?? '')); navigateTo('stock-movement'); }}>Carica e scarica merce</button></div>}
         {nav.filter((item) => ['cash', 'sales', 'statistics'].includes(item.section)).map(({ section: target, label, icon: Icon }) => <button key={target} className={`nav-item${section === target ? ' active' : ''}`} onClick={() => navigateTo(target)}><Icon size={18} /><span>{label}</span>{target === 'cash' && <kbd>F2</kbd>}</button>)}
         <div className="nav-label nav-label-extra">GESTIONE EXTRA</div>
         <button className={`nav-item${section === 'sale-management' ? ' active' : ''}`} onClick={() => navigateTo('sale-management')}><ClipboardList size={18} /><span>Modifica o Elimina</span></button>
@@ -1561,7 +1635,7 @@ export default function App() {
         <button aria-expanded={openSidebarMenu === 'offers'} className={`nav-item${['promotions', 'vouchers-create', 'vouchers-list'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'offers' ? null : 'offers')}><TrendingUp size={18} /><span>Offerta</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'offers' ? ' open' : ''}`} size={15} /></button>
         {openSidebarMenu === 'offers' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'promotions' ? ' selected' : ''}`} onClick={() => navigateTo('promotions')}>Promozioni</button><button className={`sidebar-subitem${section === 'vouchers-create' ? ' selected' : ''}`} onClick={() => { cancelVoucherPreview(); navigateTo('vouchers-create'); }}>Crea buoni sconto</button><button className={`sidebar-subitem${section === 'vouchers-list' ? ' selected' : ''}`} onClick={() => navigateTo('vouchers-list')}>Lista buoni sconto</button></div>}
         <button aria-expanded={openSidebarMenu === 'clients'} className={`nav-item${['clients', 'client-list', 'cards-list', 'cards-activate', 'cards-create', 'cards-developed'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'clients' ? null : 'clients')}><ShoppingBasket size={18} /><span>Clienti</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'clients' ? ' open' : ''}`} size={15} /></button>
-        {openSidebarMenu === 'clients' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'client-list' ? ' selected' : ''}`} onClick={() => navigateTo('client-list')}>Lista clienti</button><button className={`sidebar-subitem${section === 'cards-list' ? ' selected' : ''}`} onClick={() => navigateTo('cards-list')}>Lista tessere</button><button className={`sidebar-subitem${section === 'cards-activate' ? ' selected' : ''}`} onClick={() => navigateTo('cards-activate')}>Attiva tessera</button><button className={`sidebar-subitem${section === 'cards-create' ? ' selected' : ''}`} onClick={() => navigateTo('cards-create')}>Sviluppa tessera</button><button className={`sidebar-subitem${section === 'cards-developed' ? ' selected' : ''}`} onClick={() => navigateTo('cards-developed')}>Tessere sviluppate</button></div>}
+        {openSidebarMenu === 'clients' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'client-list' ? ' selected' : ''}`} onClick={() => navigateTo('client-list')}>Lista clienti</button><button className={`sidebar-subitem${section === 'cards-activate' ? ' selected' : ''}`} onClick={() => navigateTo('cards-activate')}>Attiva tessera</button><button className={`sidebar-subitem${section === 'cards-list' ? ' selected' : ''}`} onClick={() => navigateTo('cards-list')}>Lista tessere</button><button className={`sidebar-subitem${section === 'cards-create' ? ' selected' : ''}`} onClick={() => navigateTo('cards-create')}>Sviluppa tessera</button><button className={`sidebar-subitem${section === 'cards-developed' ? ' selected' : ''}`} onClick={() => navigateTo('cards-developed')}>Tessere sviluppate</button></div>}
         <button aria-expanded={openSidebarMenu === 'employees'} className={`nav-item${['employees', 'employee-create', 'payroll'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'employees' ? null : 'employees')}><ClipboardList size={18} /><span>Dipendenti</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'employees' ? ' open' : ''}`} size={15} /></button>
         {openSidebarMenu === 'employees' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => navigateTo('employees')}>Lista Dipendenti</button><button className={`sidebar-subitem${section === 'employee-create' ? ' selected' : ''}`} onClick={startEmployeeCreation}>Crea Dipendente</button><button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => navigateTo('payroll')}>Paga Stipendi</button></div>}
       </nav>
@@ -1585,16 +1659,16 @@ export default function App() {
 
       {section === 'inventory-history' && <div className="page-content"><div id="inventory-history-print">
         <div className="inventory-history-actions no-print"><SelectField label="Periodo" value={inventoryHistoryPeriod} onChange={setInventoryHistoryPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Da - A']} />{inventoryHistoryPeriod === 'Da - A' && <><Field label="Da" type="date" value={inventoryHistoryFrom} onChange={(event) => setInventoryHistoryFrom(event.target.value)} /><Field label="A" type="date" value={inventoryHistoryTo} onChange={(event) => setInventoryHistoryTo(event.target.value)} /></>}<SearchInput value={inventoryHistorySearch} onChange={setInventoryHistorySearch} placeholder="Cerca articolo, persona o nota…" /><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa</button></div>
-        <Table headings={['Data e ora', 'Articolo', 'Movimento', 'Quantità', 'Persona', 'Nota']}><>{inventoryHistoryMovements.map((movement) => <tr key={movement.id}><td>{dateTime.format(new Date(movement.created_at))}</td><td className="cell-primary">{movement.product_name}</td><td><span className={`movement-badge ${movement.movement_type === 'Carico' ? 'movement-in' : 'movement-out'}`}>{movement.movement_type}</span></td><td>{quantityFormat.format(movement.quantity)}</td><td>{movement.person || '—'}</td><td>{movement.note || '—'}</td></tr>)}</>{!inventoryHistoryMovements.length && <tr><td colSpan={6} className="empty-cell">Nessun movimento nel periodo selezionato.</td></tr>}</Table></div></div>}
+        <Table headings={['Data e ora', 'Articolo', 'Movimento', 'Quantità', 'Persona', 'Sede', 'Nota']}><>{inventoryHistoryMovements.map((movement) => <tr key={movement.id}><td>{dateTime.format(new Date(movement.created_at))}</td><td className="cell-primary">{movement.product_name}</td><td><span className={`movement-badge ${movement.movement_type === 'Carico' ? 'movement-in' : 'movement-out'}`}>{movement.movement_type}</span></td><td>{quantityFormat.format(movement.quantity)}</td><td>{movement.person || '—'}</td><td>{movement.destination || '—'}</td><td>{movement.note || '—'}</td></tr>)}</>{!inventoryHistoryMovements.length && <tr><td colSpan={7} className="empty-cell">Nessun movimento nel periodo selezionato.</td></tr>}</Table></div></div>}
 
-      {section === 'stock-movement' && <div className="page-content settings-page"><section className="settings-panel"><div className="settings-title"><h2>Carica e scarica merce</h2><p>Registra un movimento e aggiorna automaticamente la giacenza.</p></div><form className="settings-form movement-form" onSubmit={(event) => void saveStockMovement(event)}><SelectField label="Tipo di movimento" value={stockMovementType} onChange={(value) => { const type = value === 'Scarico' ? 'Scarico' : 'Carico'; setStockMovementType(type); if (type === 'Carico') setStockMovementPerson(''); }} options={['Carico', 'Scarico']} /><SelectField label="Articolo" value={stockMovementProduct} onChange={setStockMovementProduct} options={data.products.map((product) => String(product.id))} labels={data.products.map((product) => `${product.name} · ${product.stock} ${product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'lit.' : 'pz'} disponibili`)} /><Field label={`Quantità${selectedMovementProduct?.unit === 'KG' ? ' (kg)' : selectedMovementProduct?.unit === 'LITRO' ? ' (litri)' : ''}`} type="number" min={selectedMovementProduct?.unit === 'PEZZO' ? '1' : '0.001'} step={selectedMovementProduct?.unit === 'PEZZO' ? '1' : '0.001'} value={stockMovementQuantity} onChange={(event) => setStockMovementQuantity(event.target.value)} required />{stockMovementType === 'Scarico' && <Field label="Persona che prende la merce" value={stockMovementPerson} onChange={(event) => setStockMovementPerson(event.target.value)} required />}<Field label="Nota (facoltativa)" value={stockMovementNote} onChange={(event) => setStockMovementNote(event.target.value)} /><button className="button button-primary" disabled={!data.products.length}><Check size={16} /> Registra {stockMovementType.toLowerCase()}</button></form></section></div>}
+      {section === 'stock-movement' && <div className="page-content settings-page"><section className="settings-panel"><div className="settings-title"><h2>Carica e scarica merce</h2></div><form className="settings-form movement-form" onSubmit={(event) => void saveStockMovement(event)}><SelectField label="Tipo di movimento" value={stockMovementType} onChange={(value) => setStockMovementType(value === 'Scarico' ? 'Scarico' : 'Carico')} options={['Carico', 'Scarico']} /><SelectField label="Articolo" value={stockMovementProduct} onChange={setStockMovementProduct} options={data.products.map((product) => String(product.id))} labels={data.products.map((product) => `${product.name} · ${product.stock} ${product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'lit.' : 'pz'} disponibili`)} /><Field label={`Quantità${selectedMovementProduct?.unit === 'KG' ? ' (kg)' : selectedMovementProduct?.unit === 'LITRO' ? ' (litri)' : ''}`} type="number" min={selectedMovementProduct?.unit === 'PEZZO' ? '1' : '0.001'} step={selectedMovementProduct?.unit === 'PEZZO' ? '1' : '0.001'} value={stockMovementQuantity} onChange={(event) => setStockMovementQuantity(event.target.value)} required /><Field fieldClassName="movement-barcode-field" label="Barcode del personale (scansiona il badge)" value={stockMovementEmployeeBarcode} readOnly autoFocus disabled={!data.settings.barcode_scanner_enabled} placeholder={data.settings.barcode_scanner_enabled ? 'In attesa della scansione…' : 'Attiva il lettore barcode nelle impostazioni'} />{stockMovementEmployeeBarcode && <div className="movement-employee-status">{data.employees.find((employee) => employee.barcode === stockMovementEmployeeBarcode)?.first_name} {data.employees.find((employee) => employee.barcode === stockMovementEmployeeBarcode)?.last_name}</div>}{stockMovementType === 'Scarico' && <label className="field"><span>Sede di destinazione</span><select value={stockMovementDestination} onChange={(event) => setStockMovementDestination(event.target.value)} required><option value="">Seleziona la sede</option>{stockMovementSites.map((site) => <option key={site} value={site}>{site}</option>)}</select></label>}<Field label="Nota (facoltativa)" value={stockMovementNote} onChange={(event) => setStockMovementNote(event.target.value)} /><div className="movement-actions"><button className="button button-outline" type="button" onClick={() => { setStockMovementType('Carico'); setStockMovementProduct(String(data.products[0]?.id ?? '')); setStockMovementQuantity(''); setStockMovementEmployeeBarcode(''); setStockMovementDestination(''); setStockMovementNote(''); }}>Annulla</button><button className="button button-primary" disabled={!data.products.length || !data.settings.barcode_scanner_enabled || !stockMovementEmployeeBarcode}><Check size={16} /> Registra</button></div></form></section></div>}
 
       {section === 'cash' && <div className="page-content cash-content"><div className="cash-layout">
         <section className="cash-products">
           <div className="cash-search-row"><div className="search-field"><Barcode size={17} /><input id="scanner-field" placeholder="Cerca o scansiona un codice a barre…" value={scannerSearch} onChange={(e) => setScannerSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scanCode(scannerSearch); } }} /><button type="button" className="search-clear" aria-label="Cancella ricerca" disabled={!scannerSearch} onClick={() => setScannerSearch('')}><X size={15} /></button></div><button className="icon-button camera-button" title="Scansiona con fotocamera" onClick={() => setCamera(true)}><Camera size={18} /></button></div>
           <div className="cash-product-grid">{data.products.filter((p) => (p.name.toLowerCase().includes(scannerSearch.toLowerCase()) || p.code.includes(scannerSearch)) && p.stock > 0).map((product) => { const remainingStock = Math.max(0, product.stock - (cart.find((item) => item.product_id === product.id)?.quantity ?? 0)); return <button className="cash-product" key={product.id} disabled={remainingStock === 0} onClick={() => addProductToCart(product)}><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="cash-product-bottom"><b>{money.format(product.sale_price)}{product.unit === 'KG' ? ' / kg' : product.unit === 'LITRO' ? ' / lit.' : ''}</b><small>{quantityFormat.format(remainingStock)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'lit.' : 'pz'}</small></span></button>; })}</div>
         </section>
-        <aside className="cart-panel"><div className="cart-heading"><div className="cart-heading-title"><h2>CARRELLO <span>{quantityFormat.format(cart.reduce((sum, item) => sum + item.quantity, 0))}</span></h2></div><button className="icon-button" title="Svuota carrello" aria-label="Svuota carrello" disabled={!cart.length} onClick={() => { setCart([]); setManualPromotionId(undefined); setAutomaticPromotionId(undefined); }}><Trash2 size={17} /></button></div><div className="cart-lines">{cart.map((item) => <div className="cart-line" key={item.product_id}><div className="cart-line-name"><strong>{item.name}</strong><small>{quantityFormat.format(item.quantity)} {item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}</small></div><div className="quantity-control"><button onClick={() => changeQuantity(item.product_id, -1)} aria-label="Rimuovi uno"><Minus size={13} /></button><span>{quantityFormat.format(item.quantity)}</span><button onClick={() => changeQuantity(item.product_id, 1)} aria-label="Aggiungi uno"><Plus size={13} /></button></div><strong className="line-total">{money.format(item.quantity * item.unit_price)}</strong></div>)}{!cart.length && <div className="cart-empty"><ShoppingBasket size={25} /><span>Seleziona gli articoli<br />per iniziare una vendita</span></div>}</div><div className="receipt-summary"><div><span>Subtotale</span><span>{money.format(subtotal)}</span></div><div className="total-row"><strong>TOTALE</strong><strong>{money.format(subtotal)}</strong></div></div><button className="button button-primary checkout-button" disabled={!cart.length} onClick={() => setCheckoutOpen(true)}>Procedi al pagamento <span>→</span></button></aside>
+        <aside className="cart-panel"><div className="cart-heading"><div className="cart-heading-title"><h2>CARRELLO <span>{quantityFormat.format(cart.reduce((sum, item) => sum + item.quantity, 0))}</span></h2></div><button className="icon-button" title="Svuota carrello" aria-label="Svuota carrello" disabled={!cart.length} onClick={() => { setCart([]); setManualPromotionId(undefined); setAutomaticPromotionId(undefined); }}><Trash2 size={17} /></button></div><div className="cart-lines">{cart.map((item) => <div className="cart-line" key={item.product_id}><div className="cart-line-name"><strong>{item.name}</strong><small>{quantityFormat.format(item.quantity)} {item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}</small></div><div className="quantity-control"><button onClick={() => changeQuantity(item.product_id, -1)} aria-label="Rimuovi uno"><Minus size={13} /></button><span>{quantityFormat.format(item.quantity)}</span><button onClick={() => changeQuantity(item.product_id, 1)} aria-label="Aggiungi uno"><Plus size={13} /></button></div><strong className="line-total">{money.format(item.quantity * item.unit_price)}</strong></div>)}{!cart.length && <div className="cart-empty"><ShoppingBasket size={25} /><span>Seleziona gli articoli<br />per iniziare una vendita</span></div>}</div><div className="receipt-summary"><div><span>Subtotale</span><span>{money.format(subtotal)}</span></div><div className="total-row"><strong>TOTALE</strong><strong>{money.format(subtotal)}</strong></div></div><button className="button button-primary checkout-button" disabled={!cart.length} onClick={() => { setCheckoutCardBarcode(''); setCheckoutRedeemPoints(''); setCheckoutOpen(true); }}>Procedi al pagamento <span>→</span></button></aside>
       </div></div>}
 
       {section === 'sales' && <div className="page-content"><div className="sale-tools"><button className="button button-outline sale-camera-button" onClick={() => setCamera(true)}><Camera size={16} /> Cerca con fotocamera</button><SearchInput value={saleSearch} onChange={setSaleSearch} placeholder="Cerca numero scontrino…" numericOnly /><button className="button button-outline" onClick={() => { setReportExportType('sales-pdf'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-outline" onClick={() => { setReportExportType('sales-csv'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Esporta CSV</button></div><div className="sale-filters"><SelectField label="Periodo" value={salesPeriod} onChange={setSalesPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A']} />{salesPeriod === 'Da - A' && <><Field label="Da" type="date" value={salesFrom} onChange={(event) => setSalesFrom(event.target.value)} /><Field label="A" type="date" value={salesTo} onChange={(event) => setSalesTo(event.target.value)} /></>}<SelectField label="Categoria" value={salesCategory} onChange={setSalesCategory} options={['Tutte', ...categories]} /></div><SalesTable sales={salesList} onSelect={setReceipt} /></div>}
@@ -1643,11 +1717,11 @@ export default function App() {
         <Table headings={['Dipendente', 'Ruolo', 'Stipendio', 'Metodo', 'Stato', 'Azione']}><>{data.employees.map((employee) => { const payment = data.payrollPayments.find((item) => item.employee_id === employee.id && item.pay_month === payrollMonth); return <tr key={employee.id}><td className="cell-primary">{employee.first_name} {employee.last_name}</td><td>{employee.role}</td><td>{money.format(employee.salary)}</td><td>{employee.payment_method}</td><td><span className={`stock-badge${payment ? '' : ' low'}`}>{payment ? `Pagato il ${payment.payment_date}` : 'Da pagare'}</span></td><td>{payment ? <button className="button button-outline" onClick={() => savePdf(createSalaryPdf(employee, payment.payment_date, payment.pay_month, payment.amount), `Stipendio-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}-${payment.payment_date}.pdf`)}><ArrowDownToLine size={14} /> Ricevuta</button> : <button className="button button-primary" onClick={() => void payEmployee(employee)}><Check size={14} /> Paga</button>}</td></tr>; })}</>{!data.employees.length && <tr><td colSpan={6} className="empty-cell">Nessun dipendente registrato.</td></tr>}</Table>
       </div>}
       {section === 'clients' && <div className="page-content"><div className="page-toolbar"><div><h2>Gestione clienti e tessere</h2><p>Seleziona una funzione per gestire l’anagrafica e il programma fedeltà.</p></div></div><div className="client-shortcuts">{([['client-list', 'Lista clienti'], ['cards-list', 'Lista tessere'], ['cards-activate', 'Attiva tessera'], ['cards-create', 'Sviluppa tessera'], ['cards-developed', 'Tessere sviluppate']] as const).map(([target, label]) => <button className="panel client-shortcut" key={target} onClick={() => navigateTo(target)}><CreditCard size={20} /><strong>{label}</strong><span>Apri gestione →</span></button>)}</div></div>}
-      {section === 'client-list' && <div className="page-content"><section className="panel client-form-panel"><div className="panel-heading"><div><h2>Nuovo cliente</h2><p>Inserisci i dati richiesti per creare l’anagrafica.</p></div></div><form className="client-form" onSubmit={(event) => void saveCustomer(event)}><Field label="Nome" value={customerForm.first_name} onChange={(event) => setCustomerForm({ ...customerForm, first_name: event.target.value })} required /><Field label="Cognome" value={customerForm.last_name} onChange={(event) => setCustomerForm({ ...customerForm, last_name: event.target.value })} required /><Field label="Telefono" type="tel" value={customerForm.phone} onChange={(event) => setCustomerForm({ ...customerForm, phone: event.target.value })} required /><Field label="Email" type="email" value={customerForm.email} onChange={(event) => setCustomerForm({ ...customerForm, email: event.target.value })} required /><Field label="Indirizzo" value={customerForm.address} onChange={(event) => setCustomerForm({ ...customerForm, address: event.target.value })} required /><button className="button button-primary"><Plus size={15} /> Aggiungi cliente</button></form></section><Table headings={['Nome', 'Telefono', 'Email', 'Indirizzo', 'Registrato']}><>{data.customers.map((customer: Customer) => <tr key={customer.id}><td className="cell-primary">{customer.first_name} {customer.last_name}</td><td>{customer.phone}</td><td>{customer.email}</td><td>{customer.address}</td><td>{receiptDate.format(new Date(customer.created_at))}</td></tr>)}</>{!data.customers.length && <tr><td colSpan={5} className="empty-cell">Nessun cliente registrato.</td></tr>}</Table></div>}
-      {section === 'cards-create' && <div className="page-content"><section className="panel client-form-panel"><div className="panel-heading"><div><h2>Sviluppa tessere fedeltà</h2><p>Ogni codice è composto da 5 cifre, dal nome del negozio e da 8 cifre.</p></div></div><form className="client-form card-generation-form" onSubmit={(event) => void generateCards(event)}><Field label="Quantità tessere" type="number" min="1" max="5000" step="1" value={cardQuantity} onChange={(event) => setCardQuantity(event.target.value)} required /><Field label="Percentuale sconto" type="number" min="0" max="100" step="0.01" value={cardDiscount} onChange={(event) => setCardDiscount(event.target.value)} required /><button className="button button-primary"><Plus size={15} /> Sviluppa tessere</button></form></section><div className="page-toolbar"><div><h2>Tessere sviluppate</h2><p>{data.loyaltyCards.filter((card) => card.status === 'Sviluppata').length} tessere non ancora attivate</p></div><button className="button button-outline" onClick={() => navigateTo('cards-developed')}>Visualizza lista</button></div></div>}
-      {section === 'cards-developed' && <div className="page-content"><Table headings={['Codice tessera', 'Sconto', 'Stato', 'Data creazione']}><>{data.loyaltyCards.filter((card) => card.status === 'Sviluppata').map((card) => <tr key={card.id}><td className="mono">{card.code}</td><td>{card.discount_percentage}%</td><td>{card.status}</td><td>{receiptDate.format(new Date(card.created_at))}</td></tr>)}</>{!data.loyaltyCards.some((card) => card.status === 'Sviluppata') && <tr><td colSpan={4} className="empty-cell">Nessuna tessera sviluppata in attesa di attivazione.</td></tr>}</Table></div>}
-      {section === 'cards-activate' && <div className="page-content"><section className="panel client-form-panel"><div className="panel-heading"><div><h2>Attiva tessera</h2><p>Associa una tessera non attivata a un cliente registrato.</p></div></div><form className="client-form card-generation-form" onSubmit={(event) => void activateCard(event)}><label className="field"><span>Tessera sviluppata</span><select value={activationCardId} onChange={(event) => setActivationCardId(event.target.value)} required><option value="">Seleziona tessera</option>{data.loyaltyCards.filter((card) => card.status === 'Sviluppata').map((card) => <option value={card.id} key={card.id}>{card.code} · {card.discount_percentage}%</option>)}</select></label><label className="field"><span>Cliente</span><select value={activationCustomerId} onChange={(event) => setActivationCustomerId(event.target.value)} required><option value="">Seleziona cliente</option>{data.customers.map((customer) => <option value={customer.id} key={customer.id}>{customer.first_name} {customer.last_name}</option>)}</select></label><button className="button button-primary" disabled={!data.customers.length || !data.loyaltyCards.some((card) => card.status === 'Sviluppata')}><Check size={15} /> Attiva tessera</button></form></section></div>}
-      {section === 'cards-list' && <div className="page-content"><section className="panel client-form-panel"><div className="panel-heading"><div><h2>Punti fedeltà</h2><p>1 punto per ogni euro intero speso; 1 punto vale 0,20 € di sconto.</p></div></div><form className="client-form card-generation-form" onSubmit={(event) => void collectPoints(event)}><label className="field"><span>Tessera attiva</span><select value={pointsCardId} onChange={(event) => setPointsCardId(event.target.value)} required><option value="">Seleziona tessera</option>{data.loyaltyCards.filter((card) => card.status === 'Attiva').map((card) => <option value={card.id} key={card.id}>{card.code} · {card.first_name} {card.last_name} · {card.points} punti</option>)}</select></label><Field label="Importo speso (€)" type="number" min="0.01" step="0.01" value={pointsAmount} onChange={(event) => setPointsAmount(event.target.value)} required /><button className="button button-primary"><Plus size={15} /> Carica punti</button></form><div className="card-redeem-row"><Field label="Punti da convertire in sconto" type="number" min="1" step="1" value={redeemPoints} onChange={(event) => setRedeemPoints(event.target.value)} /><span>{money.format(Number(redeemPoints || 0) * 0.2)} di sconto</span></div></section><Table headings={['Codice tessera', 'Cliente', 'Sconto tessera', 'Punti', 'Valore punti']}><>{data.loyaltyCards.filter((card) => card.status === 'Attiva').map((card) => <tr key={card.id}><td className="mono">{card.code}</td><td className="cell-primary">{card.first_name} {card.last_name}</td><td>{card.discount_percentage}%</td><td>{card.points}</td><td>{money.format(card.points * 0.2)}{card.points > 0 && <button className="button button-outline card-redeem-button" disabled={!redeemPoints || Number(redeemPoints) > card.points} onClick={() => void redeemCardPoints(card)}>Applica sconto</button>}</td></tr>)}</>{!data.loyaltyCards.some((card) => card.status === 'Attiva') && <tr><td colSpan={5} className="empty-cell">Nessuna tessera attiva.</td></tr>}</Table></div>}
+      {section === 'client-list' && <div className="page-content"><section className="panel client-form-panel"><form className="client-form" onSubmit={(event) => void saveCustomer(event)}><Field label="Nome" value={customerForm.first_name} onChange={(event) => setCustomerForm({ ...customerForm, first_name: event.target.value })} required /><Field label="Cognome" value={customerForm.last_name} onChange={(event) => setCustomerForm({ ...customerForm, last_name: event.target.value })} required /><Field label="Telefono" type="tel" value={customerForm.phone} onChange={(event) => setCustomerForm({ ...customerForm, phone: event.target.value })} required /><Field label="Email" type="email" value={customerForm.email} onChange={(event) => setCustomerForm({ ...customerForm, email: event.target.value })} required /><button className="button button-primary customer-submit"><Plus size={15} /> Aggiungi cliente</button></form></section><Table headings={['Nome', 'Telefono', 'Email', 'Indirizzo', 'Registrato']}><>{data.customers.map((customer: Customer) => <tr key={customer.id}><td className="cell-primary">{customer.first_name} {customer.last_name}</td><td>{customer.phone}</td><td>{customer.email}</td><td>{customer.address}</td><td>{receiptDate.format(new Date(customer.created_at))}</td></tr>)}</>{!data.customers.length && <tr><td colSpan={5} className="empty-cell">Nessun cliente registrato.</td></tr>}</Table></div>}
+      {section === 'cards-create' && <div className="page-content"><section className="panel client-form-panel"><div className="panel-heading"><div><h2>Sviluppa tessere fedeltà</h2><p>Ogni codice è composto da 5 cifre, dal nome del negozio e da 8 cifre.</p></div></div><form className="client-form card-generation-form" onSubmit={(event) => void generateCards(event)}><Field label="Quantità tessere" type="number" min="1" max="5000" step="1" value={cardQuantity} onChange={(event) => setCardQuantity(event.target.value)} required /><Field label="Percentuale sconto" type="number" min="0" max="100" step="0.01" value={cardDiscount} onChange={(event) => setCardDiscount(event.target.value)} required /><div className="card-form-actions"><button className="button button-outline" type="button" onClick={() => { setCardQuantity(''); setCardDiscount(''); }}>Annulla</button><button className="button button-primary"><Plus size={15} /> Sviluppa tessere</button></div></form></section><div className="page-toolbar"><div className="card-page-heading"><h2>Tessere sviluppate</h2><p>{developedLoyaltyCards.length} tessere non ancora attivate</p></div><button className="button button-outline" onClick={() => navigateTo('cards-developed')}>Visualizza lista</button></div></div>}
+      {section === 'cards-developed' && <div className="page-content"><div className="card-list-toolbar"><SearchInput value={developedCardSearch} onChange={setDevelopedCardSearch} placeholder="Cerca tessera per codice…" /><button className="button button-outline" onClick={() => exportLoyaltyCards(filteredDevelopedLoyaltyCards)}><ArrowDownToLine size={16} /> Scarica lista tessere</button></div><Table headings={['Codice tessera', 'Barcode', 'Sconto', 'Stato', 'Data creazione']}><>{filteredDevelopedLoyaltyCards.map((card) => <tr key={card.id}><td className="mono">{card.code}</td><td><BarcodeImage value={card.barcode} /></td><td>{card.discount_percentage}%</td><td>{card.status}</td><td>{receiptDate.format(new Date(card.created_at))}</td></tr>)}</>{!filteredDevelopedLoyaltyCards.length && <tr><td colSpan={5} className="empty-cell">{developedLoyaltyCards.length ? 'Nessuna tessera corrisponde alla ricerca.' : 'Nessuna tessera sviluppata in attesa di attivazione.'}</td></tr>}</Table></div>}
+      {section === 'cards-activate' && <div className="page-content"><section className="panel client-form-panel"><div className="panel-heading"><div><h2>Attiva tessera</h2></div></div><hr className="client-section-rule" /><form className="client-form card-generation-form" onSubmit={(event) => void activateCard(event)}><label className="field"><span>Tessera sviluppata</span><select value={activationCardId} onChange={(event) => setActivationCardId(event.target.value)} required><option value="">Seleziona tessera</option>{developedLoyaltyCards.map((card) => <option value={card.id} key={card.id}>{card.code} · {card.discount_percentage}%</option>)}</select></label><label className="field"><span>Cliente</span><select value={activationCustomerId} onChange={(event) => setActivationCustomerId(event.target.value)} required><option value="">Seleziona cliente</option>{data.customers.map((customer) => <option value={customer.id} key={customer.id}>{customer.first_name} {customer.last_name}</option>)}</select></label><div className="card-form-actions"><button className="button button-outline" type="button" onClick={() => { setActivationCardId(''); setActivationCustomerId(''); }}>Annulla</button><button className="button button-primary" disabled={!data.customers.length || !developedLoyaltyCards.length}><Check size={15} /> Attiva tessera</button></div></form></section></div>}
+      {section === 'cards-list' && <div className="page-content"><div className="card-list-toolbar"><SearchInput value={cardSearch} onChange={setCardSearch} placeholder="Cerca tessera per codice o cliente…" /><button className="button button-outline" onClick={() => exportLoyaltyCards(filteredLoyaltyCards)}><ArrowDownToLine size={16} /> Scarica lista tessere</button></div><Table headings={['Codice tessera', 'Barcode', 'Cliente', 'Sconto tessera', 'Punti', 'Valore punti']}><>{filteredLoyaltyCards.map((card) => <tr key={card.id}><td className="mono">{card.code}</td><td><BarcodeImage value={card.barcode} /></td><td className="cell-primary">{card.first_name} {card.last_name}</td><td>{card.discount_percentage}%</td><td>{card.points}</td><td>{money.format(card.points * 0.2)}</td></tr>)}</>{!filteredLoyaltyCards.length && <tr><td colSpan={6} className="empty-cell">{activeLoyaltyCards.length ? 'Nessuna tessera corrisponde alla ricerca.' : 'Nessuna tessera attiva.'}</td></tr>}</Table></div>}
 
       {section === 'accounting-statistics' && <div className="page-content accounting-page">
         <div className="page-toolbar"><div><h2>Andamento economico</h2><p>Riepilogo delle vendite, del costo merce e delle spese operative.</p></div><button className="button button-outline" onClick={() => { setReportExportType('balance'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Scarica report</button></div>
@@ -1751,12 +1825,13 @@ export default function App() {
     {pendingUnknownCode && <Modal title="Articolo non presente" wide close={() => { setPendingUnknownCode(''); setScannerSearch(''); }}><div className="unknown-code-message"><CircleAlert size={26} /><p>Il codice a barre <strong>{pendingUnknownCode}</strong> non è presente tra gli articoli.</p><span>Puoi aggiungerlo come nuovo articolo: il codice acquisito sarà già inserito nel modulo.</span><div className="form-actions"><button className="button button-quiet" onClick={() => { setPendingUnknownCode(''); setScannerSearch(''); }}>Annulla</button><button className="button button-primary" onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct, code: pendingUnknownCode }); setPendingUnknownCode(''); }}><Plus size={16} /> Aggiungi articolo</button></div></div></Modal>}
     {measuredProduct && <Modal title={measuredProduct.unit === 'KG' ? `Inserisci il peso · ${measuredProduct.name}` : `Inserisci il volume · ${measuredProduct.name}`} close={() => setMeasuredProduct(null)}><form className="form-grid measured-quantity-form" onSubmit={confirmMeasuredQuantity}><p className="measured-price">{money.format(measuredProduct.sale_price)} / {measuredProduct.unit === 'KG' ? 'kg' : 'lit.'}</p><Field label={measuredProduct.unit === 'KG' ? 'Peso in kg' : 'Volume in litri'} type="number" min="0.001" step="0.001" value={measuredQuantity} onChange={(event) => setMeasuredQuantity(event.target.value)} required autoFocus placeholder={measuredProduct.unit === 'KG' ? 'Es. 0,750' : 'Es. 1,500'} /><div className="measured-quantity-options">{(measuredProduct.unit === 'KG' ? [{ label: '50 g', quantity: 0.05 }, { label: '100 g', quantity: 0.1 }, { label: '250 g', quantity: 0.25 }, { label: '500 g', quantity: 0.5 }, { label: '1 kg', quantity: 1 }, { label: '2 kg', quantity: 2 }] : [{ label: '50 ml', quantity: 0.05 }, { label: '100 ml', quantity: 0.1 }, { label: '250 ml', quantity: 0.25 }, { label: '500 ml', quantity: 0.5 }, { label: '1 L', quantity: 1 }, { label: '2 L', quantity: 2 }]).map(({ label, quantity }) => <button className="button button-outline" key={label} type="button" onClick={() => addMeasuredQuantity(quantity)}>{label}</button>)}</div><div className="form-actions"><button className="button button-quiet full-width" type="button" onClick={() => setMeasuredProduct(null)}>Annulla</button><button className="button button-primary full-width"><Check size={16} /> Aggiungi al carrello</button></div></form></Modal>}
     {productForm && <ProductForm initial={productForm} save={saveProduct} close={() => { setProductForm(null); setProductEditingId(null); }} categories={categories} onDelete={productEditingId !== null ? async () => { const product = data.products.find((item) => item.id === productEditingId); if (product) await deleteProduct(product); } : undefined} />}
-    {stockProduct && <Modal title={`Aggiungi quantità · ${stockProduct.name}`} close={() => setStockProduct(null)}><form className="form-grid stock-form" onSubmit={(event) => void saveStock(event)}>
+    {stockProduct && <Modal title={`Aggiungi quantità · ${stockProduct.name}`} close={() => { setStockProduct(null); setStockMovementEmployeeBarcode(''); }}><form className="form-grid stock-form" onSubmit={(event) => void saveStock(event)}>
       <p className="stock-current">Giacenza attuale: <strong>{stockProduct.stock}</strong></p>
-      <Field label="Nuova quantità" type="number" min="0.01" step="any" value={stockInput} onChange={(event) => setStockInput(event.target.value)} required autoFocus placeholder="Quantità da aggiungere" />
-      <div className="form-actions"><button className="button button-quiet full-width" type="button" onClick={() => setStockProduct(null)}>Annulla</button><button className="button button-primary full-width"><Check size={16} /> Conferma giacenza</button></div>
+      <Field label="Nuova quantità" type="number" min="0.01" step="any" value={stockInput} onChange={(event) => setStockInput(event.target.value)} required placeholder="Quantità da aggiungere" />
+      <Field fieldClassName="movement-barcode-field" label="Barcode del personale (scansiona il badge)" value={stockMovementEmployeeBarcode} readOnly autoFocus disabled={!data.settings.barcode_scanner_enabled} placeholder={data.settings.barcode_scanner_enabled ? 'In attesa della scansione…' : 'Attiva il lettore barcode nelle impostazioni'} />
+      <div className="form-actions"><button className="button button-quiet full-width" type="button" onClick={() => { setStockProduct(null); setStockMovementEmployeeBarcode(''); }}>Annulla</button><button className="button button-primary full-width" disabled={!data.settings.barcode_scanner_enabled || !stockMovementEmployeeBarcode}><Check size={16} /> Conferma giacenza</button></div>
     </form></Modal>}{selectedProduct && <div className="drawer-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedProduct(null); }}><aside className="detail-drawer"><header className="drawer-header"><div><p className="eyebrow">DETTAGLIO ARTICOLO</p><h2>{selectedProduct.name}</h2></div><button className="icon-button" onClick={() => setSelectedProduct(null)}><X size={18} /></button></header><div className="drawer-content"><div className="detail-icon"><Package size={26} /></div><span className="stock-badge">{selectedProduct.category}</span><div className="detail-list"><Detail label="Codice a barre" value={selectedProduct.code} /><Detail label="Prezzo vendita" value={money.format(selectedProduct.sale_price)} /><Detail label="Prezzo acquisto" value={money.format(selectedProduct.purchase_price)} /><Detail label="Giacenza" value={`${selectedProduct.stock} ${selectedProduct.unit ?? 'PEZZO'}`} /><Detail label="Soglia minima" value={`${selectedProduct.low_stock_threshold} ${selectedProduct.unit ?? 'PEZZO'}`} />{selectedProduct.expiry_enabled && selectedProduct.expiry_date && <Detail label="Data di scadenza" value={receiptDate.format(new Date(`${selectedProduct.expiry_date}T00:00:00`))} />}<Detail label="Margine unitario" value={money.format(selectedProduct.sale_price - selectedProduct.purchase_price)} /></div></div><footer className="drawer-footer"><button className="button button-outline full-width" onClick={() => { setProductEditingId(selectedProduct.id); setProductForm({ code: selectedProduct.code, name: selectedProduct.name, unit: selectedProduct.unit ?? 'PEZZO', category: selectedProduct.category, sale_price: selectedProduct.sale_price, purchase_price: selectedProduct.purchase_price, stock: selectedProduct.stock, low_stock_threshold: selectedProduct.low_stock_threshold, expiry_enabled: selectedProduct.expiry_enabled, expiry_date: selectedProduct.expiry_date }); setSelectedProduct(null); }}><Settings size={15} /> Modifica articolo</button><button className="button button-outline full-width" onClick={() => { setStockInput(''); setStockProduct(selectedProduct); setSelectedProduct(null); }}><Package size={15} /> Nuova quantità</button></footer></aside></div>}
-    {checkoutOpen && <Modal title="Pagamento" close={() => { setCheckoutOpen(false); setVoucherCode(''); setVoucherMessage(''); setVoucherDiscountPercentage(0); }} rightHalf><div className="payment-content">
+    {checkoutOpen && <Modal title="Pagamento" close={() => { setCheckoutOpen(false); setVoucherCode(''); setVoucherMessage(''); setVoucherDiscountPercentage(0); setCheckoutCardBarcode(''); setCheckoutRedeemPoints(''); }} rightHalf><div className="payment-content">
       <details className="payment-promotion-info">
         <summary><strong>Offerte automatiche applicate</strong></summary>
         <div className="payment-offer-list"><div className="payment-offer-toggle-row"><span>Applica sconti automatici</span><button className={`switch-button${automaticPromotionId !== null ? ' is-on' : ''}`} type="button" role="switch" aria-checked={automaticPromotionId !== null} onClick={() => setAutomaticPromotionId(automaticPromotionId === null ? undefined : null)}>{automaticPromotionId === null ? 'OFF' : 'ON'}</button></div>{automaticPromotionId !== null && (automaticApplicableOffers.length ? automaticApplicableOffers.map((offer) => <div className="payment-offer" key={offer.id}>
@@ -1771,12 +1846,13 @@ export default function App() {
           {manualDiscount > 0 && <small>Risparmio: {money.format(manualDiscount)}</small>}</div>
       </details>}
       <SelectField label="Metodo di pagamento" value={paymentMethod} onChange={setPaymentMethod} options={['Carta', 'Contanti', 'Bancomat', 'Buono']} />
+      <section className="loyalty-checkout"><h3>Tessera fedeltà</h3><Field label="Barcode tessera (scansiona la carta)" value={checkoutCardBarcode} onChange={(event) => setCheckoutCardBarcode(event.target.value.trim())} autoFocus placeholder="Scansiona o inserisci il barcode" />{checkoutCardBarcode && (checkoutLoyaltyCard ? <div className="loyalty-card-details"><div><strong>{checkoutLoyaltyCard.first_name} {checkoutLoyaltyCard.last_name}</strong><span>{checkoutLoyaltyCard.points} punti disponibili</span></div><div className="loyalty-redeem-controls"><Field label="Punti da scaricare" type="number" min="1" max={checkoutLoyaltyCard.points} step="1" value={checkoutRedeemPoints} onChange={(event) => setCheckoutRedeemPoints(event.target.value)} /><button className="button button-outline" type="button" disabled={!checkoutRedeemPoints || Number(checkoutRedeemPoints) > checkoutLoyaltyCard.points} onClick={() => void redeemCheckoutPoints()}>Scarica punti</button></div></div> : <small className="voucher-status invalid">Tessera non trovata o non attiva.</small>)}{checkoutLoyaltyCard && <small className="loyalty-points-note">I punti vengono aggiunti automaticamente al pagamento: 1 punto per ogni euro intero.</small>}</section>
       <div className="voucher-checkout"><Field label="Buono sconto" value={voucherCode} onChange={(event) => { setVoucherCode(event.target.value); setVoucherMessage(''); setVoucherDiscountPercentage(0); }} placeholder="Scansiona o inserisci il codice" /><button className="button button-outline" type="button" onClick={() => void applyVoucherCode(voucherCode)} disabled={!voucherCode.trim()}><Barcode size={16} /> Verifica</button>{voucherMessage && <small className={voucherDiscountPercentage > 0 ? 'voucher-status valid' : 'voucher-status invalid'}>{voucherMessage}</small>}</div>
       <div className="payment-total">{total < subtotal && <div className="payment-total-before"><span>Prezzo prima dello sconto</span><strong>{money.format(subtotal)}</strong></div>}{voucherDiscount > 0 && <div className="payment-total-before"><span>Buono sconto ({voucherDiscountPercentage}%)</span><strong>− {money.format(voucherDiscount)}</strong></div>}<div className="payment-total-after"><span>Totale da pagare</span><strong>{money.format(total)}</strong></div></div>
       <div className="payment-note"><ShieldCheck size={16} />Lo scontrino viene registrato nel database locale.</div>
       <button className="button button-primary full-width" onClick={() => void checkout()}><Check size={17} /> Conferma e stampa scontrino</button>
     </div></Modal>}
-    {receipt && <Modal title={`Scontrino #${receipt.receipt_no}`} close={() => setReceipt(null)}><div className="receipt-print" id="receipt-print"><div className="receipt-shop">{data.settings.shop_name}</div><div className="receipt-spacer" /><div className="receipt-datetime"><span>{receiptDate.format(new Date(receipt.created_at))}</span><span>{receiptTime.format(new Date(receipt.created_at))}</span></div><div>Numero scontrino: {receipt.receipt_no}</div><div className="receipt-dash" /><div className="receipt-head"><span>Articolo</span><span>Qtà</span><span>Prezzo</span></div>{receipt.items.map((item, index) => <div className="receipt-item" key={`${item.code}-${index}`}><span>{item.name}</span><span>{receiptQuantity.format(item.quantity)}{item.unit === 'KG' ? ' kg' : item.unit === 'LITRO' ? ' L' : ''}</span><span>{money.format(item.unit_price * item.quantity)}</span></div>)}<div className="receipt-dash" /><div className="receipt-total"><strong>TOTALE</strong><strong>{money.format(receipt.total)}</strong></div>{receipt.discount > 0 && <small className="receipt-savings">Risparmio: {money.format(receipt.discount)}</small>}<div>Pagamento: {receipt.payment_method}</div><div className="receipt-dash" /><div className="receipt-spacer" /><svg id="receipt-barcode" /><div className="receipt-spacer" /><div className="receipt-thanks">Grazie per averci scelto!</div></div><div className="receipt-actions"><button className="button button-primary full-width" onClick={printReceipt}><Printer size={16} /> Stampa scontrino</button></div></Modal>}
+    {receipt && <Modal title={`Scontrino #${receipt.receipt_no}`} close={() => setReceipt(null)}><div className="receipt-print" id="receipt-print"><div className="receipt-shop">{data.settings.shop_name}</div><div className="receipt-spacer" /><div className="receipt-datetime"><span>{receiptDate.format(new Date(receipt.created_at))}</span><span>{receiptTime.format(new Date(receipt.created_at))}</span></div><div>Numero scontrino: {receipt.receipt_no}</div><div className="receipt-dash" /><div className="receipt-head"><span>Articolo</span><span>Qtà</span><span>Prezzo</span></div>{receipt.items.map((item, index) => <div className="receipt-item" key={`${item.code}-${index}`}><span>{item.name}</span><span>{receiptQuantity.format(item.quantity)}{item.unit === 'KG' ? ' kg' : item.unit === 'LITRO' ? ' L' : ''}</span><span>{money.format(item.unit_price * item.quantity)}</span></div>)}<div className="receipt-dash" /><div className="receipt-total"><strong>TOTALE</strong><strong>{money.format(receipt.total)}</strong></div><div className="receipt-payment-savings"><span>Pagamento: {receipt.payment_method}</span>{receipt.discount > 0 && <span>Risparmio: {money.format(receipt.discount)}</span>}</div><div className="receipt-dash" /><div className="receipt-spacer" /><svg id="receipt-barcode" /><div className="receipt-spacer" /><div className="receipt-thanks">Grazie per averci scelto!</div></div><div className="receipt-actions"><button className="button button-primary full-width" onClick={printReceipt}><Printer size={16} /> Stampa scontrino</button></div></Modal>}
     {saleDialog && <Modal title={`Vendita #${saleDialog.receipt_no}`} close={() => setSaleDialog(null)} wide><div className="sale-edit">
       <div className="sale-edit-fields">
         <SelectField label="Metodo di pagamento" value={saleDialog.payment_method} onChange={(value) => setSaleDialog({ ...saleDialog, payment_method: value })} options={['Carta', 'Contanti', 'Bancomat', 'Buono']} />

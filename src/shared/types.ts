@@ -47,6 +47,7 @@ export interface StockMovement {
   quantity: number;
   created_at: string;
   person: string;
+  destination: string;
   note: string;
 }
 
@@ -121,6 +122,7 @@ export interface Customer {
 export interface LoyaltyCard {
   id: number;
   code: string;
+  barcode: string;
   discount_percentage: number;
   customer_id: number | null;
   status: 'Sviluppata' | 'Attiva';
@@ -144,7 +146,7 @@ export type CustomerInput = Pick<Customer, 'first_name' | 'last_name' | 'phone' 
 export type PayrollPaymentInput = { employee_id: number; pay_month: string; payment_date: string };
 export type VoucherBatchInput = Pick<VoucherBatch, 'discount_percentage' | 'starts_at' | 'ends_at' | 'codes'> & { id?: number };
 export type PromotionInput = Omit<Promotion, 'id'> & { id?: number };
-export type CheckoutInput = { items: SaleItem[]; payment_method: string; voucher_code?: string; manual_promotion_id?: number; automatic_promotion_id?: number | null };
+export type CheckoutInput = { items: SaleItem[]; payment_method: string; voucher_code?: string; loyalty_card_id?: number; manual_promotion_id?: number; automatic_promotion_id?: number | null };
 export type VoucherValidation = { valid: true; discount_percentage: number } | { valid: false; message: string };
 
 export interface AppState {
@@ -183,7 +185,7 @@ declare global {
     setPin: (pin: string) => Promise<void>;
     saveProduct: (product: ProductInput) => Promise<void>;
     updateStock: (productId: number, stock: number) => Promise<void>;
-    moveStock: (movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; person?: string; note: string }) => Promise<void>;
+    moveStock: (movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; employee_barcode: string; destination?: string; note: string }) => Promise<void>;
     checkout: (sale: CheckoutInput) => Promise<Sale>;
     validateVoucher: (code: string) => Promise<VoucherValidation>;
     savePromotion: (promotion: PromotionInput) => Promise<void>;

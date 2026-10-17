@@ -157,7 +157,8 @@ function initDatabase(): void {
     CREATE TABLE IF NOT EXISTS stock_movements (
       id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, product_name TEXT NOT NULL,
       movement_type TEXT NOT NULL CHECK(movement_type IN ('Carico', 'Scarico')),
-      quantity REAL NOT NULL, created_at TEXT NOT NULL, person TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT ''
+      quantity REAL NOT NULL, created_at TEXT NOT NULL, person TEXT NOT NULL DEFAULT '',
+      destination TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT ''
     );
     CREATE TABLE IF NOT EXISTS expenses (
       id INTEGER PRIMARY KEY AUTOINCREMENT, description TEXT NOT NULL, category TEXT NOT NULL,
@@ -184,7 +185,7 @@ function initDatabase(): void {
       phone TEXT NOT NULL, email TEXT NOT NULL, address TEXT NOT NULL, created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS loyalty_cards (
-      id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, discount_percentage REAL NOT NULL,
+      id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, barcode TEXT NOT NULL UNIQUE, discount_percentage REAL NOT NULL,
       customer_id INTEGER REFERENCES customers(id), status TEXT NOT NULL DEFAULT 'Sviluppata',
       points INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, activated_at TEXT
     );
@@ -207,6 +208,15 @@ function initDatabase(): void {
   if (!stockMovementColumns.some((column) => column.name === 'person')) {
     database.exec("ALTER TABLE stock_movements ADD COLUMN person TEXT NOT NULL DEFAULT ''");
   }
+  if (!stockMovementColumns.some((column) => column.name === 'destination')) {
+    database.exec("ALTER TABLE stock_movements ADD COLUMN destination TEXT NOT NULL DEFAULT ''");
+  }
+  const loyaltyCardColumns = database.prepare('PRAGMA table_info(loyalty_cards)').all() as Array<{ name: string }>;
+  if (!loyaltyCardColumns.some((column) => column.name === 'barcode')) {
+    database.exec("ALTER TABLE loyalty_cards ADD COLUMN barcode TEXT NOT NULL DEFAULT ''");
+    database.exec("UPDATE loyalty_cards SET barcode = code WHERE barcode = ''");
+  }
+  database.exec('CREATE UNIQUE INDEX IF NOT EXISTS loyalty_cards_barcode_unique ON loyalty_cards(barcode)');
   const saleColumns = database.prepare('PRAGMA table_info(sales)').all() as Array<{ name: string }>;
   if (!saleColumns.some((column) => column.name === 'gross_total')) {
     database.exec('ALTER TABLE sales ADD COLUMN gross_total REAL NOT NULL DEFAULT 0');
@@ -289,9 +299,9 @@ function replaceItems(saleId: number, items: SaleItem[]): void {
   }
 }
 
-function recordStockMovement(productId: number, productName: string, type: 'Carico' | 'Scarico', quantity: number, note: string, person = ''): void {
-  database.prepare(`INSERT INTO stock_movements (product_id, product_name, movement_type, quantity, created_at, person, note)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`).run(productId, productName, type, quantity, new Date().toISOString(), person, note);
+function recordStockMovement(productId: number, productName: string, type: 'Carico' | 'Scarico', quantity: number, note: string, person = '', destination = ''): void {
+  database.prepare(`INSERT INTO stock_movements (product_id, product_name, movement_type, quantity, created_at, person, destination, note)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(productId, productName, type, quantity, new Date().toISOString(), person, destination, note);
 }
 
 const archiveNumber = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 2 });
@@ -527,20 +537,32 @@ app.whenReady().then(() => {
     const result = database.prepare('UPDATE products SET stock = ? WHERE id = ?').run(stock, productId);
     if (result.changes === 0) throw new Error('Articolo non trovato.');
   });
-  ipcMain.handle('product:move-stock', (_event, movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; person?: string; note: string }) => {
+  ipcMain.handle('product:move-stock', (_event, movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; employee_barcode: string; destination?: string; note: string }) => {
     if (!Number.isInteger(movement.productId) || movement.productId < 1 || !['Carico', 'Scarico'].includes(movement.type)
       || !Number.isFinite(movement.quantity) || movement.quantity <= 0 || typeof movement.note !== 'string'
-      || (movement.person !== undefined && typeof movement.person !== 'string')
-      || (movement.type === 'Scarico' && !movement.person?.trim())) {
+      || typeof movement.employee_barcode !== 'string' || !movement.employee_barcode.trim()
+      || (movement.destination !== undefined && typeof movement.destination !== 'string')
+      || (movement.type === 'Scarico' && !movement.destination?.trim())) {
       throw new Error('I dati del movimento di magazzino non sono validi.');
     }
     database.transaction(() => {
       const product = database.prepare('SELECT name, stock FROM products WHERE id = ?').get(movement.productId) as { name: string; stock: number } | undefined;
       if (!product) throw new Error('Articolo non trovato.');
+      const employee = database.prepare('SELECT first_name, last_name FROM employees WHERE barcode = ?')
+        .get(movement.employee_barcode.trim()) as { first_name: string; last_name: string } | undefined;
+      if (!employee) throw new Error('Barcode personale non riconosciuto. Scansiona il badge di un dipendente registrato.');
       if (movement.type === 'Scarico' && product.stock < movement.quantity) throw new Error('La quantità da scaricare supera la giacenza disponibile.');
       const delta = movement.type === 'Carico' ? movement.quantity : -movement.quantity;
       database.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(delta, movement.productId);
-      recordStockMovement(movement.productId, product.name, movement.type, movement.quantity, movement.note.trim(), movement.person?.trim() ?? '');
+      recordStockMovement(
+        movement.productId,
+        product.name,
+        movement.type,
+        movement.quantity,
+        movement.note.trim(),
+        `${employee.first_name} ${employee.last_name}`,
+        movement.type === 'Scarico' ? movement.destination?.trim() ?? '' : '',
+      );
     })();
   });
   ipcMain.handle('sale:checkout', (_event, sale: CheckoutInput) => {
@@ -555,6 +577,10 @@ app.whenReady().then(() => {
     if (sale.manual_promotion_id !== undefined && !discounts.manualPromotion) {
       throw new Error('L’offerta selezionata non è più applicabile: controlla il periodo, la categoria e la spesa minima.');
     }
+    if (sale.loyalty_card_id !== undefined && (!Number.isInteger(sale.loyalty_card_id)
+      || !(database.prepare("SELECT 1 FROM loyalty_cards WHERE id = ? AND status = 'Attiva'").get(sale.loyalty_card_id)))) {
+      throw new Error('La tessera fedeltà non è attiva o non è valida.');
+    }
     const voucherCode = sale.voucher_code?.trim() ?? '';
     if (voucherCode && !findValidVoucher(voucherCode)) throw new Error('Buono sconto non valido, scaduto o già utilizzato.');
     const grossTotal = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
@@ -565,11 +591,23 @@ app.whenReady().then(() => {
         ? Math.round(Math.max(0, grossTotal - discounts.automaticDiscount - discounts.manualDiscount) * voucher.discount_percentage) / 100
         : 0;
       const discount = discounts.automaticDiscount + discounts.manualDiscount + voucherDiscount;
+      const amountPaid = Math.max(0, grossTotal - discount);
       const receiptNo = receiptNumber();
       const result = database.prepare('INSERT INTO sales (receipt_no, created_at, payment_method, discount, gross_total, total) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(receiptNo, new Date().toISOString(), sale.payment_method, discount, grossTotal, Math.max(0, grossTotal - discount));
+        .run(receiptNo, new Date().toISOString(), sale.payment_method, discount, grossTotal, amountPaid);
       replaceItems(Number(result.lastInsertRowid), items);
       items.forEach((item) => recordStockMovement(item.product_id, item.name, 'Scarico', item.quantity, `Vendita #${receiptNo}`));
+      if (sale.loyalty_card_id !== undefined) {
+        const points = Math.floor(amountPaid);
+        if (points > 0) {
+          const cardResult = database.prepare("UPDATE loyalty_cards SET points = points + ? WHERE id = ? AND status = 'Attiva'")
+            .run(points, sale.loyalty_card_id);
+          if (!cardResult.changes) throw new Error('La tessera fedeltà non è più attiva.');
+          database.prepare(`INSERT INTO loyalty_point_transactions
+            (card_id, transaction_type, points, amount_eur, created_at) VALUES (?, 'Raccolta', ?, ?, ?)`)
+            .run(sale.loyalty_card_id, points, amountPaid, new Date().toISOString());
+        }
+      }
       if (voucher) {
         database.prepare('DELETE FROM vouchers WHERE id = ?').run(voucher.id);
         database.prepare('DELETE FROM voucher_batches WHERE id = ? AND NOT EXISTS (SELECT 1 FROM vouchers WHERE batch_id = ?)').run(voucher.batch_id, voucher.batch_id);
@@ -775,10 +813,10 @@ app.whenReady().then(() => {
     }
   });
   ipcMain.handle('customer:save', (_event, customer: CustomerInput) => {
-    if (!customer || [customer.first_name, customer.last_name, customer.phone, customer.email, customer.address]
+    if (!customer || [customer.first_name, customer.last_name, customer.phone, customer.email]
       .some((value) => typeof value !== 'string' || !value.trim())
       || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email.trim())) {
-      throw new Error('Inserisci nome, cognome, telefono, email e indirizzo validi.');
+      throw new Error('Inserisci nome, cognome, telefono ed email validi.');
     }
     database.prepare(`INSERT INTO customers (first_name, last_name, phone, email, address, created_at)
       VALUES (?, ?, ?, ?, ?, ?)`).run(customer.first_name.trim(), customer.last_name.trim(),
@@ -791,9 +829,10 @@ app.whenReady().then(() => {
     }
     const storeName = setting('shop_name', 'Il tuo supermercato').replace(/[^a-z0-9]/gi, '');
     if (!storeName) throw new Error('Imposta un nome negozio composto da lettere o numeri prima di generare tessere.');
-    const insert = database.prepare(`INSERT INTO loyalty_cards (code, discount_percentage, status, created_at)
-      VALUES (?, ?, 'Sviluppata', ?)`);
+    const insert = database.prepare(`INSERT INTO loyalty_cards (code, barcode, discount_percentage, status, created_at)
+      VALUES (?, ?, ?, 'Sviluppata', ?)`);
     const usedCodes = new Set((database.prepare('SELECT code FROM loyalty_cards').all() as Array<{ code: string }>).map(({ code }) => code));
+    const usedBarcodes = new Set((database.prepare('SELECT barcode FROM loyalty_cards').all() as Array<{ barcode: string }>).map(({ barcode }) => barcode));
     const createdAt = new Date().toISOString();
     database.transaction(() => {
       for (let index = 0; index < input.quantity; index += 1) {
@@ -801,8 +840,13 @@ app.whenReady().then(() => {
         do {
           code = `${String(randomInt(0, 100000)).padStart(5, '0')}${storeName}${String(randomInt(0, 100000000)).padStart(8, '0')}`;
         } while (usedCodes.has(code));
+        let barcode = '';
+        do {
+          barcode = String(randomInt(0, 1000000000000)).padStart(12, '0');
+        } while (usedBarcodes.has(barcode));
         usedCodes.add(code);
-        insert.run(code, input.discount_percentage, createdAt);
+        usedBarcodes.add(barcode);
+        insert.run(code, barcode, input.discount_percentage, createdAt);
       }
     })();
   });
