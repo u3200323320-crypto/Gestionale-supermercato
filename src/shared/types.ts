@@ -1,4 +1,4 @@
-export type Section = 'home' | 'inventory' | 'expired-products' | 'inventory-history' | 'stock-movement' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'accounting' | 'accounting-statistics' | 'expenses' | 'financial-balance' | 'clients' | 'client-list' | 'cards-list' | 'cards-activate' | 'cards-create' | 'cards-developed' | 'employees' | 'employee-create' | 'payroll' | 'settings';
+export type Section = 'home' | 'inventory' | 'expired-products' | 'inventory-history' | 'stock-movement' | 'cash' | 'sales' | 'statistics' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'accounting-statistics' | 'expenses' | 'financial-balance' | 'clients' | 'client-list' | 'cards-list' | 'cards-activate' | 'cards-create' | 'cards-developed' | 'employees' | 'employee-create' | 'payroll' | 'settings';
 export type ProductUnit = 'KG' | 'LITRO' | 'PEZZO';
 export type Printer = { name: string; displayName: string };
 
