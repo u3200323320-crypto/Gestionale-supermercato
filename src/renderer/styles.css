@@ -1,18 +1,18 @@
 :root {
   font-family: 'DM Sans', 'Segoe UI', sans-serif;
-  color: #29332e;
+  color: #000;
   background: #f5f6f3;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --ink: #29332e;
-  --muted: #818983;
+  --ink: #000;
+  --muted: #000;
   --line: #e7eae5;
   --paper: #fff;
   --canvas: #f5f6f3;
-  --green: #2f5b42;
-  --green-dark: #214631;
-  --green-soft: #dcebdd;
-  --green-block: #e3eee5;
+  --green: #6c8d75;
+  --green-dark: #385e43;
+  --green-soft: #e5ece6;
+  --green-block: #e8efe9;
   --amber: #b77843;
   --red: #a45042;
   --shadow: 0 12px 32px rgb(39 49 42 / 9%);
@@ -20,22 +20,22 @@
 }
 
 [data-theme='blue'] {
-  --green: #2563a6;
-  --green-dark: #174878;
-  --green-soft: #dceafa;
-  --green-block: #e5effa;
+  --green: #6c91b4;
+  --green-dark: #365d81;
+  --green-soft: #e3ebf3;
+  --green-block: #e9eff5;
 }
 [data-theme='purple'] {
-  --green: #7046a3;
-  --green-dark: #4f2e7d;
-  --green-soft: #ede4f7;
-  --green-block: #f1eafa;
+  --green: #8b74a6;
+  --green-dark: #5c4775;
+  --green-soft: #ece7f1;
+  --green-block: #f0ecf4;
 }
 [data-theme='orange'] {
-  --green: #bc632d;
-  --green-dark: #8e451c;
-  --green-soft: #f8e7da;
-  --green-block: #faeee5;
+  --green: #c18159;
+  --green-dark: #825337;
+  --green-soft: #f3e9e2;
+  --green-block: #f5eee8;
 }
 
 * { box-sizing: border-box; }
@@ -779,7 +779,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
   .expenses-total { font-size: 10px; }
 }
 
-.home-page, .home-page * { color: #111 !important; font-weight: 700 !important; }
+.home-page, .home-page * { color: #000 !important; font-weight: 700 !important; }
 
 @media (max-width: 1000px) {
   .payroll-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -795,3 +795,6 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
   .product-form .form-actions.has-delete { grid-template-columns: 1fr; }
   .product-form .product-delete-button { grid-row: auto; }
 }
+
+*, *::before, *::after { color: #000 !important; }
+::placeholder { color: #000 !important; opacity: 1; }

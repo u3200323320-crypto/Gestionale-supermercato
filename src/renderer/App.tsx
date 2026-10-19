@@ -25,10 +25,10 @@ const permanentPromotionEnd = '9999-12-31';
 const promotionDurations = ['1 giorno', '3 giorni', '7 giorni', '1 mese', 'Sempre', 'Personalizzata'];
 const expenseCategories = ['Affitto', 'Utenze', 'Forniture', 'Stipendi', 'Manutenzione', 'Trasporti', 'Altro'];
 const appThemes = [
-  { id: 'green', label: 'Verde', color: '#2f5b42' },
-  { id: 'blue', label: 'Blu', color: '#2563a6' },
-  { id: 'purple', label: 'Viola', color: '#7046a3' },
-  { id: 'orange', label: 'Arancione', color: '#bc632d' },
+  { id: 'green', label: 'Verde', color: '#6c8d75' },
+  { id: 'blue', label: 'Blu', color: '#6c91b4' },
+  { id: 'purple', label: 'Viola', color: '#8b74a6' },
+  { id: 'orange', label: 'Arancione', color: '#c18159' },
 ] as const;
 type AppTheme = typeof appThemes[number]['id'];
 type PromotionMinimum = 'none' | 'spend' | 'kilograms' | 'pieces' | 'liters';
@@ -41,7 +41,7 @@ const sectionNames: Partial<Record<Section, string>> = {
   'inventory-history': 'Storico Magazzino', 'stock-movement': 'Carica e scarica merce',
   'sale-management': 'Modifica o Elimina', promotions: 'Offerta', 'vouchers-create': 'Crea buoni sconto',
   'vouchers-list': 'Lista buoni sconto',
-  'accounting-statistics': 'Andamento economico', expenses: 'Spese', statistics: 'Analisi vendite', 'financial-balance': 'Bilancio gestionale', clients: 'Clienti',
+  expenses: 'Spese', statistics: 'Analisi vendite', 'financial-balance': 'Bilancio gestionale', clients: 'Clienti',
   'client-list': 'Lista clienti', 'cards-list': 'Lista tessere', 'cards-activate': 'Attiva tessera',
   'cards-create': 'Sviluppa tessera', 'cards-developed': 'Tessere sviluppate', 'expired-products': 'Gestisci articoli scaduti',
   employees: 'Lista Dipendenti', 'employee-create': 'Crea Dipendente', payroll: 'Paga Stipendi',
@@ -693,6 +693,14 @@ export default function App() {
   };
   useEffect(() => { void window.gestionale.hasPin().then((exists) => { setHasPin(exists); if (!exists) { setLocked(false); void refresh(); } }); }, []);
   useEffect(() => {
+    if (locked) return;
+    const refreshState = () => {
+      void window.gestionale.getState().then(setData).catch((error: unknown) => notify(errorText(error)));
+    };
+    const interval = window.setInterval(refreshState, 60_000);
+    return () => window.clearInterval(interval);
+  }, [locked]);
+  useEffect(() => {
     document.documentElement.dataset.theme = appTheme;
     window.localStorage.setItem('app-theme', appTheme);
   }, [appTheme]);
@@ -1281,29 +1289,6 @@ export default function App() {
     sum + sale.total - sale.items.reduce((cost, item) => cost + item.quantity * item.purchase_price, 0), 0);
   const dailyGross = todaySales.reduce((sum, sale) => sum + sale.gross_total, 0);
   const dailyUnits = todaySales.reduce((sum, sale) => sum + sale.item_count, 0);
-  const totalRevenue = data?.sales.reduce((sum, sale) => sum + sale.total, 0) ?? 0;
-  const costOfGoodsSold = data?.sales.reduce((sum, sale) =>
-    sum + sale.items.reduce((cost, item) => cost + item.quantity * item.purchase_price, 0), 0) ?? 0;
-  const totalExpenses = data?.expenses.reduce((sum, expense) => sum + expense.amount, 0) ?? 0;
-  const operatingResult = totalRevenue - costOfGoodsSold - totalExpenses;
-  const accountingMonthly = Array.from({ length: 6 }, (_, index) => {
-    const month = new Date(new Date().getFullYear(), new Date().getMonth() - 5 + index, 1);
-    const monthKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`;
-    const salesInMonth = data?.sales.filter((sale) => sale.created_at.slice(0, 7) === monthKey) ?? [];
-    const revenue = salesInMonth.reduce((sum, sale) => sum + sale.total, 0);
-    const goodsCost = salesInMonth.reduce((sum, sale) =>
-      sum + sale.items.reduce((cost, item) => cost + item.quantity * item.purchase_price, 0), 0);
-    const expenses = data?.expenses.filter((expense) => expense.expense_date.startsWith(monthKey))
-      .reduce((sum, expense) => sum + expense.amount, 0) ?? 0;
-    return {
-      mese: month.toLocaleDateString('it-IT', { month: 'short' }),
-      vendite: revenue,
-      spese: goodsCost + expenses,
-      risultato: revenue - goodsCost - expenses,
-      costiMerce: goodsCost,
-      speseOperative: expenses,
-    };
-  });
   const balanceMonthCount = balancePeriod === 'Ultimi 3 mesi' ? 3 : balancePeriod === 'Ultimi 6 mesi' ? 6 : 12;
   const balanceRangeStart = new Date();
   balanceRangeStart.setHours(0, 0, 0, 0);
@@ -1367,22 +1352,6 @@ export default function App() {
   const soldCost = statisticsSales.reduce((sum, sale) => sum + sale.items.reduce((subtotal, item) => subtotal + item.quantity * item.purchase_price, 0), 0);
   const soldTotal = statisticsSales.reduce((sum, sale) => sum + sale.total, 0);
   const estimatedNet = soldTotal - soldCost - statisticsExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-  const statisticsStartKey = localDateKey(statisticsStart);
-  const statisticsPayroll = (data?.payrollPayments ?? []).filter((payment) =>
-    statisticsPeriod === 'Tutti' || (payment.payment_date >= statisticsStartKey && payment.payment_date <= todayKey));
-  const statisticsSiteNames = [...new Set([
-    ...(data?.employees ?? []).map((employee) => employee.operational_site.trim()),
-    ...(statisticsExpenses.map((expense) => expense.site.trim()).filter((site) => site !== 'Non assegnata')),
-  ].filter(Boolean))].sort((left, right) => left.localeCompare(right, 'it'));
-  const statisticsSiteSummary = statisticsSiteNames.map((site) => {
-    const salaries = statisticsPayroll
-      .filter((payment) => data?.employees.find((employee) => employee.id === payment.employee_id)?.operational_site === site)
-      .reduce((sum, payment) => sum + payment.amount, 0);
-    const storeExpenses = statisticsExpenses
-      .filter((expense) => expense.site === site && expense.category !== 'Stipendi')
-      .reduce((sum, expense) => sum + expense.amount, 0);
-    return { site, revenue: null, outgoings: null, salaries, storeExpenses, net: null, profitPercentage: null };
-  });
   const soldUnits = statisticsSales.reduce((sum, sale) => sum + sale.item_count, 0);
   const totalTrackedUnits = soldUnits + (data?.products.reduce((sum, product) => sum + product.stock, 0) ?? 0);
   const unsoldProducts = data?.products.filter((product) => product.stock > 0) ?? [];
@@ -1661,10 +1630,10 @@ export default function App() {
       <nav>
         {nav.filter((item) => item.section === 'home').map(({ section: target, label, icon: Icon }) => <button key={target} className={`nav-item${section === target ? ' active' : ''}`} onClick={() => navigateTo(target)}><Icon size={18} /><span>{label}</span></button>)}
         <button aria-expanded={openSidebarMenu === 'inventory'} className={`nav-item${section === 'inventory' || section === 'expired-products' || section === 'inventory-history' || section === 'stock-movement' ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'inventory' ? null : 'inventory')}><Package size={18} /><span>Magazzino</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'inventory' ? ' open' : ''}`} size={15} /></button>
-        {openSidebarMenu === 'inventory' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'inventory' ? ' selected' : ''}`} onClick={() => navigateTo('inventory')}>Magazzino</button><button className={`sidebar-subitem${section === 'inventory-history' ? ' selected' : ''}`} onClick={() => navigateTo('inventory-history')}>Storico Magazzino</button><button className={`sidebar-subitem${section === 'stock-movement' ? ' selected' : ''}`} onClick={() => { setStockMovementProduct(String(data.products[0]?.id ?? '')); navigateTo('stock-movement'); }}>Carica e scarica merce</button></div>}
+        {openSidebarMenu === 'inventory' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'inventory' ? ' selected' : ''}`} onClick={() => navigateTo('inventory')}>Magazzino</button><button className={`sidebar-subitem${section === 'inventory-history' ? ' selected' : ''}`} onClick={() => navigateTo('inventory-history')}>Storico Magazzino</button></div>}
         {nav.filter((item) => ['cash', 'sales'].includes(item.section)).map(({ section: target, label, icon: Icon }) => <button key={target} className={`nav-item${section === target ? ' active' : ''}`} onClick={() => navigateTo(target)}><Icon size={18} /><span>{label}</span>{target === 'cash' && <kbd>F2</kbd>}</button>)}
-        <button aria-expanded={openSidebarMenu === 'statistics'} className={`nav-item${['statistics', 'accounting-statistics', 'expenses', 'financial-balance'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'statistics' ? null : 'statistics')}><BarChart3 size={18} /><span>Statistiche</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'statistics' ? ' open' : ''}`} size={15} /></button>
-        {openSidebarMenu === 'statistics' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'accounting-statistics' ? ' selected' : ''}`} onClick={() => navigateTo('accounting-statistics')}>Andamento economico</button><button className={`sidebar-subitem${section === 'expenses' ? ' selected' : ''}`} onClick={() => navigateTo('expenses')}>Spese</button><button className={`sidebar-subitem${section === 'statistics' ? ' selected' : ''}`} onClick={() => navigateTo('statistics')}>Analisi vendite</button><button className={`sidebar-subitem${section === 'financial-balance' ? ' selected' : ''}`} onClick={() => navigateTo('financial-balance')}>Bilancio gestionale</button></div>}
+        <button aria-expanded={openSidebarMenu === 'statistics'} className={`nav-item${['statistics', 'expenses', 'financial-balance'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'statistics' ? null : 'statistics')}><BarChart3 size={18} /><span>Statistiche</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'statistics' ? ' open' : ''}`} size={15} /></button>
+        {openSidebarMenu === 'statistics' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'statistics' ? ' selected' : ''}`} onClick={() => navigateTo('statistics')}>Statistiche</button><button className={`sidebar-subitem${section === 'expenses' ? ' selected' : ''}`} onClick={() => navigateTo('expenses')}>Spese</button><button className={`sidebar-subitem${section === 'financial-balance' ? ' selected' : ''}`} onClick={() => navigateTo('financial-balance')}>Bilancio gestionale</button></div>}
         <div className="nav-label nav-label-extra">GESTIONE EXTRA</div>
         <button className={`nav-item${section === 'sale-management' ? ' active' : ''}`} onClick={() => navigateTo('sale-management')}><ClipboardList size={18} /><span>Modifica o Elimina</span></button>
         <button aria-expanded={openSidebarMenu === 'offers'} className={`nav-item${['promotions', 'vouchers-create', 'vouchers-list'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'offers' ? null : 'offers')}><TrendingUp size={18} /><span>Offerta</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'offers' ? ' open' : ''}`} size={15} /></button>
@@ -1705,6 +1674,12 @@ export default function App() {
       </div></div>}
 
       {section === 'sales' && <div className="page-content"><div className="sale-tools"><button className="button button-outline sale-camera-button" onClick={() => setCamera(true)}><Camera size={16} /> Cerca con fotocamera</button><SearchInput value={saleSearch} onChange={setSaleSearch} placeholder="Cerca numero scontrino…" numericOnly /><button className="button button-outline" onClick={() => { setReportExportType('sales-pdf'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-outline" onClick={() => { setReportExportType('sales-csv'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Esporta CSV</button></div><div className="sale-filters"><SelectField label="Periodo" value={salesPeriod} onChange={setSalesPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A']} />{salesPeriod === 'Da - A' && <><Field label="Da" type="date" value={salesFrom} onChange={(event) => setSalesFrom(event.target.value)} /><Field label="A" type="date" value={salesTo} onChange={(event) => setSalesTo(event.target.value)} /></>}<SelectField label="Categoria" value={salesCategory} onChange={setSalesCategory} options={['Tutte', ...categories]} /></div><SalesTable sales={salesList} onSelect={setReceipt} /></div>}
+      {section === 'sale-management' && <div className="page-content">
+        <div className="page-toolbar"><div><h2>Modifica o Elimina</h2><p>Seleziona uno scontrino per modificarlo o eliminarlo.</p></div></div>
+        <div className="sale-tools"><button className="button button-outline sale-camera-button" onClick={() => setCamera(true)}><Camera size={16} /> Cerca con fotocamera</button><SearchInput value={saleSearch} onChange={setSaleSearch} placeholder="Cerca numero scontrino…" numericOnly /></div>
+        <div className="sale-filters"><SelectField label="Periodo" value={salesPeriod} onChange={setSalesPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A']} />{salesPeriod === 'Da - A' && <><Field label="Da" type="date" value={salesFrom} onChange={(event) => setSalesFrom(event.target.value)} /><Field label="A" type="date" value={salesTo} onChange={(event) => setSalesTo(event.target.value)} /></>}<SelectField label="Categoria" value={salesCategory} onChange={setSalesCategory} options={['Tutte', ...categories]} /></div>
+        <SalesTable sales={salesList} onSelect={setSaleDialog} />
+      </div>}
 
 
       {section === 'promotions' && <div className="page-content settings-page"><section className="settings-panel">
@@ -1754,20 +1729,6 @@ export default function App() {
       {section === 'cards-developed' && <div className="page-content"><div className="card-list-toolbar"><SearchInput value={developedCardSearch} onChange={setDevelopedCardSearch} placeholder="Cerca tessera per codice…" /><button className="button button-outline" onClick={() => exportLoyaltyCards(filteredDevelopedLoyaltyCards)}><ArrowDownToLine size={16} /> Scarica lista tessere</button></div><Table headings={['Codice tessera', 'Barcode', 'Sconto', 'Stato', 'Data creazione', '']}><>{filteredDevelopedLoyaltyCards.map((card) => <tr key={card.id}><td className="mono">{card.code}</td><td><BarcodeImage value={card.barcode} /></td><td>{card.discount_percentage}%</td><td>{card.status}</td><td>{receiptDate.format(new Date(card.created_at))}</td><td><button className="icon-button small" title="Elimina tessera" aria-label={`Elimina la tessera ${card.code}`} onClick={() => void deleteLoyaltyCard(card)}><Trash2 size={15} /></button></td></tr>)}</>{!filteredDevelopedLoyaltyCards.length && <tr><td colSpan={6} className="empty-cell">{developedLoyaltyCards.length ? 'Nessuna tessera corrisponde alla ricerca.' : 'Nessuna tessera sviluppata in attesa di attivazione.'}</td></tr>}</Table></div>}
       {section === 'cards-activate' && <div className="page-content"><section className="panel client-form-panel"><div className="panel-heading"><div><h2>Attiva tessera</h2></div></div><hr className="client-section-rule" /><form className="client-form card-generation-form" onSubmit={(event) => void activateCard(event)}><label className="field"><span>Tessera sviluppata</span><select value={activationCardId} onChange={(event) => setActivationCardId(event.target.value)} required><option value="">Seleziona tessera</option>{developedLoyaltyCards.map((card) => <option value={card.id} key={card.id}>{card.code} · {card.discount_percentage}%</option>)}</select></label><label className="field"><span>Cliente</span><select value={activationCustomerId} onChange={(event) => setActivationCustomerId(event.target.value)} required disabled={!customersWithoutCard.length}><option value="">{customersWithoutCard.length ? 'Seleziona cliente' : 'Nessun cliente senza tessera'}</option>{customersWithoutCard.map((customer) => <option value={customer.id} key={customer.id}>{customer.first_name} {customer.last_name}</option>)}</select></label><div className="card-form-actions"><button className="button button-outline" type="button" onClick={() => { setActivationCardId(''); setActivationCustomerId(''); }}>Annulla</button><button className="button button-primary" disabled={!customersWithoutCard.length || !developedLoyaltyCards.length}><Check size={15} /> Attiva tessera</button></div></form></section></div>}
       {section === 'cards-list' && <div className="page-content"><div className="card-list-toolbar"><SearchInput value={cardSearch} onChange={setCardSearch} placeholder="Cerca tessera per codice o cliente…" /><button className="button button-outline" onClick={() => exportLoyaltyCards(filteredLoyaltyCards)}><ArrowDownToLine size={16} /> Scarica lista tessere</button></div><Table headings={['Codice tessera', 'Barcode', 'Cliente', 'Sconto tessera', 'Punti', 'Valore punti']}><>{filteredLoyaltyCards.map((card) => <tr key={card.id}><td className="mono">{card.code}</td><td><BarcodeImage value={card.barcode} /></td><td className="cell-primary">{card.first_name} {card.last_name}</td><td>{card.discount_percentage}%</td><td>{card.points}</td><td>{money.format(card.points * 0.1)}</td></tr>)}</>{!filteredLoyaltyCards.length && <tr><td colSpan={6} className="empty-cell">{activeLoyaltyCards.length ? 'Nessuna tessera corrisponde alla ricerca.' : 'Nessuna tessera attiva.'}</td></tr>}</Table></div>}
-
-      {section === 'accounting-statistics' && <div className="page-content accounting-page">
-        <div className="page-toolbar"><div><h2>Andamento economico</h2><p>Riepilogo delle vendite, del costo merce e delle spese operative.</p></div><button className="button button-outline" onClick={() => { setReportExportType('balance'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Scarica report</button></div>
-        <div className="metric-grid stats-metrics accounting-metrics">
-          <Metric icon={Banknote} label="Vendite nette" value={money.format(totalRevenue)} detail={`${data.sales.length} vendite registrate`} compact />
-          <Metric icon={Package} label="Costo della merce venduta" value={money.format(costOfGoodsSold)} detail="Costo d'acquisto degli articoli venduti" compact />
-          <Metric icon={ArrowDownToLine} label="Spese operative" value={money.format(totalExpenses)} detail={`${data.expenses.length} spese registrate`} compact />
-          <Metric icon={TrendingUp} label="Risultato operativo" value={money.format(operatingResult)} detail="Vendite meno costo merce e spese" compact />
-        </div>
-        <div className="analytics-grid">
-          <section className="panel chart-panel"><div className="panel-heading"><div><h3>Vendite e costi · ultimi 6 mesi</h3><p>Valori mensili in euro</p></div></div><ResponsiveContainer width="100%" height={245}><BarChart data={accountingMonthly}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="mese" /><YAxis /><Tooltip formatter={(value) => money.format(Number(value))} /><Bar dataKey="vendite" name="Vendite nette" fill="var(--green)" radius={[3, 3, 0, 0]} /><Bar dataKey="spese" name="Costo merce e spese" fill="#c17e4f" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer></section>
-          <section className="panel chart-panel"><div className="panel-heading"><div><h3>Risultato operativo mensile</h3><p>Vendite meno costo merce e spese registrate</p></div></div><ResponsiveContainer width="100%" height={245}><LineChart data={accountingMonthly}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="mese" /><YAxis /><Tooltip formatter={(value) => money.format(Number(value))} /><Line type="monotone" dataKey="risultato" name="Risultato operativo" stroke="var(--green)" strokeWidth={2} dot={{ r: 3 }} /></LineChart></ResponsiveContainer></section>
-        </div>
-      </div>}
 
       {section === 'expenses' && <div className="page-content accounting-page">
         <section className="panel expense-entry-panel"><div className="panel-heading"><div><h3>Registra una spesa</h3><p>Inserisci descrizione, categoria, importo e data.</p></div></div>
@@ -1835,11 +1796,10 @@ export default function App() {
       {section === 'statistics' && <div className="page-content">
         <div className="page-toolbar"><div><h2>Analisi vendite</h2><p>Andamento e prodotti venduti nel periodo selezionato.</p></div><span className="period-chip">Dati aggiornati in tempo reale</span></div>
         <div className="statistics-periods" role="group" aria-label="Filtra statistiche per periodo">{statisticsPeriods.map((period) => <button key={period} className={`status-filter${statisticsPeriod === period ? ' active' : ''}`} aria-pressed={statisticsPeriod === period} onClick={() => setStatisticsPeriod(period)}>{period}</button>)}</div>
-        <section className="panel product-sales-panel"><div className="panel-heading"><div><h3>Prodotti più e meno venduti</h3><p>Ordinati dal più venduto al meno venduto nel periodo selezionato.</p></div></div><Table headings={['Posizione', 'Prodotto', 'Quantità venduta', 'Ricavi']}><>{productSalesRanking.map((product, index) => <tr key={product.id}><td>{index + 1}</td><td className="cell-primary">{product.name}</td><td>{quantityFormat.format(product.quantitySold)} {product.unit === 'PEZZO' ? 'pz' : product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : ''}</td><td>{money.format(product.revenue)}</td></tr>)}</>{!productSalesRanking.length && <tr><td colSpan={4} className="empty-cell">Nessun prodotto registrato.</td></tr>}</Table></section>
+        <section className="panel product-sales-panel"><div className="panel-heading"><div><h3>Prodotti più e meno venduti</h3></div></div><Table headings={['Posizione', 'Prodotto', 'Quantità venduta', 'Ricavi']}><>{productSalesRanking.map((product, index) => <tr key={product.id}><td>{index + 1}</td><td className="cell-primary">{product.name}</td><td>{quantityFormat.format(product.quantitySold)} {product.unit === 'PEZZO' ? 'pz' : product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : ''}</td><td>{money.format(product.revenue)}</td></tr>)}</>{!productSalesRanking.length && <tr><td colSpan={4} className="empty-cell">Nessun prodotto registrato.</td></tr>}</Table></section>
         <div className="metric-grid stats-metrics"><Metric icon={Banknote} label="Vendite" value={money.format(soldTotal)} detail="Incassi registrati nel periodo" /><Metric icon={CreditCard} label="Acquisto merce venduta" value={money.format(soldCost)} detail="Costo degli articoli venduti" /><Metric icon={TrendingUp} label="Netto stimato" value={money.format(estimatedNet)} detail="Ricavi meno costo del venduto e spese" /><Metric icon={ShoppingBasket} label="Quantità vendite" value={`${soldUnits.toLocaleString('it-IT')} di ${totalTrackedUnits.toLocaleString('it-IT')}`} detail="Articoli venduti rispetto a quelli ancora in magazzino" action={<button className="text-button metric-action" onClick={() => setUnsoldListOpen(true)}>Vedi lista</button>} /></div>
         <div className="metric-grid inventory-values"><Metric icon={Package} label="Valore vendita in magazzino" value={money.format(stockRetail)} detail="Valore al prezzo di vendita" compact /><Metric icon={Archive} label="Valore acquisto in magazzino" value={money.format(stockCost)} detail="Costo delle scorte attuali" compact /><Metric icon={TrendingUp} label="Netto potenziale" value={money.format(stockRetail - stockCost)} detail="Margine potenziale delle scorte" compact /></div>
         <div className="analytics-grid"><section className="panel calendar-panel"><div className="panel-heading"><div><h3>Calendario vendite</h3><p>Incasso per giorno</p></div><div className="month-controls"><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}>‹</button><strong>{calendarMonth.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</strong><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}>›</button></div></div><div className="calendar-grid">{['L', 'M', 'M', 'G', 'V', 'S', 'D'].map((day, index) => <span className="calendar-weekday" key={`${day}${index}`}>{day}</span>)}{calendarDays().map((day, index) => { const date = day ? new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day) : null; const revenue = date ? statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()).reduce((sum, sale) => sum + sale.total, 0) : 0; return <div key={index} className={`calendar-day${revenue ? ' has-sales' : ''}${date?.toDateString() === new Date().toDateString() ? ' today' : ''}`}>{day && <><span>{day}</span>{revenue > 0 && <small>{money.format(revenue)}</small>}</>}</div>; })}</div></section><section className="panel chart-panel"><div className="panel-heading"><div><h3>Vendite giornaliere</h3><p>Ultimi sette giorni nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><BarChart data={chartDays} margin={{ top: 14, right: 8, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="giorno" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value}€`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Bar dataKey="totale" fill="var(--green)" radius={[4, 4, 0, 0]} maxBarSize={34} /></BarChart></ResponsiveContainer></section></div>
-        <section className="panel site-summary-panel"><div className="panel-heading"><div><h3>Riepilogo per sede</h3><p>Stipendi e spese sono ripartiti per sede; entrate, uscite, netto e percentuale saranno disponibili quando saranno creati gli account per sede.</p></div></div><div className="table-wrap"><table><thead><tr><th>Sede</th><th className="align-right">Totale entrate</th><th className="align-right">Totale uscite</th><th className="align-right">Totale stipendi</th><th className="align-right">Spese del negozio</th><th className="align-right">Netto</th><th className="align-right">Percentuale di guadagno</th></tr></thead><tbody>{statisticsSiteSummary.map((row) => <tr key={row.site}><td className="cell-primary">{row.site}</td><td className="align-right">—</td><td className="align-right">—</td><td className="align-right">{money.format(row.salaries)}</td><td className="align-right">{money.format(row.storeExpenses)}</td><td className="align-right cell-primary">—</td><td className="align-right">—</td></tr>)}{!statisticsSiteSummary.length && <tr><td colSpan={7} className="empty-cell">Nessun dato disponibile per il periodo selezionato.</td></tr>}</tbody></table></div></section>
         <div className="analytics-grid statistics-extra"><section className="panel chart-panel"><div className="panel-heading"><div><h3>Andamento mensile</h3><p>Incasso per mese nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><LineChart data={monthlySales} margin={{ top: 14, right: 12, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="mese" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value}€`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Line type="monotone" dataKey="totale" stroke="var(--green)" strokeWidth={3} dot={{ fill: 'var(--green)', r: 4 }} /></LineChart></ResponsiveContainer></section><section className="panel payment-panel"><div className="panel-heading"><div><h3>Pagamenti per metodo</h3><p>Totale incassato nel periodo</p></div></div><div className="payment-totals">{Object.entries(paymentTotals).length ? Object.entries(paymentTotals).map(([method, amount], index) => <div key={method}><span className="payment-dot" style={{ backgroundColor: colors[index % colors.length] }} /><span>{method}</span><strong>{money.format(amount)}</strong></div>) : <span className="muted">Nessun pagamento nel periodo selezionato.</span>}</div></section></div>
         <section className="panel category-panel"><div className="panel-heading"><div><h3>Vendite per categoria</h3><p>Valore degli articoli venduti nel periodo selezionato</p></div></div><div className="category-chart"><ResponsiveContainer width="100%" height={230}><PieChart><Pie data={Object.entries(categoriesSales).map(([name, value]) => ({ name, value }))} dataKey="value" nameKey="name" innerRadius={57} outerRadius={88} paddingAngle={3}>{Object.keys(categoriesSales).map((name, i) => <Cell key={name} fill={colors[i % colors.length]} />)}</Pie><Tooltip formatter={(value) => money.format(Number(value))} /></PieChart></ResponsiveContainer><div className="chart-legend">{Object.entries(categoriesSales).length ? Object.entries(categoriesSales).map(([name, value], i) => <div key={name}><span style={{ backgroundColor: colors[i % colors.length] }} /><span>{name}</span><strong>{money.format(value)}</strong></div>) : <span className="muted">Le categorie appariranno dopo la prima vendita.</span>}</div></div></section>
       </div>}
