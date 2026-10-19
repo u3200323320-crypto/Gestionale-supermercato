@@ -18,6 +18,7 @@ npm run dist:win
 ```
 
 Il file `Gestione-Supermercato-Setup-<versione>.exe` viene generato nella cartella `release`.
+La prima installazione attende tre minuti per completare la configurazione iniziale; gli aggiornamenti successivi non includono questa attesa.
 
 ## Dati e dispositivi
 

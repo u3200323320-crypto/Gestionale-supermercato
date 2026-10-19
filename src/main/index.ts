@@ -11,6 +11,7 @@ import type { CheckoutInput, Customer, CustomerInput, Employee, EmployeeInput, E
 let database: Database.Database;
 let mainWindow: BrowserWindow;
 let databaseFile = '';
+let salesRetentionInterval: NodeJS.Timeout | undefined;
 
 function localDate(date: Date): string {
   const year = date.getFullYear();
@@ -86,14 +87,21 @@ function removeExpiredVouchers(): void {
   })();
 }
 
-function removeExpiredRecords(): void {
+function removeExpiredRecords(): number {
   const now = new Date();
   const saleCutoff = localDateMonthsBefore(now, 1);
   const movementCutoff = localDateMonthsBefore(now, 12);
-  database.transaction(() => {
-    database.prepare('DELETE FROM sales WHERE created_at < ?').run(saleCutoff.toISOString());
+  return database.transaction(() => {
+    const deletedSales = database.prepare('DELETE FROM sales WHERE created_at < ?').run(saleCutoff.toISOString());
     database.prepare('DELETE FROM stock_movements WHERE created_at < ?').run(movementCutoff.toISOString());
+    return deletedSales.changes;
   })();
+}
+
+function isActiveCustomerBarcode(value: unknown): boolean {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  return Boolean(database.prepare(`SELECT 1 FROM loyalty_cards
+    WHERE barcode = ? AND status = 'Attiva' AND customer_id IS NOT NULL`).get(value.trim()));
 }
 
 function findValidVoucher(code: string, today = localDate(new Date())): { id: number; batch_id: number; discount_percentage: number; starts_at: string; ends_at: string } | undefined {
@@ -223,6 +231,7 @@ function initDatabase(): void {
   if (!employeeColumns.some((column) => column.name === 'payment_method')) {
     database.exec("ALTER TABLE employees ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'Contanti'");
   }
+  database.exec('UPDATE employees SET barcode = recognition_code WHERE barcode != recognition_code');
   const stockMovementColumns = database.prepare('PRAGMA table_info(stock_movements)').all() as Array<{ name: string }>;
   if (!stockMovementColumns.some((column) => column.name === 'person')) {
     database.exec("ALTER TABLE stock_movements ADD COLUMN person TEXT NOT NULL DEFAULT ''");
@@ -644,8 +653,15 @@ app.whenReady().then(() => {
     const id = createSale();
     return allSales().find((saleItem) => (saleItem as { id: number }).id === id);
   });
-  ipcMain.handle('sale:update', (_event, sale: { id: number; payment_method: string; discount: number; items: SaleItem[] }) => {
+  ipcMain.handle('sale:authorize', (_event, customerBarcode: string) => {
+    if (typeof customerBarcode !== 'string') throw new Error('Scansiona il barcode di una tessera cliente.');
+    return isActiveCustomerBarcode(customerBarcode);
+  });
+  ipcMain.handle('sale:update', (_event, sale: { id: number; payment_method: string; discount: number; items: SaleItem[]; customer_barcode: string }) => {
     database.transaction(() => {
+      if (!sale || !Number.isInteger(sale.id) || sale.id < 1 || !isActiveCustomerBarcode(sale.customer_barcode)) {
+        throw new Error('Barcode cliente non riconosciuto. Scansiona una tessera cliente attiva.');
+      }
       const previousQuantities = new Map<number, { quantity: number; name: string }>();
       saleItems(sale.id).forEach((item) => {
         const current = previousQuantities.get(item.product_id);
@@ -671,9 +687,13 @@ app.whenReady().then(() => {
         .run(sale.payment_method, sale.discount, grossTotal, Math.max(0, grossTotal - sale.discount), sale.id);
     })();
   });
-  ipcMain.handle('sale:delete', (_event, id: number) => {
+  ipcMain.handle('sale:delete', (_event, id: number, customerBarcode: string) => {
     database.transaction(() => {
+      if (!Number.isInteger(id) || id < 1 || !isActiveCustomerBarcode(customerBarcode)) {
+        throw new Error('Barcode cliente non riconosciuto. Scansiona una tessera cliente attiva.');
+      }
       const receipt = database.prepare('SELECT receipt_no FROM sales WHERE id = ?').get(id) as { receipt_no: string } | undefined;
+      if (!receipt) throw new Error('Scontrino non trovato.');
       saleItems(id).forEach((item) => {
         database.prepare('UPDATE products SET stock=stock+? WHERE id=?').run(item.quantity, item.product_id);
         recordStockMovement(item.product_id, item.name, 'Carico', item.quantity, `Vendita #${receipt?.receipt_no ?? id} eliminata`);
@@ -809,7 +829,7 @@ app.whenReady().then(() => {
       || employee.initial_password.length < 8 || employee.initial_password.length > 128
       || (employee.payment_method === 'Bonifico' && !/^[A-Z0-9 ]{15,34}$/i.test(employee.iban))
       || (employee.payment_method === 'Contanti' && employee.iban !== '')
-      || !/^DIP-\d{8}$/.test(employee.recognition_code) || !/^\d{12}$/.test(employee.barcode)
+      || !/^DIP-\d{8}$/.test(employee.recognition_code) || employee.barcode !== employee.recognition_code
       || !isDataUrl(employee.photo_data, /^data:image\/(?:png|jpeg|webp);base64,/i, 5 * 1024 * 1024)
       || documentImages.length === 0 || documentImages.length > 20
       || documentImages.some((image) => typeof image !== 'string' || !isDataUrl(image, /^data:image\/(?:png|jpeg|webp);base64,/i, 5 * 1024 * 1024))
@@ -1020,6 +1040,15 @@ app.whenReady().then(() => {
     return result.filePaths[0];
   });
   createWindow();
+  salesRetentionInterval = setInterval(() => {
+    try {
+      if (removeExpiredRecords() > 0 && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sales:expired');
+      }
+    } catch (error) {
+      console.error('Pulizia periodica degli scontrini non riuscita:', error);
+    }
+  }, 60_000);
   const scheduleArchive = () => {
     const next = new Date();
     next.setHours(24, 0, 0, 0);
@@ -1035,4 +1064,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-app.on('before-quit', () => { database?.close(); });
+app.on('before-quit', () => {
+  if (salesRetentionInterval) clearInterval(salesRetentionInterval);
+  database?.close();
+});

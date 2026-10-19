@@ -3,6 +3,11 @@ import type { CheckoutInput, CustomerInput, EmployeeInput, Expense, PayrollPayme
 
 contextBridge.exposeInMainWorld('gestionale', {
   getState: () => ipcRenderer.invoke('state:get'),
+  onSalesExpired: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('sales:expired', listener);
+    return () => ipcRenderer.removeListener('sales:expired', listener);
+  },
   hasPin: () => ipcRenderer.invoke('pin:has'),
   verifyPin: (pin: string) => ipcRenderer.invoke('pin:verify', pin),
   setPin: (pin: string) => ipcRenderer.invoke('pin:set', pin),
@@ -29,8 +34,9 @@ contextBridge.exposeInMainWorld('gestionale', {
   saveSetting: (key: 'shop_name' | 'archive_folder' | 'receipt_printer' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => ipcRenderer.invoke('settings:save', key, value),
   getPrinters: (): Promise<Printer[]> => ipcRenderer.invoke('devices:printers'),
   printReceipt: (): Promise<void> => ipcRenderer.invoke('receipt:print'),
-  updateSale: (sale: { id: number; payment_method: string; discount: number; items: SaleItem[] }) => ipcRenderer.invoke('sale:update', sale),
-  deleteSale: (id: number) => ipcRenderer.invoke('sale:delete', id),
+  authorizeSaleAction: (customerBarcode: string): Promise<boolean> => ipcRenderer.invoke('sale:authorize', customerBarcode),
+  updateSale: (sale: { id: number; payment_method: string; discount: number; items: SaleItem[]; customer_barcode: string }) => ipcRenderer.invoke('sale:update', sale),
+  deleteSale: (id: number, customerBarcode: string) => ipcRenderer.invoke('sale:delete', id, customerBarcode),
   saveExpense: (expense: Pick<Expense, 'description' | 'category' | 'amount' | 'expense_date' | 'site' | 'receipt_data'>) => ipcRenderer.invoke('expense:save', expense),
   deleteExpense: (id: number) => ipcRenderer.invoke('expense:delete', id),
   chooseArchiveFolder: () => ipcRenderer.invoke('archive:choose-folder'),

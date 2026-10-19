@@ -25,10 +25,10 @@ const permanentPromotionEnd = '9999-12-31';
 const promotionDurations = ['1 giorno', '3 giorni', '7 giorni', '1 mese', 'Sempre', 'Personalizzata'];
 const expenseCategories = ['Affitto', 'Utenze', 'Forniture', 'Stipendi', 'Manutenzione', 'Trasporti', 'Altro'];
 const appThemes = [
-  { id: 'green', label: 'Verde', color: '#6c8d75' },
-  { id: 'blue', label: 'Blu', color: '#6c91b4' },
+  { id: 'green', label: 'Verde', color: '#72bf6a' },
+  { id: 'blue', label: 'Blu', color: '#1a8ae5' },
   { id: 'purple', label: 'Viola', color: '#8b74a6' },
-  { id: 'orange', label: 'Arancione', color: '#c18159' },
+  { id: 'orange', label: 'Arancione', color: '#ff6242' },
 ] as const;
 type AppTheme = typeof appThemes[number]['id'];
 type PromotionMinimum = 'none' | 'spend' | 'kilograms' | 'pieces' | 'liters';
@@ -76,20 +76,20 @@ function employeeDocumentImages(documentsData: string): string[] {
 }
 function newEmployeeDraft(employees: Employee[]): EmployeeInput {
   const usedRecognitionCodes = new Set(employees.map((employee) => employee.recognition_code));
-  const usedBarcodes = new Set(employees.map((employee) => employee.barcode));
-  const randomCode = (length: number) => {
+  const randomRecognitionCode = () => {
     const values = new Uint32Array(1);
     let code = '';
     do {
       window.crypto.getRandomValues(values);
-      code = String(values[0] % 10 ** length).padStart(length, '0');
-    } while (length === 8 ? usedRecognitionCodes.has(`DIP-${code}`) : usedBarcodes.has(code));
+      code = `DIP-${String(values[0] % 100_000_000).padStart(8, '0')}`;
+    } while (usedRecognitionCodes.has(code));
     return code;
   };
+  const recognitionCode = randomRecognitionCode();
   return {
     first_name: '', last_name: '', age: 18, gender: '', home_address: '', email: '', initial_password: '',
     phone: '', operational_site: '', role: '', shift: '', salary: 0, payment_method: 'Contanti', iban: '',
-    recognition_code: `DIP-${randomCode(8)}`, barcode: randomCode(12),
+    recognition_code: recognitionCode, barcode: recognitionCode,
     photo_data: '', documents_data: '[]', contract_pdf_data: '',
   };
 }
@@ -261,7 +261,7 @@ function EmployeeForm({ initial, save, cancel, notify }: { initial: EmployeeInpu
       <Field label="IBAN" value={employee.iban} onChange={(event) => setEmployee({ ...employee, iban: event.target.value.toUpperCase() })} disabled={employee.payment_method !== 'Bonifico'} required={employee.payment_method === 'Bonifico'} />
       <Field label="Stipendio (€)" type="number" min="0" step="0.01" value={employee.salary} onChange={(event) => setEmployee({ ...employee, salary: Number(event.target.value) })} required />
       <Field label="Codice riconoscimento" value={employee.recognition_code} readOnly />
-      <label className="field employee-barcode-field"><span>Barcode di riconoscimento</span><div className="employee-barcode"><BarcodeImage value={employee.barcode} /><small>{employee.barcode}</small></div></label>
+      <label className="field employee-barcode-field"><span>Barcode di riconoscimento</span>      <div className="employee-barcode"><BarcodeImage value={employee.recognition_code} /><small>{employee.recognition_code}</small></div></label>
     </div>
     <div className="form-actions"><button className="button button-quiet" type="button" onClick={cancel}>Annulla</button><button className="button button-primary" disabled={saving}><Check size={16} /> Crea dipendente</button></div>
   </form>;
@@ -294,7 +294,7 @@ function ProductForm({ initial, save, close, categories, onDelete }: { initial: 
 
 export default function App() {
   const [data, setData] = useState<AppState | null>(null);
-  const [section, setSection] = useState<Section>('home');
+  const [section, setSection] = useState<Section>('cash');
   const [openSidebarMenu, setOpenSidebarMenu] = useState<'inventory' | 'offers' | 'statistics' | 'employees' | 'clients' | null>(null);
   const [stockMovementType, setStockMovementType] = useState<'Carico' | 'Scarico'>('Carico');
   const [stockMovementProduct, setStockMovementProduct] = useState('');
@@ -332,6 +332,8 @@ export default function App() {
   const [stockProduct, setStockProduct] = useState<Product | null>(null);
   const [stockInput, setStockInput] = useState('');
   const [saleDialog, setSaleDialog] = useState<Sale | null>(null);
+  const [saleAction, setSaleAction] = useState<{ sale: Sale; action: 'edit' | 'delete' } | null>(null);
+  const [saleCustomerBarcode, setSaleCustomerBarcode] = useState('');
   const [saleDiscountPercentage, setSaleDiscountPercentage] = useState(0);
   const [saleAdjustment, setSaleAdjustment] = useState<number | null>(null);
   const [receipt, setReceipt] = useState<Sale | null>(null);
@@ -362,6 +364,7 @@ export default function App() {
   const [expenseReceiptData, setExpenseReceiptData] = useState('');
   const [inventoryStatus, setInventoryStatus] = useState<'all' | 'available' | 'low' | 'out'>('available');
   const [saleSearch, setSaleSearch] = useState('');
+  const [saleManagementSearch, setSaleManagementSearch] = useState('');
   const [salesPeriod, setSalesPeriod] = useState('Tutti');
   const [salesFrom, setSalesFrom] = useState('');
   const [salesTo, setSalesTo] = useState('');
@@ -504,7 +507,7 @@ export default function App() {
       ['Metodo di pagamento', employee.payment_method],
       ['IBAN', employee.payment_method === 'Bonifico' ? employee.iban : '—'],
       ['Codice riconoscimento', employee.recognition_code],
-      ['Barcode', employee.barcode],
+      ['Barcode', employee.recognition_code],
       ['Contratto', employee.contract_pdf_data ? 'PDF allegato' : 'Non presente'],
       ['Data di registrazione', dateTime.format(new Date(employee.created_at))],
     ];
@@ -692,14 +695,9 @@ export default function App() {
     }
   };
   useEffect(() => { void window.gestionale.hasPin().then((exists) => { setHasPin(exists); if (!exists) { setLocked(false); void refresh(); } }); }, []);
-  useEffect(() => {
-    if (locked) return;
-    const refreshState = () => {
-      void window.gestionale.getState().then(setData).catch((error: unknown) => notify(errorText(error)));
-    };
-    const interval = window.setInterval(refreshState, 60_000);
-    return () => window.clearInterval(interval);
-  }, [locked]);
+  useEffect(() => window.gestionale.onSalesExpired(() => {
+    void refresh().catch((error: unknown) => notify(errorText(error)));
+  }), []);
   useEffect(() => {
     document.documentElement.dataset.theme = appTheme;
     window.localStorage.setItem('app-theme', appTheme);
@@ -934,6 +932,10 @@ export default function App() {
     } else if (section === 'inventory') setInventorySearch(normalized);
     else if (section === 'cards-list') setCardSearch(normalized);
     else if (section === 'sales') setSaleSearch(normalized.replace(/\D/g, ''));
+    else if (section === 'sale-management') {
+      if (saleAction) setSaleCustomerBarcode(normalized);
+      else setSaleManagementSearch(normalized.replace(/\D/g, ''));
+    }
   };
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -961,7 +963,7 @@ export default function App() {
     };
     document.addEventListener('keydown', onKeyDown, true);
     return () => document.removeEventListener('keydown', onKeyDown, true);
-  }, [data, section, checkoutOpen, stockProduct]);
+  }, [data, section, checkoutOpen, stockProduct, saleAction]);
   useEffect(() => {
     if (section !== 'settings' || settingsTab !== 'Dispositivi') return;
     void window.gestionale.getPrinters().then(setPrinters).catch((error: unknown) => notify(errorText(error)));
@@ -973,7 +975,9 @@ export default function App() {
   };
   const changeSaleQuantity = (index: number, quantity: number) => {
     if (!saleDialog) return;
-    const items = saleDialog.items.map((item, itemIndex) => itemIndex === index ? { ...item, quantity: Math.max(0, roundQuantity(quantity)) } : item);
+    const items = quantity <= 0
+      ? saleDialog.items.filter((_, itemIndex) => itemIndex !== index)
+      : saleDialog.items.map((item, itemIndex) => itemIndex === index ? { ...item, quantity: roundQuantity(quantity) } : item);
     const gross = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
     setSaleDialog({ ...saleDialog, items, discount: Math.round(gross * saleDiscountPercentage) / 100 });
   };
@@ -1043,6 +1047,30 @@ export default function App() {
     event.preventDefault();
     addMeasuredQuantity(Number(measuredQuantity));
   };
+  const authorizeSaleAction = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!saleAction) return;
+    try {
+      const authorized = await window.gestionale.authorizeSaleAction(saleCustomerBarcode.trim());
+      if (!authorized) {
+        notify('Barcode cliente non riconosciuto. Scansiona una tessera cliente attiva.');
+        return;
+      }
+      if (saleAction.action === 'edit') {
+        setSaleDiscountPercentage(saleAction.sale.gross_total > 0
+          ? saleAction.sale.discount / saleAction.sale.gross_total * 100
+          : 0);
+        setSaleDialog(saleAction.sale);
+        setSaleAction(null);
+      } else {
+        await deleteSale(saleAction.sale, saleCustomerBarcode.trim());
+        setSaleAction(null);
+        setSaleCustomerBarcode('');
+      }
+    } catch (error) {
+      notify(errorText(error));
+    }
+  };
   const updateSale = async () => {
     if (!saleDialog) return;
     const items = saleDialog.items.filter((item) => item.quantity > 0);
@@ -1051,10 +1079,17 @@ export default function App() {
     try {
       const saleId = saleDialog.id;
       const previousTotal = saleDialog.total;
-      await window.gestionale.updateSale({ id: saleId, payment_method: saleDialog.payment_method, discount: saleDialog.discount, items });
+      await window.gestionale.updateSale({
+        id: saleId,
+        payment_method: saleDialog.payment_method,
+        discount: saleDialog.discount,
+        items,
+        customer_barcode: saleCustomerBarcode.trim(),
+      });
       const next = await refresh();
       const updatedSale = next.sales.find((sale) => sale.id === saleId);
       setSaleDialog(null);
+      setSaleCustomerBarcode('');
       if (!updatedSale) throw new Error('Vendita aggiornata ma non trovata nell’archivio.');
       setSaleAdjustment(Math.round((updatedSale.total - previousTotal) * 100) / 100);
     } catch (error) {
@@ -1062,7 +1097,17 @@ export default function App() {
       await refresh();
     }
   };
-  const deleteSale = async (sale: Sale) => { if (!window.confirm(`Eliminare lo scontrino ${sale.receipt_no}? Le quantità verranno ripristinate.`)) return; try { await window.gestionale.deleteSale(sale.id); await refresh(); setSaleDialog(null); notify('Vendita eliminata'); } catch (error) { notify(errorText(error)); await refresh(); } };
+  const deleteSale = async (sale: Sale, customerBarcode: string) => {
+    try {
+      await window.gestionale.deleteSale(sale.id, customerBarcode);
+      await refresh();
+      setSaleDialog(null);
+      notify('Vendita eliminata.');
+    } catch (error) {
+      notify(errorText(error));
+      await refresh();
+    }
+  };
   const subtotal = cart.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
   const totalBeforeVoucher = Math.max(0, subtotal - automaticDiscount - manualDiscount);
   const voucherDiscount = Math.round(totalBeforeVoucher * voucherDiscountPercentage) / 100;
@@ -1525,6 +1570,9 @@ export default function App() {
     && (salesCategory === 'Tutte' || sale.items.some((item) => data.products.some((product) => product.id === item.product_id && product.category === salesCategory)))
     && matchesSalesPeriod(sale.created_at)
   ) ?? [];
+  const saleMatch = saleManagementSearch.trim()
+    ? data?.sales.find((sale) => sale.receipt_no === saleManagementSearch.trim())
+    : undefined;
   const matchesInventoryHistoryPeriod = (createdAt: string) => {
     const movementDate = new Date(createdAt);
     const today = new Date();
@@ -1674,11 +1722,16 @@ export default function App() {
       </div></div>}
 
       {section === 'sales' && <div className="page-content"><div className="sale-tools"><button className="button button-outline sale-camera-button" onClick={() => setCamera(true)}><Camera size={16} /> Cerca con fotocamera</button><SearchInput value={saleSearch} onChange={setSaleSearch} placeholder="Cerca numero scontrino…" numericOnly /><button className="button button-outline" onClick={() => { setReportExportType('sales-pdf'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-outline" onClick={() => { setReportExportType('sales-csv'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Esporta CSV</button></div><div className="sale-filters"><SelectField label="Periodo" value={salesPeriod} onChange={setSalesPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A']} />{salesPeriod === 'Da - A' && <><Field label="Da" type="date" value={salesFrom} onChange={(event) => setSalesFrom(event.target.value)} /><Field label="A" type="date" value={salesTo} onChange={(event) => setSalesTo(event.target.value)} /></>}<SelectField label="Categoria" value={salesCategory} onChange={setSalesCategory} options={['Tutte', ...categories]} /></div><SalesTable sales={salesList} onSelect={setReceipt} /></div>}
-      {section === 'sale-management' && <div className="page-content">
-        <div className="page-toolbar"><div><h2>Modifica o Elimina</h2><p>Seleziona uno scontrino per modificarlo o eliminarlo.</p></div></div>
-        <div className="sale-tools"><button className="button button-outline sale-camera-button" onClick={() => setCamera(true)}><Camera size={16} /> Cerca con fotocamera</button><SearchInput value={saleSearch} onChange={setSaleSearch} placeholder="Cerca numero scontrino…" numericOnly /></div>
-        <div className="sale-filters"><SelectField label="Periodo" value={salesPeriod} onChange={setSalesPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A']} />{salesPeriod === 'Da - A' && <><Field label="Da" type="date" value={salesFrom} onChange={(event) => setSalesFrom(event.target.value)} /><Field label="A" type="date" value={salesTo} onChange={(event) => setSalesTo(event.target.value)} /></>}<SelectField label="Categoria" value={salesCategory} onChange={setSalesCategory} options={['Tutte', ...categories]} /></div>
-        <SalesTable sales={salesList} onSelect={setSaleDialog} />
+      {section === 'sale-management' && <div className="page-content sale-management-page">
+        <div className="sale-management-search"><SearchInput value={saleManagementSearch} onChange={setSaleManagementSearch} placeholder="Inserisci o scansiona il numero dello scontrino…" numericOnly /></div>
+        {saleMatch ? <section className="panel sale-found">
+          <div className="sale-found-heading"><div><strong>Scontrino #{saleMatch.receipt_no}</strong><span>{dateTime.format(new Date(saleMatch.created_at))}</span></div><strong>{money.format(saleMatch.total)}</strong></div>
+          <div className="sale-found-items">{saleMatch.items.map((item, index) => <span key={`${item.code}-${index}`}>{item.name} · {quantityFormat.format(item.quantity)} × {money.format(item.unit_price)}</span>)}</div>
+          <div className="sale-found-actions">
+            <button className="button button-outline" onClick={() => { setSaleCustomerBarcode(''); setSaleAction({ sale: saleMatch, action: 'edit' }); }}><Pencil size={15} /> Modifica scontrino</button>
+            <button className="button button-danger" onClick={() => { setSaleCustomerBarcode(''); setSaleAction({ sale: saleMatch, action: 'delete' }); }}><Trash2 size={15} /> Elimina scontrino</button>
+          </div>
+        </section> : saleManagementSearch.trim() ? <p className="sale-not-found">Nessuno scontrino trovato con questo numero.</p> : null}
       </div>}
 
 
@@ -1818,7 +1871,7 @@ export default function App() {
     {employeeDetails && <Modal title={`${employeeDetails.first_name} ${employeeDetails.last_name}`} close={() => setEmployeeDetails(null)} rightHalf>
       <div className="employee-detail-content">
         <div className="employee-detail-hero"><img src={employeeDetails.photo_data} alt={`Foto di ${employeeDetails.first_name} ${employeeDetails.last_name}`} /><div><strong>{employeeDetails.role}</strong><span>{employeeDetails.operational_site} · {employeeDetails.shift}</span></div></div>
-        <div className="employee-detail-fields">{[['Età', employeeDetails.age], ['Sesso', employeeDetails.gender], ['Indirizzo', employeeDetails.home_address], ['Email', employeeDetails.email], ['Telefono', employeeDetails.phone], ['Ruolo', employeeDetails.role], ['Turno', employeeDetails.shift], ['Sede operativa', employeeDetails.operational_site], ['Stipendio', money.format(employeeDetails.salary)], ['Metodo di pagamento', employeeDetails.payment_method], ['IBAN', employeeDetails.payment_method === 'Bonifico' ? employeeDetails.iban : '—'], ['Codice riconoscimento', employeeDetails.recognition_code], ['Contratto', employeeDetails.contract_pdf_data ? 'PDF allegato' : 'Non presente']].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}<section className="employee-detail-barcode"><h3>Barcode</h3><BarcodeImage value={employeeDetails.barcode} /><strong>{employeeDetails.barcode}</strong></section></div>
+        <div className="employee-detail-fields">{[['Età', employeeDetails.age], ['Sesso', employeeDetails.gender], ['Indirizzo', employeeDetails.home_address], ['Email', employeeDetails.email], ['Telefono', employeeDetails.phone], ['Ruolo', employeeDetails.role], ['Turno', employeeDetails.shift], ['Sede operativa', employeeDetails.operational_site], ['Stipendio', money.format(employeeDetails.salary)], ['Metodo di pagamento', employeeDetails.payment_method], ['IBAN', employeeDetails.payment_method === 'Bonifico' ? employeeDetails.iban : '—'], ['Codice riconoscimento', employeeDetails.recognition_code], ['Contratto', employeeDetails.contract_pdf_data ? 'PDF allegato' : 'Non presente']].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}<section className="employee-detail-barcode"><h3>Barcode</h3><BarcodeImage value={employeeDetails.recognition_code} /><strong>{employeeDetails.recognition_code}</strong></section></div>
         <section className="employee-detail-docs"><h3>Foto documenti</h3><div>{employeeDocumentImages(employeeDetails.documents_data).map((image, index) => <img src={image} alt={`Documento ${index + 1}`} key={`${index}-${image.slice(0, 30)}`} />)}</div></section>
       </div>
       <div className="drawer-footer employee-profile-actions"><button className="button button-outline" onClick={() => void exportEmployeePdf(employeeDetails)}><ArrowDownToLine size={15} /> Scarica</button><button className="button button-outline" onClick={() => void printEmployeePdf(employeeDetails)}><Printer size={15} /> Stampa</button><button className="button button-primary" onClick={() => setEmployeeDetails(null)}>Chiudi</button></div>
@@ -1856,7 +1909,12 @@ export default function App() {
     </div></Modal>}
     {receipt && <Modal title={`Scontrino #${receipt.receipt_no}`} close={() => setReceipt(null)}><div className="receipt-print" id="receipt-print"><div className="receipt-shop">{data.settings.shop_name}</div><div className="receipt-spacer" /><div className="receipt-datetime"><span>{receiptDate.format(new Date(receipt.created_at))}</span><span>{receiptTime.format(new Date(receipt.created_at))}</span></div><div>Numero scontrino: {receipt.receipt_no}</div><div className="receipt-dash" /><div className="receipt-head"><span>Articolo</span><span>Qtà</span><span>Prezzo</span></div>{receipt.items.map((item, index) => <div className="receipt-item" key={`${item.code}-${index}`}><span>{item.name}</span><span>{receiptQuantity.format(item.quantity)}{item.unit === 'KG' ? ' kg' : item.unit === 'LITRO' ? ' L' : ''}</span><span>{money.format(item.unit_price * item.quantity)}</span></div>)}<div className="receipt-dash" /><div className="receipt-total"><strong>TOTALE</strong><strong>{money.format(receipt.total)}</strong></div><div className="receipt-payment-savings"><span>Pagamento: {receipt.payment_method}</span>{receipt.discount > 0 && <span>Risparmio: {money.format(receipt.discount)}</span>}</div><div className="receipt-dash" /><div className="receipt-spacer" /><svg id="receipt-barcode" /><div className="receipt-spacer" /><div className="receipt-thanks">Grazie per averci scelto!</div></div><div className="receipt-actions"><button className="button button-primary full-width" onClick={printReceipt}><Printer size={16} /> Stampa scontrino</button></div></Modal>}
     {saleAdjustment !== null && <Modal title="Modifica vendita completata" close={() => setSaleAdjustment(null)}><div className="sale-adjustment-message"><p>{saleAdjustment > 0 ? `Il cliente deve pagare ancora ${money.format(saleAdjustment)}.` : saleAdjustment < 0 ? `Devi rimborsare al cliente ${money.format(Math.abs(saleAdjustment))}.` : 'Non è necessario effettuare un rimborso o un pagamento aggiuntivo.'}</p><button className="button button-primary" onClick={() => setSaleAdjustment(null)}>Ok</button></div></Modal>}
-    {saleDialog && <Modal title={`Vendita #${saleDialog.receipt_no}`} close={() => setSaleDialog(null)} wide><div className="sale-edit">
+    {saleAction && <Modal title={`Verifica cliente · scontrino #${saleAction.sale.receipt_no}`} close={() => { setSaleAction(null); setSaleCustomerBarcode(''); }}><form className="sale-authorization" onSubmit={(event) => void authorizeSaleAction(event)}>
+      <p>Scansiona o inserisci il barcode della tessera cliente per {saleAction.action === 'edit' ? 'modificare' : 'eliminare'} questo scontrino.</p>
+      <Field label="Barcode cliente" value={saleCustomerBarcode} onChange={(event) => setSaleCustomerBarcode(event.target.value.trim())} autoFocus required />
+      <div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setSaleAction(null); setSaleCustomerBarcode(''); }}>Annulla</button><button className="button button-primary" disabled={!saleCustomerBarcode.trim()}><Check size={15} /> Verifica e prosegui</button></div>
+    </form></Modal>}
+    {saleDialog && <Modal title={`Vendita #${saleDialog.receipt_no}`} close={() => { setSaleDialog(null); setSaleCustomerBarcode(''); }} wide><div className="sale-edit">
       <div className="sale-edit-fields">
         <SelectField label="Metodo di pagamento" value={saleDialog.payment_method} onChange={(value) => setSaleDialog({ ...saleDialog, payment_method: value })} options={['Carta', 'Contanti', 'Bancomat', 'Buono']} />
         <div className="sale-discount-fields"><Field label="Sconto (%)" type="number" min="0" max="100" step="0.01" value={saleDiscountPercentage} onChange={(e) => changeSaleDiscount(Number(e.target.value))} /><Field label="Sconto (€)" type="number" value={saleDialog.discount.toFixed(2)} readOnly /></div>
@@ -1867,7 +1925,7 @@ export default function App() {
       <div className="edit-item-list"><div className="edit-list-head"><span>Articolo</span><span>Quantità</span><span>Prezzo</span><span></span></div>{saleDialog.items.map((item, index) => <div className="edit-item" key={`${item.product_id}-${index}`}><span>{item.name}</span><input aria-label={`Quantità ${item.name}`} type="number" min="0" step={item.unit === 'PEZZO' || !item.unit ? '1' : '0.1'} value={item.quantity} onChange={(e) => changeSaleQuantity(index, Number(e.target.value))} /><span>{money.format(item.unit_price)} / {item.unit ?? 'PEZZO'}</span><button className="icon-button small" type="button" title="Rimuovi articolo dalla vendita" aria-label={`Rimuovi ${item.name} dalla vendita`} onClick={() => changeSaleQuantity(index, 0)}><Trash2 size={15} /></button></div>)}</div>
       <div className="sale-edit-total"><span>Sconto in euro</span><strong>{money.format(saleDialog.discount)}</strong></div>
       <div className="sale-edit-total"><span>Nuovo totale</span><strong>{money.format(Math.max(0, saleDialog.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0) - saleDialog.discount))}</strong></div>
-      <div className="sale-edit-actions"><button className="button button-danger" onClick={() => void deleteSale(saleDialog)}><Trash2 size={15} /> Elimina vendita</button><button className="button button-primary" onClick={() => void updateSale()}><Check size={15} /> Salva modifiche</button></div>
+      <div className="sale-edit-actions"><button className="button button-danger" onClick={() => { setSaleAction({ sale: saleDialog, action: 'delete' }); setSaleCustomerBarcode(''); setSaleDialog(null); }}><Trash2 size={15} /> Elimina scontrino</button><button className="button button-primary" onClick={() => void updateSale()}><Check size={15} /> Salva modifiche</button></div>
     </div></Modal>}
     {saleAddOpen && <div className="drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSaleAddOpen(false); }}><aside className="detail-drawer sale-add-drawer"><header className="drawer-header"><div><p className="eyebrow">MODIFICA VENDITA</p><h2>Aggiungi articoli</h2></div><button className="icon-button" onClick={() => setSaleAddOpen(false)} aria-label="Chiudi"><X size={18} /></button></header><div className="sale-add-content"><SearchInput value={saleProductSearch} onChange={setSaleProductSearch} placeholder="Cerca articolo o codice…" /><div className="sale-add-products">{availableSaleProducts.filter((product) => product.name.toLowerCase().includes(saleProductSearch.toLowerCase()) || product.code.includes(saleProductSearch)).map((product) => { const selected = saleCart.find((item) => item.product_id === product.id); return <button className={`sale-add-product${selected ? ' selected' : ''}`} key={product.id} onClick={() => addProductToSaleCart(product)}><span><strong>{product.name}</strong><small>{product.code} · {product.stock} {product.unit ?? 'PEZZO'} disponibili</small></span><span>{money.format(product.sale_price)} / {product.unit ?? 'PEZZO'}<b>{selected ? ` · ${selected.quantity}` : ''}</b></span></button>; })}</div><details className="sale-add-cart"><summary><strong>Carrello · {saleCart.length}</strong></summary>{saleCart.map((item) => <span key={item.product_id}>{item.name} · {item.quantity} {item.unit} <b>{money.format(item.quantity * item.unit_price)}</b></span>)}</details><button className="button button-primary full-width sale-add-confirm" disabled={!saleCart.length} onClick={addProductToSale}><ShoppingCart size={16} /> Conferma l'aggiunta</button></div></aside></div>}
     {camera && <CameraScanner close={() => setCamera(false)} scan={scanCameraCode} />}
