@@ -11,8 +11,8 @@
   --canvas: #f5f6f3;
   --green: #72bf6a;
   --green-dark: #397b33;
-  --green-soft: #e7f2e5;
-  --green-block: #edf6eb;
+  --green-soft: #c5e6c0;
+  --green-block: #b6dcae;
   --amber: #b77843;
   --red: #a45042;
   --shadow: 0 12px 32px rgb(39 49 42 / 9%);
@@ -22,20 +22,20 @@
 [data-theme='blue'] {
   --green: #1a8ae5;
   --green-dark: #135da0;
-  --green-soft: #e3f0fc;
-  --green-block: #eaf4fd;
+  --green-soft: #b8dcf8;
+  --green-block: #a6d0f4;
 }
 [data-theme='purple'] {
   --green: #8b74a6;
   --green-dark: #5c4775;
-  --green-soft: #ece7f1;
-  --green-block: #f0ecf4;
+  --green-soft: #d6c8e5;
+  --green-block: #c7b4dc;
 }
 [data-theme='orange'] {
   --green: #ff6242;
   --green-dark: #a93824;
-  --green-soft: #ffebe6;
-  --green-block: #fff0ec;
+  --green-soft: #ffc4b6;
+  --green-block: #ffad99;
 }
 
 * { box-sizing: border-box; }
@@ -237,13 +237,18 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .sale-filters > .field:has(select) select { height: 100%; flex: 1; padding: 0; border: 0; outline: 0; background: transparent; }
 .sale-filters .field input[type='date'] { min-width: 0; }
 .sale-management-page { max-width: 900px; }
-.sale-management-search { max-width: 560px; margin: 50px auto 24px; }
-.sale-found { max-width: 700px; margin: 0 auto; padding: 20px; }
-.sale-found-heading { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
-.sale-found-heading > div { display: grid; gap: 5px; }
-.sale-found-heading > div strong { font-size: 14px; }
-.sale-found-items { display: grid; gap: 8px; margin-top: 18px; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 11px; }
-.sale-found-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+.sale-management-search { max-width: 560px; margin: 34px auto 22px; }
+.sale-found { width: min(100%, 420px); margin: 0 auto; padding: 18px 20px; border: 1px dashed var(--green); background: #fff; font-family: 'DM Mono', 'Consolas', monospace; font-size: 11px; }
+.sale-found-shop { margin-bottom: 16px; font-family: 'DM Sans', sans-serif; font-size: 16px; font-weight: 800; text-align: center; }
+.sale-found-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; padding-bottom: 9px; border-bottom: 1px solid var(--line); }
+.sale-found-items { display: grid; gap: 10px; padding: 13px 0; border-bottom: 1px dashed #aab2aa; }
+.sale-found-item { display: flex; justify-content: space-between; gap: 10px; }
+.sale-found-item > span { display: grid; gap: 3px; }
+.sale-found-item small { font-size: 9px; }
+.sale-found-item > strong { white-space: nowrap; }
+.sale-found-total { display: flex; justify-content: space-between; padding: 12px 0; font-family: 'DM Sans', sans-serif; font-size: 14px; }
+.sale-found-actions { display: flex; gap: 8px; }
+.sale-found-actions .button { min-width: 0; flex: 1; padding: 0 7px; white-space: normal; }
 .sale-not-found { margin-top: 20px; text-align: center; font-size: 12px; }
 .sale-authorization { display: grid; gap: 16px; padding: 20px; }
 .sale-authorization > p { font-size: 12px; line-height: 1.6; }

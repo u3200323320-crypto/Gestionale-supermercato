@@ -98,10 +98,10 @@ function removeExpiredRecords(): number {
   })();
 }
 
-function isActiveCustomerBarcode(value: unknown): boolean {
+function isEmployeeBarcode(value: unknown): boolean {
   if (typeof value !== 'string' || !value.trim()) return false;
-  return Boolean(database.prepare(`SELECT 1 FROM loyalty_cards
-    WHERE barcode = ? AND status = 'Attiva' AND customer_id IS NOT NULL`).get(value.trim()));
+  return Boolean(database.prepare('SELECT 1 FROM employees WHERE recognition_code = ? AND barcode = ?')
+    .get(value.trim(), value.trim()));
 }
 
 function findValidVoucher(code: string, today = localDate(new Date())): { id: number; batch_id: number; discount_percentage: number; starts_at: string; ends_at: string } | undefined {
@@ -653,14 +653,14 @@ app.whenReady().then(() => {
     const id = createSale();
     return allSales().find((saleItem) => (saleItem as { id: number }).id === id);
   });
-  ipcMain.handle('sale:authorize', (_event, customerBarcode: string) => {
-    if (typeof customerBarcode !== 'string') throw new Error('Scansiona il barcode di una tessera cliente.');
-    return isActiveCustomerBarcode(customerBarcode);
+  ipcMain.handle('sale:authorize', (_event, employeeBarcode: string) => {
+    if (typeof employeeBarcode !== 'string') throw new Error('Scansiona il barcode di un dipendente.');
+    return isEmployeeBarcode(employeeBarcode);
   });
-  ipcMain.handle('sale:update', (_event, sale: { id: number; payment_method: string; discount: number; items: SaleItem[]; customer_barcode: string }) => {
+  ipcMain.handle('sale:update', (_event, sale: { id: number; payment_method: string; discount: number; items: SaleItem[]; employee_barcode: string }) => {
     database.transaction(() => {
-      if (!sale || !Number.isInteger(sale.id) || sale.id < 1 || !isActiveCustomerBarcode(sale.customer_barcode)) {
-        throw new Error('Barcode cliente non riconosciuto. Scansiona una tessera cliente attiva.');
+      if (!sale || !Number.isInteger(sale.id) || sale.id < 1 || !isEmployeeBarcode(sale.employee_barcode)) {
+        throw new Error('Barcode dipendente non riconosciuto. Scansiona il codice di riconoscimento di un dipendente.');
       }
       const previousQuantities = new Map<number, { quantity: number; name: string }>();
       saleItems(sale.id).forEach((item) => {
@@ -687,10 +687,10 @@ app.whenReady().then(() => {
         .run(sale.payment_method, sale.discount, grossTotal, Math.max(0, grossTotal - sale.discount), sale.id);
     })();
   });
-  ipcMain.handle('sale:delete', (_event, id: number, customerBarcode: string) => {
+  ipcMain.handle('sale:delete', (_event, id: number, employeeBarcode: string) => {
     database.transaction(() => {
-      if (!Number.isInteger(id) || id < 1 || !isActiveCustomerBarcode(customerBarcode)) {
-        throw new Error('Barcode cliente non riconosciuto. Scansiona una tessera cliente attiva.');
+      if (!Number.isInteger(id) || id < 1 || !isEmployeeBarcode(employeeBarcode)) {
+        throw new Error('Barcode dipendente non riconosciuto. Scansiona il codice di riconoscimento di un dipendente.');
       }
       const receipt = database.prepare('SELECT receipt_no FROM sales WHERE id = ?').get(id) as { receipt_no: string } | undefined;
       if (!receipt) throw new Error('Scontrino non trovato.');

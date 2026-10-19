@@ -208,9 +208,9 @@ declare global {
     saveSetting: (key: 'shop_name' | 'archive_folder' | 'receipt_printer' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => Promise<void>;
     getPrinters: () => Promise<Printer[]>;
     printReceipt: () => Promise<void>;
-    authorizeSaleAction: (customerBarcode: string) => Promise<boolean>;
-    updateSale: (sale: Pick<Sale, 'id' | 'payment_method' | 'discount'> & { items: SaleItem[]; customer_barcode: string }) => Promise<void>;
-    deleteSale: (id: number, customerBarcode: string) => Promise<void>;
+    authorizeSaleAction: (employeeBarcode: string) => Promise<boolean>;
+    updateSale: (sale: Pick<Sale, 'id' | 'payment_method' | 'discount'> & { items: SaleItem[]; employee_barcode: string }) => Promise<void>;
+    deleteSale: (id: number, employeeBarcode: string) => Promise<void>;
     saveExpense: (expense: Pick<Expense, 'description' | 'category' | 'amount' | 'expense_date' | 'site' | 'receipt_data'>) => Promise<void>;
     deleteExpense: (id: number) => Promise<void>;
     deleteLoyaltyCard: (id: number) => Promise<void>;

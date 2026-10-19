@@ -333,7 +333,7 @@ export default function App() {
   const [stockInput, setStockInput] = useState('');
   const [saleDialog, setSaleDialog] = useState<Sale | null>(null);
   const [saleAction, setSaleAction] = useState<{ sale: Sale; action: 'edit' | 'delete' } | null>(null);
-  const [saleCustomerBarcode, setSaleCustomerBarcode] = useState('');
+  const [saleEmployeeBarcode, setSaleEmployeeBarcode] = useState('');
   const [saleDiscountPercentage, setSaleDiscountPercentage] = useState(0);
   const [saleAdjustment, setSaleAdjustment] = useState<number | null>(null);
   const [receipt, setReceipt] = useState<Sale | null>(null);
@@ -933,7 +933,7 @@ export default function App() {
     else if (section === 'cards-list') setCardSearch(normalized);
     else if (section === 'sales') setSaleSearch(normalized.replace(/\D/g, ''));
     else if (section === 'sale-management') {
-      if (saleAction) setSaleCustomerBarcode(normalized);
+      if (saleAction) void authorizeSaleAction(normalized);
       else setSaleManagementSearch(normalized.replace(/\D/g, ''));
     }
   };
@@ -1047,15 +1047,15 @@ export default function App() {
     event.preventDefault();
     addMeasuredQuantity(Number(measuredQuantity));
   };
-  const authorizeSaleAction = async (event: FormEvent) => {
-    event.preventDefault();
+  const authorizeSaleAction = async (scannedBarcode = saleEmployeeBarcode.trim()) => {
     if (!saleAction) return;
     try {
-      const authorized = await window.gestionale.authorizeSaleAction(saleCustomerBarcode.trim());
+      const authorized = await window.gestionale.authorizeSaleAction(scannedBarcode);
       if (!authorized) {
-        notify('Barcode cliente non riconosciuto. Scansiona una tessera cliente attiva.');
+        notify('Barcode dipendente non riconosciuto. Scansiona il codice di riconoscimento di un dipendente.');
         return;
       }
+      setSaleEmployeeBarcode(scannedBarcode);
       if (saleAction.action === 'edit') {
         setSaleDiscountPercentage(saleAction.sale.gross_total > 0
           ? saleAction.sale.discount / saleAction.sale.gross_total * 100
@@ -1063,9 +1063,9 @@ export default function App() {
         setSaleDialog(saleAction.sale);
         setSaleAction(null);
       } else {
-        await deleteSale(saleAction.sale, saleCustomerBarcode.trim());
+        await deleteSale(saleAction.sale, scannedBarcode);
         setSaleAction(null);
-        setSaleCustomerBarcode('');
+        setSaleEmployeeBarcode('');
       }
     } catch (error) {
       notify(errorText(error));
@@ -1084,12 +1084,12 @@ export default function App() {
         payment_method: saleDialog.payment_method,
         discount: saleDialog.discount,
         items,
-        customer_barcode: saleCustomerBarcode.trim(),
+        employee_barcode: saleEmployeeBarcode.trim(),
       });
       const next = await refresh();
       const updatedSale = next.sales.find((sale) => sale.id === saleId);
       setSaleDialog(null);
-      setSaleCustomerBarcode('');
+      setSaleEmployeeBarcode('');
       if (!updatedSale) throw new Error('Vendita aggiornata ma non trovata nell’archivio.');
       setSaleAdjustment(Math.round((updatedSale.total - previousTotal) * 100) / 100);
     } catch (error) {
@@ -1097,11 +1097,12 @@ export default function App() {
       await refresh();
     }
   };
-  const deleteSale = async (sale: Sale, customerBarcode: string) => {
+  const deleteSale = async (sale: Sale, employeeBarcode: string) => {
     try {
-      await window.gestionale.deleteSale(sale.id, customerBarcode);
+      await window.gestionale.deleteSale(sale.id, employeeBarcode);
       await refresh();
       setSaleDialog(null);
+      setSaleEmployeeBarcode('');
       notify('Vendita eliminata.');
     } catch (error) {
       notify(errorText(error));
@@ -1725,11 +1726,13 @@ export default function App() {
       {section === 'sale-management' && <div className="page-content sale-management-page">
         <div className="sale-management-search"><SearchInput value={saleManagementSearch} onChange={setSaleManagementSearch} placeholder="Inserisci o scansiona il numero dello scontrino…" numericOnly /></div>
         {saleMatch ? <section className="panel sale-found">
-          <div className="sale-found-heading"><div><strong>Scontrino #{saleMatch.receipt_no}</strong><span>{dateTime.format(new Date(saleMatch.created_at))}</span></div><strong>{money.format(saleMatch.total)}</strong></div>
-          <div className="sale-found-items">{saleMatch.items.map((item, index) => <span key={`${item.code}-${index}`}>{item.name} · {quantityFormat.format(item.quantity)} × {money.format(item.unit_price)}</span>)}</div>
+          <div className="sale-found-shop">{data.settings.shop_name}</div>
+          <div className="sale-found-meta"><span>{dateTime.format(new Date(saleMatch.created_at))}</span><span>Scontrino #{saleMatch.receipt_no}</span></div>
+          <div className="sale-found-items">{saleMatch.items.map((item, index) => <div className="sale-found-item" key={`${item.code}-${index}`}><span>{item.name}<small>{quantityFormat.format(item.quantity)} × {money.format(item.unit_price)}</small></span><strong>{money.format(item.quantity * item.unit_price)}</strong></div>)}</div>
+          <div className="sale-found-total"><strong>TOTALE</strong><strong>{money.format(saleMatch.total)}</strong></div>
           <div className="sale-found-actions">
-            <button className="button button-outline" onClick={() => { setSaleCustomerBarcode(''); setSaleAction({ sale: saleMatch, action: 'edit' }); }}><Pencil size={15} /> Modifica scontrino</button>
-            <button className="button button-danger" onClick={() => { setSaleCustomerBarcode(''); setSaleAction({ sale: saleMatch, action: 'delete' }); }}><Trash2 size={15} /> Elimina scontrino</button>
+            <button className="button button-danger" onClick={() => { setSaleEmployeeBarcode(''); setSaleAction({ sale: saleMatch, action: 'delete' }); }}><Trash2 size={15} /> Elimina vendita</button>
+            <button className="button button-primary" onClick={() => { setSaleEmployeeBarcode(''); setSaleAction({ sale: saleMatch, action: 'edit' }); }}><Pencil size={15} /> Modifica vendita</button>
           </div>
         </section> : saleManagementSearch.trim() ? <p className="sale-not-found">Nessuno scontrino trovato con questo numero.</p> : null}
       </div>}
@@ -1909,12 +1912,12 @@ export default function App() {
     </div></Modal>}
     {receipt && <Modal title={`Scontrino #${receipt.receipt_no}`} close={() => setReceipt(null)}><div className="receipt-print" id="receipt-print"><div className="receipt-shop">{data.settings.shop_name}</div><div className="receipt-spacer" /><div className="receipt-datetime"><span>{receiptDate.format(new Date(receipt.created_at))}</span><span>{receiptTime.format(new Date(receipt.created_at))}</span></div><div>Numero scontrino: {receipt.receipt_no}</div><div className="receipt-dash" /><div className="receipt-head"><span>Articolo</span><span>Qtà</span><span>Prezzo</span></div>{receipt.items.map((item, index) => <div className="receipt-item" key={`${item.code}-${index}`}><span>{item.name}</span><span>{receiptQuantity.format(item.quantity)}{item.unit === 'KG' ? ' kg' : item.unit === 'LITRO' ? ' L' : ''}</span><span>{money.format(item.unit_price * item.quantity)}</span></div>)}<div className="receipt-dash" /><div className="receipt-total"><strong>TOTALE</strong><strong>{money.format(receipt.total)}</strong></div><div className="receipt-payment-savings"><span>Pagamento: {receipt.payment_method}</span>{receipt.discount > 0 && <span>Risparmio: {money.format(receipt.discount)}</span>}</div><div className="receipt-dash" /><div className="receipt-spacer" /><svg id="receipt-barcode" /><div className="receipt-spacer" /><div className="receipt-thanks">Grazie per averci scelto!</div></div><div className="receipt-actions"><button className="button button-primary full-width" onClick={printReceipt}><Printer size={16} /> Stampa scontrino</button></div></Modal>}
     {saleAdjustment !== null && <Modal title="Modifica vendita completata" close={() => setSaleAdjustment(null)}><div className="sale-adjustment-message"><p>{saleAdjustment > 0 ? `Il cliente deve pagare ancora ${money.format(saleAdjustment)}.` : saleAdjustment < 0 ? `Devi rimborsare al cliente ${money.format(Math.abs(saleAdjustment))}.` : 'Non è necessario effettuare un rimborso o un pagamento aggiuntivo.'}</p><button className="button button-primary" onClick={() => setSaleAdjustment(null)}>Ok</button></div></Modal>}
-    {saleAction && <Modal title={`Verifica cliente · scontrino #${saleAction.sale.receipt_no}`} close={() => { setSaleAction(null); setSaleCustomerBarcode(''); }}><form className="sale-authorization" onSubmit={(event) => void authorizeSaleAction(event)}>
-      <p>Scansiona o inserisci il barcode della tessera cliente per {saleAction.action === 'edit' ? 'modificare' : 'eliminare'} questo scontrino.</p>
-      <Field label="Barcode cliente" value={saleCustomerBarcode} onChange={(event) => setSaleCustomerBarcode(event.target.value.trim())} autoFocus required />
-      <div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setSaleAction(null); setSaleCustomerBarcode(''); }}>Annulla</button><button className="button button-primary" disabled={!saleCustomerBarcode.trim()}><Check size={15} /> Verifica e prosegui</button></div>
+    {saleAction && <Modal title={`Verifica dipendente · scontrino #${saleAction.sale.receipt_no}`} close={() => { setSaleAction(null); setSaleEmployeeBarcode(''); }}><form className="sale-authorization" onSubmit={(event) => { event.preventDefault(); void authorizeSaleAction(); }}>
+      <p>Scansiona o inserisci il barcode di riconoscimento del dipendente per {saleAction.action === 'edit' ? 'modificare' : 'eliminare'} questo scontrino.</p>
+      <Field label="Barcode dipendente" value={saleEmployeeBarcode} onChange={(event) => setSaleEmployeeBarcode(event.target.value.trim())} autoFocus required />
+      <div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setSaleAction(null); setSaleEmployeeBarcode(''); }}>Annulla</button><button className="button button-primary" disabled={!saleEmployeeBarcode.trim()}><Check size={15} /> Verifica e prosegui</button></div>
     </form></Modal>}
-    {saleDialog && <Modal title={`Vendita #${saleDialog.receipt_no}`} close={() => { setSaleDialog(null); setSaleCustomerBarcode(''); }} wide><div className="sale-edit">
+    {saleDialog && <Modal title={`Vendita #${saleDialog.receipt_no}`} close={() => { setSaleDialog(null); setSaleEmployeeBarcode(''); }} wide><div className="sale-edit">
       <div className="sale-edit-fields">
         <SelectField label="Metodo di pagamento" value={saleDialog.payment_method} onChange={(value) => setSaleDialog({ ...saleDialog, payment_method: value })} options={['Carta', 'Contanti', 'Bancomat', 'Buono']} />
         <div className="sale-discount-fields"><Field label="Sconto (%)" type="number" min="0" max="100" step="0.01" value={saleDiscountPercentage} onChange={(e) => changeSaleDiscount(Number(e.target.value))} /><Field label="Sconto (€)" type="number" value={saleDialog.discount.toFixed(2)} readOnly /></div>
@@ -1925,7 +1928,7 @@ export default function App() {
       <div className="edit-item-list"><div className="edit-list-head"><span>Articolo</span><span>Quantità</span><span>Prezzo</span><span></span></div>{saleDialog.items.map((item, index) => <div className="edit-item" key={`${item.product_id}-${index}`}><span>{item.name}</span><input aria-label={`Quantità ${item.name}`} type="number" min="0" step={item.unit === 'PEZZO' || !item.unit ? '1' : '0.1'} value={item.quantity} onChange={(e) => changeSaleQuantity(index, Number(e.target.value))} /><span>{money.format(item.unit_price)} / {item.unit ?? 'PEZZO'}</span><button className="icon-button small" type="button" title="Rimuovi articolo dalla vendita" aria-label={`Rimuovi ${item.name} dalla vendita`} onClick={() => changeSaleQuantity(index, 0)}><Trash2 size={15} /></button></div>)}</div>
       <div className="sale-edit-total"><span>Sconto in euro</span><strong>{money.format(saleDialog.discount)}</strong></div>
       <div className="sale-edit-total"><span>Nuovo totale</span><strong>{money.format(Math.max(0, saleDialog.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0) - saleDialog.discount))}</strong></div>
-      <div className="sale-edit-actions"><button className="button button-danger" onClick={() => { setSaleAction({ sale: saleDialog, action: 'delete' }); setSaleCustomerBarcode(''); setSaleDialog(null); }}><Trash2 size={15} /> Elimina scontrino</button><button className="button button-primary" onClick={() => void updateSale()}><Check size={15} /> Salva modifiche</button></div>
+      <div className="sale-edit-actions"><button className="button button-danger" onClick={() => { setSaleAction({ sale: saleDialog, action: 'delete' }); setSaleEmployeeBarcode(''); setSaleDialog(null); }}><Trash2 size={15} /> Elimina scontrino</button><button className="button button-primary" onClick={() => void updateSale()}><Check size={15} /> Salva modifiche</button></div>
     </div></Modal>}
     {saleAddOpen && <div className="drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSaleAddOpen(false); }}><aside className="detail-drawer sale-add-drawer"><header className="drawer-header"><div><p className="eyebrow">MODIFICA VENDITA</p><h2>Aggiungi articoli</h2></div><button className="icon-button" onClick={() => setSaleAddOpen(false)} aria-label="Chiudi"><X size={18} /></button></header><div className="sale-add-content"><SearchInput value={saleProductSearch} onChange={setSaleProductSearch} placeholder="Cerca articolo o codice…" /><div className="sale-add-products">{availableSaleProducts.filter((product) => product.name.toLowerCase().includes(saleProductSearch.toLowerCase()) || product.code.includes(saleProductSearch)).map((product) => { const selected = saleCart.find((item) => item.product_id === product.id); return <button className={`sale-add-product${selected ? ' selected' : ''}`} key={product.id} onClick={() => addProductToSaleCart(product)}><span><strong>{product.name}</strong><small>{product.code} · {product.stock} {product.unit ?? 'PEZZO'} disponibili</small></span><span>{money.format(product.sale_price)} / {product.unit ?? 'PEZZO'}<b>{selected ? ` · ${selected.quantity}` : ''}</b></span></button>; })}</div><details className="sale-add-cart"><summary><strong>Carrello · {saleCart.length}</strong></summary>{saleCart.map((item) => <span key={item.product_id}>{item.name} · {item.quantity} {item.unit} <b>{money.format(item.quantity * item.unit_price)}</b></span>)}</details><button className="button button-primary full-width sale-add-confirm" disabled={!saleCart.length} onClick={addProductToSale}><ShoppingCart size={16} /> Conferma l'aggiunta</button></div></aside></div>}
     {camera && <CameraScanner close={() => setCamera(false)} scan={scanCameraCode} />}
