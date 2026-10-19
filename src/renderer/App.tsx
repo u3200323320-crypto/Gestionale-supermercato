@@ -28,7 +28,7 @@ const appThemes = [
   { id: 'green', label: 'Verde', color: '#72bf6a' },
   { id: 'blue', label: 'Blu', color: '#1a8ae5' },
   { id: 'purple', label: 'Viola', color: '#8b74a6' },
-  { id: 'orange', label: 'Arancione', color: '#ff6242' },
+  { id: 'orange', label: 'Arancione', color: '#F3500A' },
 ] as const;
 type AppTheme = typeof appThemes[number]['id'];
 type PromotionMinimum = 'none' | 'spend' | 'kilograms' | 'pieces' | 'liters';
@@ -81,7 +81,7 @@ function newEmployeeDraft(employees: Employee[]): EmployeeInput {
     let code = '';
     do {
       window.crypto.getRandomValues(values);
-      code = `DIP-${String(values[0] % 100_000_000).padStart(8, '0')}`;
+      code = `DIP${String(values[0] % 100_000_000).padStart(8, '0')}`;
     } while (usedRecognitionCodes.has(code));
     return code;
   };
@@ -910,8 +910,9 @@ export default function App() {
   };
   const handleScannedCode = (code: string) => {
     const normalized = code.trim();
-    if (!normalized || !data?.settings.barcode_scanner_enabled) return;
-    if (!data.settings.barcode_scanner_detected) {
+    const saleAuthorizationScan = section === 'sale-management' && saleAction !== null;
+    if (!data || !normalized || (!data.settings.barcode_scanner_enabled && !saleAuthorizationScan)) return;
+    if (data.settings.barcode_scanner_enabled && !data.settings.barcode_scanner_detected) {
       setData((current) => current ? { ...current, settings: { ...current.settings, barcode_scanner_detected: true } } : current);
       void window.gestionale.saveSetting('barcode_scanner_detected', 'true').catch((error: unknown) => notify(errorText(error)));
     }
@@ -939,7 +940,9 @@ export default function App() {
   };
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!['cash', 'inventory', 'sales', 'stock-movement', 'sale-management', 'cards-list'].includes(section) || !data?.settings.barcode_scanner_enabled) return;
+      const saleAuthorizationScan = section === 'sale-management' && saleAction !== null;
+      if (!['cash', 'inventory', 'sales', 'stock-movement', 'sale-management', 'cards-list'].includes(section)
+        || (!data?.settings.barcode_scanner_enabled && !saleAuthorizationScan)) return;
       const now = performance.now();
       const sequence = scannerSequence.current;
       if (event.key === 'Enter') {
@@ -1915,7 +1918,7 @@ export default function App() {
     {saleAction && <Modal title={`Verifica dipendente · scontrino #${saleAction.sale.receipt_no}`} close={() => { setSaleAction(null); setSaleEmployeeBarcode(''); }}><form className="sale-authorization" onSubmit={(event) => { event.preventDefault(); void authorizeSaleAction(); }}>
       <p>Scansiona o inserisci il barcode di riconoscimento del dipendente per {saleAction.action === 'edit' ? 'modificare' : 'eliminare'} questo scontrino.</p>
       <Field label="Barcode dipendente" value={saleEmployeeBarcode} onChange={(event) => setSaleEmployeeBarcode(event.target.value.trim())} autoFocus required />
-      <div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setSaleAction(null); setSaleEmployeeBarcode(''); }}>Annulla</button><button className="button button-primary" disabled={!saleEmployeeBarcode.trim()}><Check size={15} /> Verifica e prosegui</button></div>
+      <div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setSaleAction(null); setSaleEmployeeBarcode(''); }}>Annulla</button><span className="sale-authorization-hint">La scansione del badge verifica e apre automaticamente la vendita.</span></div>
     </form></Modal>}
     {saleDialog && <Modal title={`Vendita #${saleDialog.receipt_no}`} close={() => { setSaleDialog(null); setSaleEmployeeBarcode(''); }} wide><div className="sale-edit">
       <div className="sale-edit-fields">
@@ -1928,7 +1931,7 @@ export default function App() {
       <div className="edit-item-list"><div className="edit-list-head"><span>Articolo</span><span>Quantità</span><span>Prezzo</span><span></span></div>{saleDialog.items.map((item, index) => <div className="edit-item" key={`${item.product_id}-${index}`}><span>{item.name}</span><input aria-label={`Quantità ${item.name}`} type="number" min="0" step={item.unit === 'PEZZO' || !item.unit ? '1' : '0.1'} value={item.quantity} onChange={(e) => changeSaleQuantity(index, Number(e.target.value))} /><span>{money.format(item.unit_price)} / {item.unit ?? 'PEZZO'}</span><button className="icon-button small" type="button" title="Rimuovi articolo dalla vendita" aria-label={`Rimuovi ${item.name} dalla vendita`} onClick={() => changeSaleQuantity(index, 0)}><Trash2 size={15} /></button></div>)}</div>
       <div className="sale-edit-total"><span>Sconto in euro</span><strong>{money.format(saleDialog.discount)}</strong></div>
       <div className="sale-edit-total"><span>Nuovo totale</span><strong>{money.format(Math.max(0, saleDialog.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0) - saleDialog.discount))}</strong></div>
-      <div className="sale-edit-actions"><button className="button button-danger" onClick={() => { setSaleAction({ sale: saleDialog, action: 'delete' }); setSaleEmployeeBarcode(''); setSaleDialog(null); }}><Trash2 size={15} /> Elimina scontrino</button><button className="button button-primary" onClick={() => void updateSale()}><Check size={15} /> Salva modifiche</button></div>
+      <div className="sale-edit-actions"><button className="button button-primary" onClick={() => void updateSale()}><Check size={15} /> Salva modifiche</button></div>
     </div></Modal>}
     {saleAddOpen && <div className="drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSaleAddOpen(false); }}><aside className="detail-drawer sale-add-drawer"><header className="drawer-header"><div><p className="eyebrow">MODIFICA VENDITA</p><h2>Aggiungi articoli</h2></div><button className="icon-button" onClick={() => setSaleAddOpen(false)} aria-label="Chiudi"><X size={18} /></button></header><div className="sale-add-content"><SearchInput value={saleProductSearch} onChange={setSaleProductSearch} placeholder="Cerca articolo o codice…" /><div className="sale-add-products">{availableSaleProducts.filter((product) => product.name.toLowerCase().includes(saleProductSearch.toLowerCase()) || product.code.includes(saleProductSearch)).map((product) => { const selected = saleCart.find((item) => item.product_id === product.id); return <button className={`sale-add-product${selected ? ' selected' : ''}`} key={product.id} onClick={() => addProductToSaleCart(product)}><span><strong>{product.name}</strong><small>{product.code} · {product.stock} {product.unit ?? 'PEZZO'} disponibili</small></span><span>{money.format(product.sale_price)} / {product.unit ?? 'PEZZO'}<b>{selected ? ` · ${selected.quantity}` : ''}</b></span></button>; })}</div><details className="sale-add-cart"><summary><strong>Carrello · {saleCart.length}</strong></summary>{saleCart.map((item) => <span key={item.product_id}>{item.name} · {item.quantity} {item.unit} <b>{money.format(item.quantity * item.unit_price)}</b></span>)}</details><button className="button button-primary full-width sale-add-confirm" disabled={!saleCart.length} onClick={addProductToSale}><ShoppingCart size={16} /> Conferma l'aggiunta</button></div></aside></div>}
     {camera && <CameraScanner close={() => setCamera(false)} scan={scanCameraCode} />}

@@ -231,6 +231,10 @@ function initDatabase(): void {
   if (!employeeColumns.some((column) => column.name === 'payment_method')) {
     database.exec("ALTER TABLE employees ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'Contanti'");
   }
+  database.exec(`UPDATE employees
+    SET recognition_code = REPLACE(recognition_code, 'DIP-', 'DIP'),
+        barcode = REPLACE(recognition_code, 'DIP-', 'DIP')
+    WHERE recognition_code LIKE 'DIP-%'`);
   database.exec('UPDATE employees SET barcode = recognition_code WHERE barcode != recognition_code');
   const stockMovementColumns = database.prepare('PRAGMA table_info(stock_movements)').all() as Array<{ name: string }>;
   if (!stockMovementColumns.some((column) => column.name === 'person')) {
@@ -829,7 +833,7 @@ app.whenReady().then(() => {
       || employee.initial_password.length < 8 || employee.initial_password.length > 128
       || (employee.payment_method === 'Bonifico' && !/^[A-Z0-9 ]{15,34}$/i.test(employee.iban))
       || (employee.payment_method === 'Contanti' && employee.iban !== '')
-      || !/^DIP-\d{8}$/.test(employee.recognition_code) || employee.barcode !== employee.recognition_code
+      || !/^DIP\d{8}$/.test(employee.recognition_code) || employee.barcode !== employee.recognition_code
       || !isDataUrl(employee.photo_data, /^data:image\/(?:png|jpeg|webp);base64,/i, 5 * 1024 * 1024)
       || documentImages.length === 0 || documentImages.length > 20
       || documentImages.some((image) => typeof image !== 'string' || !isDataUrl(image, /^data:image\/(?:png|jpeg|webp);base64,/i, 5 * 1024 * 1024))

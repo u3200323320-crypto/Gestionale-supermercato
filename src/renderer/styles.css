@@ -32,10 +32,10 @@
   --green-block: #c7b4dc;
 }
 [data-theme='orange'] {
-  --green: #ff6242;
-  --green-dark: #a93824;
-  --green-soft: #ffc4b6;
-  --green-block: #ffad99;
+  --green: #F3500A;
+  --green-dark: #a33306;
+  --green-soft: #f9c3a8;
+  --green-block: #f5b28b;
 }
 
 * { box-sizing: border-box; }
