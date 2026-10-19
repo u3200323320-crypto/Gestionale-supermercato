@@ -947,7 +947,10 @@ export default function App() {
       const sequence = scannerSequence.current;
       if (event.key === 'Enter') {
         const averageInterval = sequence.value.length > 1 ? (now - sequence.startedAt) / (sequence.value.length - 1) : Infinity;
-        if (sequence.value.length >= 4 && now - sequence.startedAt <= 600 && averageInterval <= 75) {
+        const completeBarcode = saleAuthorizationScan
+          ? sequence.value.length >= 4
+          : sequence.value.length >= 4 && now - sequence.startedAt <= 600 && averageInterval <= 75;
+        if (completeBarcode) {
           event.preventDefault();
           event.stopPropagation();
           handleScannedCode(sequence.value);
