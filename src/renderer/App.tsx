@@ -9,19 +9,13 @@ import JsBarcode from 'jsbarcode';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
 import homeBanner from './home-banner.svg';
-import { translateItalianText } from './arabic';
 import type { AppState, Customer, Employee, EmployeeInput, Expense, LoyaltyCard, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, Sale, SaleItem, Section } from '../shared/types';
 
-const money = new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EUR' });
-const dateTime = new Intl.DateTimeFormat('ar-EG', { dateStyle: 'short', timeStyle: 'short' });
-const receiptDate = new Intl.DateTimeFormat('ar-EG', { dateStyle: 'short' });
-const receiptTime = new Intl.DateTimeFormat('ar-EG', { timeStyle: 'short' });
-const quantityFormat = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 3 });
-const pdfMoney = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
-const pdfDateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' });
-const pdfDate = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short' });
-const pdfQuantity = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 3 });
-const csvDateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' });
+const money = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
+const dateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' });
+const receiptDate = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short' });
+const receiptTime = new Intl.DateTimeFormat('it-IT', { timeStyle: 'short' });
+const quantityFormat = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 3 });
 const receiptQuantity = quantityFormat;
 const roundQuantity = (quantity: number) => Math.round((quantity + Number.EPSILON) * 1000) / 1000;
 const colors = ['var(--green)', '#c17e4f', '#658499', '#a9aa64', '#8a7461', '#609085'];
@@ -177,7 +171,6 @@ function BarcodeImage({ value }: { value: string }) {
 }
 
 function EmployeeForm({ initial, save, cancel, notify }: { initial: EmployeeInput; save: (employee: EmployeeInput) => Promise<void>; cancel: () => void; notify: (message: string) => void }) {
-  const editing = initial.id !== undefined;
   const [employee, setEmployee] = useState(initial);
   const [saving, setSaving] = useState(false);
   const documentImages = employeeDocumentImages(employee.documents_data);
@@ -259,7 +252,7 @@ function EmployeeForm({ initial, save, cancel, notify }: { initial: EmployeeInpu
       <label className="field"><span>Sesso</span><select value={employee.gender} onChange={(event) => setEmployee({ ...employee, gender: event.target.value })} required><option value="">Seleziona sesso</option><option>Donna</option><option>Uomo</option><option>Altro</option></select></label>
       <Field fieldClassName="employee-wide-field" label="Indirizzo di casa" value={employee.home_address} onChange={(event) => setEmployee({ ...employee, home_address: event.target.value })} required />
       <Field label="Indirizzo email" type="email" value={employee.email} onChange={(event) => setEmployee({ ...employee, email: event.target.value })} required />
-      <Field label={editing ? 'Nuova password (opzionale)' : 'Password iniziale'} type="password" autoComplete="new-password" minLength={8} value={employee.initial_password ?? ''} onChange={(event) => setEmployee({ ...employee, initial_password: event.target.value })} required={!editing} />
+      <Field label="Password iniziale" type="password" autoComplete="new-password" minLength={8} value={employee.initial_password} onChange={(event) => setEmployee({ ...employee, initial_password: event.target.value })} required />
       <Field label="Numero di telefono" type="tel" value={employee.phone} onChange={(event) => setEmployee({ ...employee, phone: event.target.value })} required />
       <Field label="Sede Operativa" value={employee.operational_site} onChange={(event) => setEmployee({ ...employee, operational_site: event.target.value })} required />
       <Field label="Ruolo" value={employee.role} onChange={(event) => setEmployee({ ...employee, role: event.target.value })} required />
@@ -270,7 +263,7 @@ function EmployeeForm({ initial, save, cancel, notify }: { initial: EmployeeInpu
       <Field label="Codice riconoscimento" value={employee.recognition_code} readOnly />
       <label className="field employee-barcode-field"><span>Barcode di riconoscimento</span>      <div className="employee-barcode"><BarcodeImage value={employee.recognition_code} /><small>{employee.recognition_code}</small></div></label>
     </div>
-    <div className="form-actions"><button className="button button-quiet" type="button" onClick={cancel}>Annulla</button><button className="button button-primary" disabled={saving}><Check size={16} /> {editing ? 'Salva modifiche' : 'Crea dipendente'}</button></div>
+    <div className="form-actions"><button className="button button-quiet" type="button" onClick={cancel}>Annulla</button><button className="button button-primary" disabled={saving}><Check size={16} /> Crea dipendente</button></div>
   </form>;
 }
 
@@ -402,66 +395,16 @@ export default function App() {
   const [automaticPromotionId, setAutomaticPromotionId] = useState<number | null | undefined>(undefined);
   const scannerSequence = useRef({ value: '', startedAt: 0, lastAt: 0 });
 
-  useEffect(() => {
-    const root = document.getElementById('root');
-    if (!root) return;
-    const documentElement = document.documentElement;
-    documentElement.lang = 'ar';
-    documentElement.dir = 'rtl';
-    document.title = 'إدارة المتجر';
-    const attributes = ['aria-label', 'alt', 'title', 'placeholder'] as const;
-    const translateNode = (node: Node) => {
-      if (node.nodeType === Node.TEXT_NODE) {
-        const parent = node.parentElement;
-        if (parent?.closest('option')) {
-          const option = parent.closest('option')!;
-          if (!option.hasAttribute('value')) option.setAttribute('value', option.value);
-        }
-        const text = node.textContent ?? '';
-        const translated = translateItalianText(text);
-        if (translated !== text) node.textContent = translated;
-        return;
-      }
-      if (node.nodeType !== Node.ELEMENT_NODE) return;
-      const element = node as Element;
-      for (const attribute of attributes) {
-        const value = element.getAttribute(attribute);
-        if (value) {
-          const translated = translateItalianText(value);
-          if (translated !== value) element.setAttribute(attribute, translated);
-        }
-      }
-      for (const child of Array.from(node.childNodes)) translateNode(child);
-    };
-    translateNode(root);
-    const observer = new MutationObserver((records) => {
-      for (const record of records) {
-        if (record.type === 'characterData') translateNode(record.target);
-        else if (record.type === 'attributes') translateNode(record.target);
-        else for (const node of Array.from(record.addedNodes)) translateNode(node);
-      }
-    });
-    observer.observe(root, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: [...attributes] });
-    return () => observer.disconnect();
-  }, []);
-
   const refresh = async () => { const next = await window.gestionale.getState(); setData(next); setShopName(next.settings.shop_name); setArchiveFolder(next.settings.archive_folder); return next; };
   const notify = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 3600); };
   const navigateTo = (target: Section) => { setSection(target); setOpenSidebarMenu(null); };
   const saveEmployee = async (employee: EmployeeInput) => {
-    const editing = employee.id !== undefined;
     await window.gestionale.saveEmployee(employee);
     await refresh();
     setSection('employees');
     setOpenSidebarMenu(null);
     setEmployeeDraft(null);
-    setEmployeeDetails(null);
-    notify(editing ? 'Dipendente aggiornato correttamente.' : 'Dipendente creato correttamente.');
-  };
-  const editEmployee = (employee: Employee) => {
-    setEmployeeDraft({ ...employee, id: employee.id, initial_password: '' });
-    setEmployeeDetails(null);
-    navigateTo('employee-create');
+    notify('Dipendente creato correttamente.');
   };
   const saveExpense = async (event: FormEvent) => {
     event.preventDefault();
@@ -498,7 +441,7 @@ export default function App() {
     }
   };
   const deleteExpense = async (expense: Expense) => {
-    if (!window.confirm(translateItalianText(`Eliminare la spesa "${expense.description}"?`))) return;
+    if (!window.confirm(`Eliminare la spesa "${expense.description}"?`)) return;
     try {
       await window.gestionale.deleteExpense(expense.id);
       await refresh();
@@ -508,7 +451,7 @@ export default function App() {
     }
   };
   const deleteLoyaltyCard = async (card: LoyaltyCard) => {
-    if (!window.confirm(translateItalianText(`Eliminare la tessera ${card.code}?`))) return;
+    if (!window.confirm(`Eliminare la tessera ${card.code}?`)) return;
     try {
       await window.gestionale.deleteLoyaltyCard(card.id);
       await refresh();
@@ -518,7 +461,7 @@ export default function App() {
     }
   };
   const deleteProduct = async (product: Product) => {
-    if (!window.confirm(translateItalianText(`Eliminare l'articolo "${product.name}"?`))) return;
+    if (!window.confirm(`Eliminare l'articolo "${product.name}"?`)) return;
     try {
       await window.gestionale.deleteProduct(product.id);
       await refresh();
@@ -530,7 +473,7 @@ export default function App() {
     }
   };
   const disposeExpiredProduct = async (product: Product) => {
-    if (!window.confirm(translateItalianText(`Confermi lo smaltimento di ${product.name}? La giacenza verrà scaricata.`))) return;
+    if (!window.confirm(`Confermi lo smaltimento di ${product.name}? La giacenza verrà scaricata.`)) return;
     try {
       await window.gestionale.disposeExpiredProduct(product.id);
       await refresh();
@@ -539,7 +482,7 @@ export default function App() {
       notify(errorText(error));
     }
   };
-  const createEmployeePdf = async (employee: Employee, doc = new jsPDF({ orientation: 'portrait' }), addPage = false) => {
+  const createEmployeePdf = async (employee: Employee, doc = new jsPDF(), addPage = false) => {
     if (addPage) doc.addPage();
     const photo = await imageAsPng(employee.photo_data);
     const documents = await Promise.all(employeeDocumentImages(employee.documents_data).map(imageAsPng));
@@ -548,7 +491,7 @@ export default function App() {
     doc.text('Scheda dipendente', 14, 18);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text(`${data?.settings.shop_name ?? ''} · ${pdfDate.format(new Date())}`, 14, 25);
+    doc.text(`${data?.settings.shop_name ?? ''} · ${receiptDate.format(new Date())}`, 14, 25);
     doc.addImage(photo, 'PNG', 154, 32, 42, 42);
     const details: [string, string][] = [
       ['Nome e cognome', `${employee.first_name} ${employee.last_name}`],
@@ -560,23 +503,16 @@ export default function App() {
       ['Sede operativa', employee.operational_site],
       ['Ruolo', employee.role],
       ['Turno', employee.shift],
-      ['Stipendio', pdfMoney.format(employee.salary)],
+      ['Stipendio', money.format(employee.salary)],
       ['Metodo di pagamento', employee.payment_method],
       ['IBAN', employee.payment_method === 'Bonifico' ? employee.iban : '—'],
       ['Codice riconoscimento', employee.recognition_code],
       ['Barcode', employee.recognition_code],
       ['Contratto', employee.contract_pdf_data ? 'PDF allegato' : 'Non presente'],
-      ['Data di registrazione', pdfDateTime.format(new Date(employee.created_at))],
+      ['Data di registrazione', dateTime.format(new Date(employee.created_at))],
     ];
     let y = 38;
     details.forEach(([label, value]) => {
-      if (label === 'Barcode') {
-        doc.setFont('helvetica', 'bold');
-        doc.text(`${label}:`, 14, y);
-        doc.addImage(barcodePng(employee.recognition_code), 'PNG', 58, y - 6, 48, 12);
-        y += 14;
-        return;
-      }
       const wrappedValue = doc.splitTextToSize(value || '—', 126);
       doc.setFont('helvetica', 'bold');
       doc.text(`${label}:`, 14, y);
@@ -586,15 +522,14 @@ export default function App() {
     });
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
-    const documentsTop = Math.max(151, y + 4);
-    doc.text('Foto documenti', 14, documentsTop);
+    doc.text('Foto documenti', 14, 151);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    if (!documents.length) doc.text('Nessuna immagine allegata', 14, documentsTop + 9);
+    if (!documents.length) doc.text('Nessuna immagine allegata', 14, 160);
     documents.slice(0, 20).forEach((image, index) => {
-      const column = index % 5;
-      const row = Math.floor(index / 5);
-      doc.addImage(image, 'PNG', 14 + column * 36, documentsTop + 6 + row * 23, 32, 20, undefined, 'FAST');
+      const column = index % 4;
+      const row = Math.floor(index / 4);
+      doc.addImage(image, 'PNG', 14 + column * 46, 157 + row * 26, 42, 22, undefined, 'FAST');
     });
     return doc;
   };
@@ -611,11 +546,11 @@ export default function App() {
     doc.text(`Dipendente: ${displayName}`, 14, 54);
     doc.text(`Ruolo: ${employee.role}`, 14, 63);
     doc.text(`Mese di competenza: ${month}`, 14, 72);
-    doc.text(`Data pagamento: ${pdfDate.format(new Date(`${paymentDate}T00:00:00`))}`, 14, 81);
+    doc.text(`Data pagamento: ${receiptDate.format(new Date(`${paymentDate}T00:00:00`))}`, 14, 81);
     doc.text(`Metodo: ${employee.payment_method}`, 14, 90);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(15);
-    doc.text(`Importo: ${pdfMoney.format(amount)}`, 14, 106);
+    doc.text(`Importo: ${money.format(amount)}`, 14, 106);
     doc.setDrawColor(90, 100, 93);
     doc.rect(14, 230, 82, 38);
     doc.setFont('helvetica', 'normal');
@@ -656,7 +591,7 @@ export default function App() {
       return;
     }
     const monthDate = new Date(`${payrollMonth}-01T00:00:00`);
-    const monthName = monthDate.toLocaleDateString('ar-EG', { month: 'long' });
+    const monthName = monthDate.toLocaleDateString('it-IT', { month: 'long' });
     const folderName = `Stipendi ${monthName.charAt(0).toLocaleUpperCase('it-IT') + monthName.slice(1)} ${monthDate.getFullYear()}`;
     const zip = new JSZip();
     const folder = zip.folder(folderName);
@@ -902,7 +837,7 @@ export default function App() {
     }
   };
   const deleteVoucherBatch = async (batch: AppState['voucherBatches'][number]) => {
-    if (!window.confirm(translateItalianText(`Eliminare il gruppo ${batch.id} e tutti i suoi buoni non utilizzati?`))) return;
+    if (!window.confirm(`Eliminare il gruppo ${batch.id} e tutti i suoi buoni non utilizzati?`)) return;
     try {
       await window.gestionale.deleteVoucherBatch(batch.id);
       await refresh();
@@ -1264,7 +1199,7 @@ export default function App() {
     ...(promotionDuration === 'Personalizzata' ? {} : { ends_at: promotionEndDate(startsAt, promotionDuration) }),
   }));
   const deletePromotion = async (offer: Promotion) => {
-    if (!window.confirm(translateItalianText(`Eliminare l'offerta "${offer.name}"?`))) return;
+    if (!window.confirm(`Eliminare l'offerta "${offer.name}"?`)) return;
     try {
       await window.gestionale.deletePromotion(offer.id);
       await refresh();
@@ -1290,22 +1225,22 @@ export default function App() {
     doc.text(data.settings.shop_name, 14, 16);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Report vendite · Esportato il ${pdfDate.format(new Date())}${reportPeriod}`, 14, 26);
+    doc.text(`Report vendite · Esportato il ${receiptDate.format(new Date())}${reportPeriod}`, 14, 26);
     doc.setTextColor(41, 51, 46);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.text(`Vendite: ${reportSales.length}`, 14, 45);
-    doc.text(`Lordo: ${pdfMoney.format(gross)}`, 14, 52);
-    doc.text(`Costo merce: ${pdfMoney.format(cost)}`, 77, 52);
-    doc.text(`Profitto: ${pdfMoney.format(net - cost)}`, 145, 52);
+    doc.text(`Lordo: ${money.format(gross)}`, 14, 52);
+    doc.text(`Costo merce: ${money.format(cost)}`, 77, 52);
+    doc.text(`Profitto: ${money.format(net - cost)}`, 145, 52);
     autoTable(doc, {
       startY: 59,
       head: [['Scontrino', 'Data e ora', 'Articoli', 'Pagamento', 'Prezzo acquisto', 'Prezzo vendita', 'Profitto', 'Sconto', 'Totale']],
       body: reportSales.map((sale) => {
         const purchasePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.purchase_price, 0);
         const salePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-        const items = sale.items.map((item) => `${pdfQuantity.format(item.quantity)} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}`).join(', ');
-        return [sale.receipt_no, pdfDateTime.format(new Date(sale.created_at)), items, sale.payment_method, pdfMoney.format(purchasePrice), pdfMoney.format(salePrice), pdfMoney.format(sale.total - purchasePrice), pdfMoney.format(sale.discount), pdfMoney.format(sale.total)];
+        const items = sale.items.map((item) => `${item.name} × ${quantityFormat.format(item.quantity)}`).join(', ');
+        return [sale.receipt_no, dateTime.format(new Date(sale.created_at)), items, sale.payment_method, money.format(purchasePrice), money.format(salePrice), money.format(sale.total - purchasePrice), money.format(sale.discount), money.format(sale.total)];
       }),
       showHead: 'firstPage',
       theme: 'striped',
@@ -1334,17 +1269,17 @@ export default function App() {
     doc.text(data.settings.shop_name, 14, 16);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text('Report magazzino · Esportato il ' + pdfDate.format(new Date()), 14, 26);
+    doc.text('Report magazzino · Esportato il ' + receiptDate.format(new Date()), 14, 26);
     doc.setTextColor(41, 51, 46);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.text(`Articoli: ${data.products.length}`, 14, 47);
     doc.text(`Sotto soglia: ${lowStockCount}`, 74, 47);
-    doc.text(`Valore acquisto giacenze: ${pdfMoney.format(stockValue)}`, 164, 47);
+    doc.text(`Valore acquisto giacenze: ${money.format(stockValue)}`, 164, 47);
     autoTable(doc, {
       startY: 55,
       head: [['Codice', 'Articolo', 'Categoria', 'Vendita / unità', 'Acquisto / unità', 'Giacenza', 'Soglia minima', 'Scadenza']],
-      body: data.products.map((item) => [item.code, item.name, item.category, pdfMoney.format(item.sale_price), pdfMoney.format(item.purchase_price), `${item.stock} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'}`, String(item.low_stock_threshold), item.expiry_enabled && item.expiry_date ? pdfDate.format(new Date(`${item.expiry_date}T00:00:00`)) : '—']),
+      body: data.products.map((item) => [item.code, item.name, item.category, money.format(item.sale_price), money.format(item.purchase_price), `${item.stock} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'}`, String(item.low_stock_threshold), item.expiry_enabled && item.expiry_date ? receiptDate.format(new Date(`${item.expiry_date}T00:00:00`)) : '—']),
       theme: 'striped',
       styles: { fontSize: 8, cellPadding: 3, textColor: [49, 60, 53], lineColor: [224, 230, 224] },
       headStyles: { fillColor: [56, 104, 78], fontStyle: 'bold' },
@@ -1384,9 +1319,9 @@ export default function App() {
       ['Numero scontrino', 'Data e ora', 'Metodo di pagamento', 'Articoli', 'Quantità totale', 'Totale lordo', 'Sconto', 'Totale netto'],
       ...reportSales.map((sale) => [
         sale.receipt_no,
-        csvDateTime.format(new Date(sale.created_at)),
+        dateTime.format(new Date(sale.created_at)),
         sale.payment_method,
-        sale.items.map((item) => `${csvQuantity.format(item.quantity)} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}`).join(', '),
+        sale.items.map((item) => `${item.name} (${csvQuantity.format(item.quantity)} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'})`).join(', '),
         csvQuantity.format(sale.items.reduce((sum, item) => sum + item.quantity, 0)),
         csvNumber.format(sale.gross_total),
         csvNumber.format(sale.discount),
@@ -1437,7 +1372,7 @@ export default function App() {
     const expenses = balanceExpenses.filter((expense) => expense.expense_date.startsWith(monthKey))
       .reduce((sum, expense) => sum + expense.amount, 0);
     return {
-      mese: month.toLocaleDateString('ar-EG', { month: 'short', year: 'numeric' }),
+      mese: month.toLocaleDateString('it-IT', { month: 'short', year: 'numeric' }),
       vendite: revenue,
       costiMerce: goodsCost,
       speseOperative: expenses,
@@ -1494,9 +1429,9 @@ export default function App() {
       const date = new Date(sale.created_at);
       return date.getFullYear() === month.getFullYear() && date.getMonth() === month.getMonth();
     });
-    return { mese: month.toLocaleDateString('ar-EG', { month: 'short' }), totale: monthSales.reduce((sum, sale) => sum + sale.total, 0) };
+    return { mese: month.toLocaleDateString('it-IT', { month: 'short' }), totale: monthSales.reduce((sum, sale) => sum + sale.total, 0) };
   });
-  const chartDays = Array.from({ length: 7 }, (_, index) => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - 6 + index); const sales = statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()); return { giorno: date.toLocaleDateString('ar-EG', { weekday: 'short' }), totale: sales.reduce((sum, sale) => sum + sale.total, 0) }; });
+  const chartDays = Array.from({ length: 7 }, (_, index) => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - 6 + index); const sales = statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()); return { giorno: date.toLocaleDateString('it-IT', { weekday: 'short' }), totale: sales.reduce((sum, sale) => sum + sale.total, 0) }; });
   const downloadFinancialBalance = (respectTimeFilters: boolean) => {
     if (!data) return;
     const doc = new jsPDF({ orientation: 'landscape' });
@@ -1529,13 +1464,13 @@ export default function App() {
       doc.text(title, 12, 13);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
-      doc.text(`${data.settings.shop_name} · ${periodLabel} · ${pdfDate.format(new Date())}`, 12, 21);
+      doc.text(`${data.settings.shop_name} · ${periodLabel} · ${receiptDate.format(new Date())}`, 12, 21);
     };
     pageHeading('Bilancio gestionale');
     autoTable(doc, {
       startY: 36,
       head: [['Ricavi vendite', 'Costo merce', 'Spese operative', 'Risultato', 'Valore magazzino']],
-      body: [[pdfMoney.format(reportRevenue), pdfMoney.format(reportGoodsCost), pdfMoney.format(reportOperatingExpenses), pdfMoney.format(reportRevenue - reportGoodsCost - reportOperatingExpenses), pdfMoney.format(stockCost)]],
+      body: [[money.format(reportRevenue), money.format(reportGoodsCost), money.format(reportOperatingExpenses), money.format(reportRevenue - reportGoodsCost - reportOperatingExpenses), money.format(stockCost)]],
       theme: 'grid',
       styles: { fontSize: 9, cellPadding: 5, halign: 'center' },
       headStyles: { fillColor: [56, 104, 78] },
@@ -1543,7 +1478,7 @@ export default function App() {
     autoTable(doc, {
       startY: 67,
       head: [['Mese', 'Ricavi', 'Costo merce', 'Spese operative', 'Risultato']],
-      body: reportMonthly.map((month) => [month.month, pdfMoney.format(month.revenue), pdfMoney.format(month.cost), pdfMoney.format(month.expenses), pdfMoney.format(month.result)]),
+      body: reportMonthly.map((month) => [month.month, money.format(month.revenue), money.format(month.cost), money.format(month.expenses), money.format(month.result)]),
       theme: 'striped',
       styles: { fontSize: 8, cellPadding: 3 },
       headStyles: { fillColor: [56, 104, 78] },
@@ -1560,8 +1495,8 @@ export default function App() {
       head: [['Scontrino', 'Data e ora', 'Articoli', 'Costo merce', 'Totale vendita', 'Profitto']],
       body: reportSales.map((sale) => {
         const cost = sale.items.reduce((sum, item) => sum + item.quantity * item.purchase_price, 0);
-        const items = sale.items.map((item) => `${pdfQuantity.format(item.quantity)} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}`).join(', ');
-        return [sale.receipt_no, pdfDateTime.format(new Date(sale.created_at)), items, pdfMoney.format(cost), pdfMoney.format(sale.total), pdfMoney.format(sale.total - cost)];
+        const items = sale.items.map((item) => `${item.name} × ${quantityFormat.format(item.quantity)}`).join(', ');
+        return [sale.receipt_no, dateTime.format(new Date(sale.created_at)), items, money.format(cost), money.format(sale.total), money.format(sale.total - cost)];
       }),
       theme: 'striped',
       styles: { fontSize: 7.5, cellPadding: 2, overflow: 'linebreak' },
@@ -1577,7 +1512,7 @@ export default function App() {
     autoTable(doc, {
       startY: 36,
       head: [['Data', 'Descrizione', 'Categoria', 'Importo']],
-      body: reportExpenses.map((expense) => [expense.expense_date, expense.description, expense.category, pdfMoney.format(expense.amount)]),
+      body: reportExpenses.map((expense) => [expense.expense_date, expense.description, expense.category, money.format(expense.amount)]),
       theme: 'striped',
       styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
       headStyles: { fillColor: [56, 104, 78] },
@@ -1717,7 +1652,7 @@ export default function App() {
     autoTable(doc, {
       startY: 32,
       head: [['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']],
-      body: unsoldProducts.map((product) => [product.name, product.category, `${product.stock} ${product.unit ?? 'PEZZO'}`, pdfMoney.format(product.sale_price)]),
+      body: unsoldProducts.map((product) => [product.name, product.category, `${product.stock} ${product.unit ?? 'PEZZO'}`, money.format(product.sale_price)]),
       styles: { fontSize: 9 },
       headStyles: { fillColor: [56, 104, 78] },
     });
@@ -1767,7 +1702,7 @@ export default function App() {
     </aside>
     <main className="main-content"><header className="topbar"><h1>{sectionLabel}</h1>{data.settings.shop_logo ? <img className="topbar-logo" src={data.settings.shop_logo} alt="Logo negozio" /> : <div className="topbar-logo-fallback"><Store size={19} /></div>}<div className="topbar-right"><div className="today-date">{new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}</div><span className="store-chip"><span className="status-dot" />Operativo</span></div></header>
 
-      {section === 'home' && <div className="page-content home-page"><img className="home-banner" src={homeBanner} alt="Illustrazione di un supermercato con prodotti freschi" /><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length.toLocaleString('ar-EG')} scontrini emessi`} /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyProfit)} detail="Profitto dopo sconti e costo merce" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString('ar-EG')} detail="Pezzi registrati oggi" /></div><section className="expiry-alert expiry-home-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length.toLocaleString('ar-EG')} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length.toLocaleString('ar-EG')} articoli sotto soglia`} action={<button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); setSection('inventory'); }}>Vai al magazzino →</button>} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => setSelectedProduct(p)}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock.toLocaleString('ar-EG')}</td><td>{p.low_stock_threshold.toLocaleString('ar-EG')}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => setSection('sales')}>Tutte le vendite →</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
+      {section === 'home' && <div className="page-content home-page"><img className="home-banner" src={homeBanner} alt="Illustrazione di un supermercato con prodotti freschi" /><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length} scontrini emessi`} /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyProfit)} detail="Profitto dopo sconti e costo merce" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString('it-IT')} detail="Pezzi registrati oggi" /></div><section className="expiry-alert expiry-home-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length} articoli sotto soglia`} action={<button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); setSection('inventory'); }}>Vai al magazzino →</button>} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => setSelectedProduct(p)}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock}</td><td>{p.low_stock_threshold}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => setSection('sales')}>Tutte le vendite →</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
 
       {section === 'inventory' && <div className="page-content">
         <div className="page-toolbar inventory-toolbar"><div><h2>Articoli in magazzino</h2><p>{data.products.length} articoli registrati</p></div><div className="toolbar-actions"><button className="button button-outline" onClick={exportInventoryReport}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-primary" onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct }); }}><Plus size={16} /> Aggiungi nuovo articolo</button></div></div>
@@ -1924,9 +1859,9 @@ export default function App() {
         <div className="page-toolbar"><div><h2>Analisi vendite</h2><p>Andamento e prodotti venduti nel periodo selezionato.</p></div><span className="period-chip">Dati aggiornati in tempo reale</span></div>
         <div className="statistics-periods" role="group" aria-label="Filtra statistiche per periodo">{statisticsPeriods.map((period) => <button key={period} className={`status-filter${statisticsPeriod === period ? ' active' : ''}`} aria-pressed={statisticsPeriod === period} onClick={() => setStatisticsPeriod(period)}>{period}</button>)}</div>
         <section className="panel product-sales-panel"><div className="panel-heading"><div><h3>Prodotti più e meno venduti</h3></div></div><Table headings={['Posizione', 'Prodotto', 'Quantità venduta', 'Ricavi']}><>{productSalesRanking.map((product, index) => <tr key={product.id}><td>{index + 1}</td><td className="cell-primary">{product.name}</td><td>{quantityFormat.format(product.quantitySold)} {product.unit === 'PEZZO' ? 'pz' : product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : ''}</td><td>{money.format(product.revenue)}</td></tr>)}</>{!productSalesRanking.length && <tr><td colSpan={4} className="empty-cell">Nessun prodotto registrato.</td></tr>}</Table></section>
-        <div className="metric-grid stats-metrics"><Metric icon={Banknote} label="Vendite" value={money.format(soldTotal)} detail="Incassi registrati nel periodo" /><Metric icon={CreditCard} label="Acquisto merce venduta" value={money.format(soldCost)} detail="Costo degli articoli venduti" /><Metric icon={TrendingUp} label="Netto stimato" value={money.format(estimatedNet)} detail="Ricavi meno costo del venduto e spese" /><Metric icon={ShoppingBasket} label="Quantità vendite" value={`${soldUnits.toLocaleString('ar-EG')} di ${totalTrackedUnits.toLocaleString('ar-EG')}`} detail="Articoli venduti rispetto a quelli ancora in magazzino" action={<button className="text-button metric-action" onClick={() => setUnsoldListOpen(true)}>Vedi lista</button>} /></div>
+        <div className="metric-grid stats-metrics"><Metric icon={Banknote} label="Vendite" value={money.format(soldTotal)} detail="Incassi registrati nel periodo" /><Metric icon={CreditCard} label="Acquisto merce venduta" value={money.format(soldCost)} detail="Costo degli articoli venduti" /><Metric icon={TrendingUp} label="Netto stimato" value={money.format(estimatedNet)} detail="Ricavi meno costo del venduto e spese" /><Metric icon={ShoppingBasket} label="Quantità vendite" value={`${soldUnits.toLocaleString('it-IT')} di ${totalTrackedUnits.toLocaleString('it-IT')}`} detail="Articoli venduti rispetto a quelli ancora in magazzino" action={<button className="text-button metric-action" onClick={() => setUnsoldListOpen(true)}>Vedi lista</button>} /></div>
         <div className="metric-grid inventory-values"><Metric icon={Package} label="Valore vendita in magazzino" value={money.format(stockRetail)} detail="Valore al prezzo di vendita" compact /><Metric icon={Archive} label="Valore acquisto in magazzino" value={money.format(stockCost)} detail="Costo delle scorte attuali" compact /><Metric icon={TrendingUp} label="Netto potenziale" value={money.format(stockRetail - stockCost)} detail="Margine potenziale delle scorte" compact /></div>
-        <div className="analytics-grid"><section className="panel calendar-panel"><div className="panel-heading"><div><h3>Calendario vendite</h3><p>Incasso per giorno</p></div><div className="month-controls"><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}>‹</button><strong>{calendarMonth.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}</strong><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}>›</button></div></div><div className="calendar-grid">{['ن', 'ث', 'ر', 'خ', 'ج', 'س', 'ح'].map((day, index) => <span className="calendar-weekday" key={`${day}${index}`}>{day}</span>)}{calendarDays().map((day, index) => { const date = day ? new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day) : null; const revenue = date ? statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()).reduce((sum, sale) => sum + sale.total, 0) : 0; return <div key={index} className={`calendar-day${revenue ? ' has-sales' : ''}${date?.toDateString() === new Date().toDateString() ? ' today' : ''}`}>{day && <><span>{day}</span>{revenue > 0 && <small>{money.format(revenue)}</small>}</>}</div>; })}</div></section><section className="panel chart-panel"><div className="panel-heading"><div><h3>Vendite giornaliere</h3><p>Ultimi sette giorni nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><BarChart data={chartDays} margin={{ top: 14, right: 8, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="giorno" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value}€`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Bar dataKey="totale" fill="var(--green)" radius={[4, 4, 0, 0]} maxBarSize={34} /></BarChart></ResponsiveContainer></section></div>
+        <div className="analytics-grid"><section className="panel calendar-panel"><div className="panel-heading"><div><h3>Calendario vendite</h3><p>Incasso per giorno</p></div><div className="month-controls"><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}>‹</button><strong>{calendarMonth.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</strong><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}>›</button></div></div><div className="calendar-grid">{['L', 'M', 'M', 'G', 'V', 'S', 'D'].map((day, index) => <span className="calendar-weekday" key={`${day}${index}`}>{day}</span>)}{calendarDays().map((day, index) => { const date = day ? new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day) : null; const revenue = date ? statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()).reduce((sum, sale) => sum + sale.total, 0) : 0; return <div key={index} className={`calendar-day${revenue ? ' has-sales' : ''}${date?.toDateString() === new Date().toDateString() ? ' today' : ''}`}>{day && <><span>{day}</span>{revenue > 0 && <small>{money.format(revenue)}</small>}</>}</div>; })}</div></section><section className="panel chart-panel"><div className="panel-heading"><div><h3>Vendite giornaliere</h3><p>Ultimi sette giorni nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><BarChart data={chartDays} margin={{ top: 14, right: 8, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="giorno" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value}€`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Bar dataKey="totale" fill="var(--green)" radius={[4, 4, 0, 0]} maxBarSize={34} /></BarChart></ResponsiveContainer></section></div>
         <div className="analytics-grid statistics-extra"><section className="panel chart-panel"><div className="panel-heading"><div><h3>Andamento mensile</h3><p>Incasso per mese nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><LineChart data={monthlySales} margin={{ top: 14, right: 12, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="mese" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value}€`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Line type="monotone" dataKey="totale" stroke="var(--green)" strokeWidth={3} dot={{ fill: 'var(--green)', r: 4 }} /></LineChart></ResponsiveContainer></section><section className="panel payment-panel"><div className="panel-heading"><div><h3>Pagamenti per metodo</h3><p>Totale incassato nel periodo</p></div></div><div className="payment-totals">{Object.entries(paymentTotals).length ? Object.entries(paymentTotals).map(([method, amount], index) => <div key={method}><span className="payment-dot" style={{ backgroundColor: colors[index % colors.length] }} /><span>{method}</span><strong>{money.format(amount)}</strong></div>) : <span className="muted">Nessun pagamento nel periodo selezionato.</span>}</div></section></div>
         <section className="panel category-panel"><div className="panel-heading"><div><h3>Vendite per categoria</h3><p>Valore degli articoli venduti nel periodo selezionato</p></div></div><div className="category-chart"><ResponsiveContainer width="100%" height={230}><PieChart><Pie data={Object.entries(categoriesSales).map(([name, value]) => ({ name, value }))} dataKey="value" nameKey="name" innerRadius={57} outerRadius={88} paddingAngle={3}>{Object.keys(categoriesSales).map((name, i) => <Cell key={name} fill={colors[i % colors.length]} />)}</Pie><Tooltip formatter={(value) => money.format(Number(value))} /></PieChart></ResponsiveContainer><div className="chart-legend">{Object.entries(categoriesSales).length ? Object.entries(categoriesSales).map(([name, value], i) => <div key={name}><span style={{ backgroundColor: colors[i % colors.length] }} /><span>{name}</span><strong>{money.format(value)}</strong></div>) : <span className="muted">Le categorie appariranno dopo la prima vendita.</span>}</div></div></section>
       </div>}
@@ -1948,7 +1883,7 @@ export default function App() {
         <div className="employee-detail-fields">{[['Età', employeeDetails.age], ['Sesso', employeeDetails.gender], ['Indirizzo', employeeDetails.home_address], ['Email', employeeDetails.email], ['Telefono', employeeDetails.phone], ['Ruolo', employeeDetails.role], ['Turno', employeeDetails.shift], ['Sede operativa', employeeDetails.operational_site], ['Stipendio', money.format(employeeDetails.salary)], ['Metodo di pagamento', employeeDetails.payment_method], ['IBAN', employeeDetails.payment_method === 'Bonifico' ? employeeDetails.iban : '—'], ['Codice riconoscimento', employeeDetails.recognition_code], ['Contratto', employeeDetails.contract_pdf_data ? 'PDF allegato' : 'Non presente']].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}<section className="employee-detail-barcode"><h3>Barcode</h3><BarcodeImage value={employeeDetails.recognition_code} /><strong>{employeeDetails.recognition_code}</strong></section></div>
         <section className="employee-detail-docs"><h3>Foto documenti</h3><div>{employeeDocumentImages(employeeDetails.documents_data).map((image, index) => <img src={image} alt={`Documento ${index + 1}`} key={`${index}-${image.slice(0, 30)}`} />)}</div></section>
       </div>
-      <div className="drawer-footer employee-profile-actions"><button className="button button-outline" onClick={() => void exportEmployeePdf(employeeDetails)}><ArrowDownToLine size={15} /> Scarica</button><button className="button button-outline" onClick={() => void printEmployeePdf(employeeDetails)}><Printer size={15} /> Stampa</button><button className="button button-outline" onClick={() => editEmployee(employeeDetails)}><Pencil size={15} /> Modifica</button><button className="button button-primary" onClick={() => setEmployeeDetails(null)}>Chiudi</button></div>
+      <div className="drawer-footer employee-profile-actions"><button className="button button-outline" onClick={() => void exportEmployeePdf(employeeDetails)}><ArrowDownToLine size={15} /> Scarica</button><button className="button button-outline" onClick={() => void printEmployeePdf(employeeDetails)}><Printer size={15} /> Stampa</button><button className="button button-primary" onClick={() => setEmployeeDetails(null)}>Chiudi</button></div>
     </Modal>}
     {voucherViewBatch && <Modal title={`Codici buono · Gruppo ${voucherViewBatch.id}`} close={() => setVoucherViewBatch(null)} wide><div className="voucher-preview-heading"><strong>{voucherViewBatch.discount_percentage}% di sconto</strong><span>{voucherViewBatch.starts_at} — {voucherViewBatch.ends_at}</span></div><Table headings={['Codice', 'Barcode', 'Sconto', 'Inizio', 'Scadenza']}><>{voucherViewBatch.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td><BarcodeImage value={code} /></td><td>{voucherViewBatch.discount_percentage}%</td><td>{voucherViewBatch.starts_at}</td><td>{voucherViewBatch.ends_at}</td></tr>)}</></Table></Modal>}
     {pendingUnknownCode && <Modal title="Articolo non presente" wide close={() => { setPendingUnknownCode(''); setScannerSearch(''); }}><div className="unknown-code-message"><CircleAlert size={26} /><p>Il codice a barre <strong>{pendingUnknownCode}</strong> non è presente tra gli articoli.</p><span>Puoi aggiungerlo come nuovo articolo: il codice acquisito sarà già inserito nel modulo.</span><div className="form-actions"><button className="button button-quiet" onClick={() => { setPendingUnknownCode(''); setScannerSearch(''); }}>Annulla</button><button className="button button-primary" onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct, code: pendingUnknownCode }); setPendingUnknownCode(''); }}><Plus size={16} /> Aggiungi articolo</button></div></div></Modal>}
