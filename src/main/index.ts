@@ -808,8 +808,10 @@ app.whenReady().then(() => {
     const requiredText: Array<keyof EmployeeInput> = [
       'first_name', 'last_name', 'gender', 'home_address', 'email', 'phone', 'operational_site',
       'role', 'shift', 'payment_method', 'recognition_code', 'barcode', 'photo_data', 'documents_data',
-      'contract_pdf_data', 'initial_password',
+      'contract_pdf_data',
     ];
+    const editing = Number.isInteger(employee?.id) && employee.id! > 0;
+    const initialPassword = employee?.initial_password ?? '';
     const isDataUrl = (value: string, mime: RegExp, maxBytes: number) => {
       if (!mime.test(value)) return false;
       const separator = value.indexOf(',');
@@ -830,7 +832,8 @@ app.whenReady().then(() => {
       || !Number.isFinite(employee.salary) || employee.salary < 0
       || !['Bonifico', 'Contanti'].includes(employee.payment_method)
       || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(employee.email)
-      || employee.initial_password.length < 8 || employee.initial_password.length > 128
+      || (!editing && (initialPassword.length < 8 || initialPassword.length > 128))
+      || (editing && initialPassword !== '' && (initialPassword.length < 8 || initialPassword.length > 128))
       || (employee.payment_method === 'Bonifico' && !/^[A-Z0-9 ]{15,34}$/i.test(employee.iban))
       || (employee.payment_method === 'Contanti' && employee.iban !== '')
       || !/^DIP\d{8}$/.test(employee.recognition_code) || employee.barcode !== employee.recognition_code
@@ -840,21 +843,36 @@ app.whenReady().then(() => {
       || !isDataUrl(employee.contract_pdf_data, /^data:application\/pdf;base64,/i, 10 * 1024 * 1024)) {
       throw new Error('Controlla i dati obbligatori, gli allegati e i codici del dipendente.');
     }
-    const { initial_password: initialPassword, ...employeeDetails } = employee;
-    const salt = randomBytes(16).toString('hex');
-    const passwordHash = `${salt}:${scryptSync(initialPassword, salt, 64).toString('hex')}`;
     try {
-      database.prepare(`INSERT INTO employees (
-        first_name, last_name, age, gender, home_address, email, initial_password_hash, phone, operational_site,
-        role, shift, salary, payment_method, iban, recognition_code, barcode, photo_data, documents_data, contract_pdf_data, created_at
-      ) VALUES (
-        @first_name, @last_name, @age, @gender, @home_address, @email, @initial_password_hash, @phone, @operational_site,
-        @role, @shift, @salary, @payment_method, @iban, @recognition_code, @barcode, @photo_data, @documents_data, @contract_pdf_data, @created_at
-      )`).run({
-        ...employeeDetails,
-        initial_password_hash: passwordHash,
-        created_at: new Date().toISOString(),
-      });
+      const { id, initial_password: _initialPassword, ...employeeDetails } = employee;
+      const salt = initialPassword ? randomBytes(16).toString('hex') : '';
+      const passwordHash = initialPassword ? `${salt}:${scryptSync(initialPassword, salt, 64).toString('hex')}` : null;
+      if (editing) {
+        const fields = `first_name = @first_name, last_name = @last_name, age = @age, gender = @gender,
+          home_address = @home_address, email = @email, phone = @phone, operational_site = @operational_site,
+          role = @role, shift = @shift, salary = @salary, payment_method = @payment_method, iban = @iban,
+          recognition_code = @recognition_code, barcode = @barcode, photo_data = @photo_data,
+          documents_data = @documents_data, contract_pdf_data = @contract_pdf_data`;
+        const passwordField = passwordHash ? ', initial_password_hash = @initial_password_hash' : '';
+        const result = database.prepare(`UPDATE employees SET ${fields}${passwordField} WHERE id = @id`).run({
+          ...employeeDetails,
+          ...(passwordHash ? { initial_password_hash: passwordHash } : {}),
+          id,
+        });
+        if (result.changes === 0) throw new Error('Dipendente non trovato.');
+      } else {
+        database.prepare(`INSERT INTO employees (
+          first_name, last_name, age, gender, home_address, email, initial_password_hash, phone, operational_site,
+          role, shift, salary, payment_method, iban, recognition_code, barcode, photo_data, documents_data, contract_pdf_data, created_at
+        ) VALUES (
+          @first_name, @last_name, @age, @gender, @home_address, @email, @initial_password_hash, @phone, @operational_site,
+          @role, @shift, @salary, @payment_method, @iban, @recognition_code, @barcode, @photo_data, @documents_data, @contract_pdf_data, @created_at
+        )`).run({
+          ...employeeDetails,
+          initial_password_hash: passwordHash,
+          created_at: new Date().toISOString(),
+        });
+      }
     } catch (error) {
       if (error instanceof Error && error.message.includes('UNIQUE constraint failed: employees.email')) {
         throw new Error('Esiste già un dipendente con questo indirizzo email.');

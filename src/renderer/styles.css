@@ -1,5 +1,5 @@
 :root {
-  font-family: 'DM Sans', 'Segoe UI', sans-serif;
+  font-family: 'Noto Sans Arabic', 'Segoe UI', sans-serif;
   color: #000;
   background: #f5f6f3;
   font-synthesis: none;
@@ -17,6 +17,53 @@
   --red: #a45042;
   --shadow: 0 12px 32px rgb(39 49 42 / 9%);
   font-synthesis: none;
+}
+
+html[dir='rtl'] { direction: rtl; }
+html[dir='rtl'] body { text-align: right; }
+html[dir='rtl'] h1,
+html[dir='rtl'] h2,
+html[dir='rtl'] h3,
+html[dir='rtl'] .brand strong { font-family: 'Noto Sans Arabic', 'Segoe UI', Arial, sans-serif; }
+html[dir='rtl'] .sidebar { inset: 0 0 0 auto; border-right: 0; border-left: 1px solid var(--line); }
+html[dir='rtl'] .main-content { margin-right: 235px; margin-left: 0; }
+html[dir='rtl'] .nav-item { text-align: right; }
+html[dir='rtl'] .nav-item.active::before { right: -16px; left: auto; border-radius: 3px 0 0 3px; }
+html[dir='rtl'] kbd, html[dir='rtl'] .nav-chevron { margin-right: auto; margin-left: 0; }
+html[dir='rtl'] .nav-item.active::before { right: -16px; }
+html[dir='rtl'] table { text-align: right; }
+html[dir='rtl'] .product-tile,
+html[dir='rtl'] .cash-product,
+html[dir='rtl'] .payment-offer-choice,
+html[dir='rtl'] .sale-add-product,
+html[dir='rtl'] .settings-nav button,
+html[dir='rtl'] .sidebar-subitem,
+html[dir='rtl'] .nav-subitem,
+html[dir='rtl'] .expiry-list button,
+html[dir='rtl'] .client-shortcut,
+html[dir='rtl'] .theme-option { text-align: right; }
+html[dir='rtl'] .detail-drawer { inset: 0 0 0 auto; }
+html[dir='rtl'] .modal-payment-panel { border-right-width: 1px; border-left-width: 0; }
+html[dir='rtl'] .sidebar-submenu, html[dir='rtl'] .nav-submenu { margin-right: 17px; margin-left: 0; padding-right: 13px; padding-left: 0; border-right: 1px solid var(--line); border-left: 0; }
+html[dir='rtl'] .nav-submenu { margin-right: 29px; padding-right: 9px; }
+html[dir='rtl'] .toast { right: auto; left: 24px; }
+html[dir='rtl'] .employee-document-image > .icon-button { right: auto; left: 4px; }
+html[dir='rtl'] .receipt-search-field .field input { padding-right: 10px; padding-left: 35px; }
+html[dir='rtl'] .receipt-search-field .search-clear { right: auto; left: 5px; }
+html[dir='rtl'] .receipt-lookup { margin-right: auto; margin-left: 0; }
+html[dir='rtl'] .mono,
+html[dir='rtl'] input[type='email'],
+html[dir='rtl'] input[type='tel'],
+html[dir='rtl'] input[type='number'],
+html[dir='rtl'] .employee-barcode small { direction: ltr; text-align: left; }
+
+@media (max-width: 1120px) {
+  html[dir='rtl'] .main-content { margin-right: 200px; }
+}
+
+@media (max-width: 850px) {
+  html[dir='rtl'] .main-content { margin-right: 68px; }
+  html[dir='rtl'] .sidebar .nav-item.active::before { right: -8px; }
 }
 
 [data-theme='blue'] {
@@ -684,7 +731,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .employee-detail-barcode h3 { color: var(--muted); font-size: 9px; font-weight: 500; }
 .employee-detail-barcode .barcode-image { width: min(210px, 100%); height: 42px; }
 .employee-detail-barcode strong { color: #657168; font-family: 'DM Mono', 'Consolas', monospace; font-size: 10px; }
-.employee-profile-actions { grid-template-columns: repeat(3, 1fr); }
+.employee-profile-actions { grid-template-columns: repeat(2, 1fr); }
 .report-export-options { display: grid; gap: 10px; padding: 20px; }
 .report-export-options p { margin-bottom: 4px; color: #66736a; font-size: 11px; line-height: 1.6; }
 .payroll-toolbar { display: grid; grid-template-columns: 1fr 1fr auto auto; align-items: end; gap: 12px; margin-bottom: 20px; padding: 16px; }

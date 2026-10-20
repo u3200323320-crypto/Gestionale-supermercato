@@ -111,7 +111,7 @@ export interface Employee {
   created_at: string;
 }
 
-export type EmployeeInput = Omit<Employee, 'id' | 'created_at'> & { initial_password: string };
+export type EmployeeInput = Omit<Employee, 'id' | 'created_at'> & { id?: number; initial_password?: string };
 export interface Customer {
   id: number;
   first_name: string;
