@@ -9,7 +9,9 @@ import JsBarcode from 'jsbarcode';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
 import homeBanner from './home-banner.svg';
-import { translateItalianText } from './arabic';
+import { translateItalianText } from '../shared/arabic';
+import arabicPdfFontUrl from '../assets/DejaVuSans.ttf?url';
+import arabicPdfBoldFontUrl from '../assets/DejaVuSans-Bold.ttf?url';
 import type { AppState, Customer, Employee, EmployeeInput, Expense, LoyaltyCard, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, Sale, SaleItem, Section } from '../shared/types';
 
 const money = new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EUR' });
@@ -17,16 +19,38 @@ const dateTime = new Intl.DateTimeFormat('ar-EG', { dateStyle: 'short', timeStyl
 const receiptDate = new Intl.DateTimeFormat('ar-EG', { dateStyle: 'short' });
 const receiptTime = new Intl.DateTimeFormat('ar-EG', { timeStyle: 'short' });
 const quantityFormat = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 3 });
-const pdfMoney = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
-const pdfDateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' });
-const pdfDate = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short' });
-const pdfQuantity = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 3 });
-const csvDateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' });
+const pdfMoney = new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EUR' });
+const pdfDateTime = new Intl.DateTimeFormat('ar-EG', { dateStyle: 'short', timeStyle: 'short' });
+const pdfDate = new Intl.DateTimeFormat('ar-EG', { dateStyle: 'short' });
+const pdfQuantity = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 3 });
+const csvDateTime = new Intl.DateTimeFormat('ar-EG', { dateStyle: 'short', timeStyle: 'short' });
+const arabicPdfFonts = new Map<string, string>();
+async function loadArabicPdfFont(url: string, filename: string): Promise<string> {
+  const existing = arabicPdfFonts.get(filename);
+  if (existing) return existing;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('تعذر تحميل خط التقارير العربية.');
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  const base64 = btoa(binary);
+  arabicPdfFonts.set(filename, base64);
+  return base64;
+}
+async function configureArabicPdf(doc: jsPDF): Promise<void> {
+  doc.addFileToVFS('DejaVuSans.ttf', await loadArabicPdfFont(arabicPdfFontUrl, 'DejaVuSans.ttf'));
+  doc.addFileToVFS('DejaVuSans-Bold.ttf', await loadArabicPdfFont(arabicPdfBoldFontUrl, 'DejaVuSans-Bold.ttf'));
+  doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'normal');
+  doc.addFont('DejaVuSans-Bold.ttf', 'DejaVuSans', 'bold');
+  doc.setFont('DejaVuSans');
+}
 const receiptQuantity = quantityFormat;
 const roundQuantity = (quantity: number) => Math.round((quantity + Number.EPSILON) * 1000) / 1000;
 const colors = ['var(--green)', '#c17e4f', '#658499', '#a9aa64', '#8a7461', '#609085'];
 const localDateKey = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-const safeFilePart = (value: string) => value.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').trim() || 'Dipendente';
+const safeFilePart = (value: string) => value.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').trim() || 'موظف';
 const permanentPromotionEnd = '9999-12-31';
 const promotionDurations = ['1 giorno', '3 giorni', '7 giorni', '1 mese', 'Sempre', 'Personalizzata'];
 const expenseCategories = ['Affitto', 'Utenze', 'Forniture', 'Stipendi', 'Manutenzione', 'Trasporti', 'Altro'];
@@ -144,7 +168,7 @@ const inventoryFilters: { value: 'all' | 'available' | 'low' | 'out'; label: str
 const statisticsPeriods = ['Tutti', 'Ultimo giorno', 'Ultimi 3 giorni', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Ultimi 6 mesi', 'Ultimo anno'];
 const blankProduct: ProductInput = { code: '', name: '', unit: 'PEZZO', category: 'Dispensa', sale_price: 0, purchase_price: 0, stock: 0, low_stock_threshold: 5, expiry_enabled: false, expiry_date: '' };
 const blankPromotion = (): PromotionInput => ({ name: '', discount_type: 'percentage', percentage: 10, buy_quantity: 2, free_quantity: 1, category: 'Tutte', starts_at: localDateKey(), ends_at: localDateKey(), minimum_spend: 0, minimum_kilograms: 0, minimum_pieces: 0, minimum_liters: 0, application_mode: 'Automatica' });
-const errorText = (error: unknown) => error instanceof Error ? error.message : 'Operazione non riuscita.';
+const errorText = (error: unknown) => translateItalianText(error instanceof Error ? error.message : 'Operazione non riuscita.');
 type PromotionDiscountType = 'percentage' | '2+1' | '3+1' | 'custom';
 
 function promotionEndDate(start: string, duration: string): string {
@@ -540,57 +564,58 @@ export default function App() {
     }
   };
   const createEmployeePdf = async (employee: Employee, doc = new jsPDF({ orientation: 'portrait' }), addPage = false) => {
+    await configureArabicPdf(doc);
     if (addPage) doc.addPage();
     const photo = await imageAsPng(employee.photo_data);
     const documents = await Promise.all(employeeDocumentImages(employee.documents_data).map(imageAsPng));
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('DejaVuSans', 'bold');
     doc.setFontSize(16);
-    doc.text('Scheda dipendente', 14, 18);
-    doc.setFont('helvetica', 'normal');
+    doc.text('بطاقة الموظف', 196, 18, { align: 'right' });
+    doc.setFont('DejaVuSans', 'normal');
     doc.setFontSize(9);
-    doc.text(`${data?.settings.shop_name ?? ''} · ${pdfDate.format(new Date())}`, 14, 25);
-    doc.addImage(photo, 'PNG', 154, 32, 42, 42);
+    doc.text(`${pdfShopName()} · ${pdfDate.format(new Date())}`, 196, 25, { align: 'right', maxWidth: 180 });
+    doc.addImage(photo, 'PNG', 14, 32, 42, 42);
     const details: [string, string][] = [
-      ['Nome e cognome', `${employee.first_name} ${employee.last_name}`],
-      ['Età', String(employee.age)],
-      ['Sesso', employee.gender],
-      ['Indirizzo', employee.home_address],
-      ['Email', employee.email],
-      ['Telefono', employee.phone],
-      ['Sede operativa', employee.operational_site],
-      ['Ruolo', employee.role],
-      ['Turno', employee.shift],
-      ['Stipendio', pdfMoney.format(employee.salary)],
-      ['Metodo di pagamento', employee.payment_method],
-      ['IBAN', employee.payment_method === 'Bonifico' ? employee.iban : '—'],
-      ['Codice riconoscimento', employee.recognition_code],
-      ['Barcode', employee.recognition_code],
-      ['Contratto', employee.contract_pdf_data ? 'PDF allegato' : 'Non presente'],
-      ['Data di registrazione', pdfDateTime.format(new Date(employee.created_at))],
+      ['الاسم الكامل', `${employee.first_name} ${employee.last_name}`],
+      ['العمر', String(employee.age)],
+      ['الجنس', translateItalianText(employee.gender)],
+      ['العنوان', employee.home_address],
+      ['البريد الإلكتروني', employee.email],
+      ['الهاتف', employee.phone],
+      ['موقع العمل', employee.operational_site],
+      ['الوظيفة', translateItalianText(employee.role)],
+      ['الوردية', translateItalianText(employee.shift)],
+      ['الراتب', pdfMoney.format(employee.salary)],
+      ['طريقة الدفع', translateItalianText(employee.payment_method)],
+      ['رقم الحساب الدولي', employee.payment_method === 'Bonifico' ? employee.iban : '—'],
+      ['رمز التعريف', employee.recognition_code],
+      ['الرمز الشريطي', employee.recognition_code],
+      ['العقد', employee.contract_pdf_data ? 'ملف PDF مرفق' : 'غير موجود'],
+      ['تاريخ التسجيل', pdfDateTime.format(new Date(employee.created_at))],
     ];
     let y = 38;
     details.forEach(([label, value]) => {
-      if (label === 'Barcode') {
-        doc.setFont('helvetica', 'bold');
-        doc.text(`${label}:`, 14, y);
-        doc.addImage(barcodePng(employee.recognition_code), 'PNG', 58, y - 6, 48, 12);
+      if (label === 'الرمز الشريطي') {
+        doc.setFont('DejaVuSans', 'bold');
+        doc.text(`${label}:`, 196, y, { align: 'right', maxWidth: 66 });
+        doc.addImage(barcodePng(employee.recognition_code), 'PNG', 66, y - 6, 48, 12);
         y += 14;
         return;
       }
-      const wrappedValue = doc.splitTextToSize(value || '—', 126);
-      doc.setFont('helvetica', 'bold');
-      doc.text(`${label}:`, 14, y);
-      doc.setFont('helvetica', 'normal');
-      doc.text(wrappedValue, 58, y);
+      const wrappedValue = doc.splitTextToSize(translateItalianText(value || '—'), 116);
+      doc.setFont('DejaVuSans', 'bold');
+      doc.text(`${label}:`, 196, y, { align: 'right', maxWidth: 66 });
+      doc.setFont('DejaVuSans', 'normal');
+      doc.text(wrappedValue, 124, y, { align: 'right', maxWidth: 116 });
       y += Math.max(7, wrappedValue.length * 5);
     });
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('DejaVuSans', 'bold');
     doc.setFontSize(11);
     const documentsTop = Math.max(151, y + 4);
-    doc.text('Foto documenti', 14, documentsTop);
-    doc.setFont('helvetica', 'normal');
+    doc.text('صور المستندات', 196, documentsTop, { align: 'right' });
+    doc.setFont('DejaVuSans', 'normal');
     doc.setFontSize(8);
-    if (!documents.length) doc.text('Nessuna immagine allegata', 14, documentsTop + 9);
+    if (!documents.length) doc.text('لا توجد صور مرفقة', 14, documentsTop + 9);
     documents.slice(0, 20).forEach((image, index) => {
       const column = index % 5;
       const row = Math.floor(index / 5);
@@ -598,37 +623,39 @@ export default function App() {
     });
     return doc;
   };
-  const createSalaryPdf = (employee: Employee, paymentDate: string, month: string, amount = employee.salary) => {
+  const createSalaryPdf = async (employee: Employee, paymentDate: string, month: string, amount = employee.salary) => {
     const doc = new jsPDF();
+    await configureArabicPdf(doc);
     const displayName = `${employee.first_name} ${employee.last_name}`;
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('DejaVuSans', 'bold');
     doc.setFontSize(18);
-    doc.text(data?.settings.shop_name ?? 'Gestionale', 14, 20);
+    doc.text(pdfShopName(), 196, 20, { align: 'right', maxWidth: 180 });
     doc.setFontSize(15);
-    doc.text('Ricevuta pagamento stipendio', 14, 38);
-    doc.setFont('helvetica', 'normal');
+    doc.text('إيصال دفع الراتب', 196, 38, { align: 'right', maxWidth: 180 });
+    doc.setFont('DejaVuSans', 'normal');
     doc.setFontSize(11);
-    doc.text(`Dipendente: ${displayName}`, 14, 54);
-    doc.text(`Ruolo: ${employee.role}`, 14, 63);
-    doc.text(`Mese di competenza: ${month}`, 14, 72);
-    doc.text(`Data pagamento: ${pdfDate.format(new Date(`${paymentDate}T00:00:00`))}`, 14, 81);
-    doc.text(`Metodo: ${employee.payment_method}`, 14, 90);
-    doc.setFont('helvetica', 'bold');
+    doc.text(`الموظف: ${displayName}`, 196, 54, { align: 'right', maxWidth: 180 });
+    doc.text(`الوظيفة: ${translateItalianText(employee.role)}`, 196, 63, { align: 'right', maxWidth: 180 });
+    doc.text(`الشهر المستحق: ${new Date(`${month}-01T00:00:00`).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}`, 196, 72, { align: 'right', maxWidth: 180 });
+    doc.text(`تاريخ الدفع: ${pdfDate.format(new Date(`${paymentDate}T00:00:00`))}`, 196, 81, { align: 'right', maxWidth: 180 });
+    doc.text(`طريقة الدفع: ${translateItalianText(employee.payment_method)}`, 196, 90, { align: 'right', maxWidth: 180 });
+    doc.setFont('DejaVuSans', 'bold');
     doc.setFontSize(15);
-    doc.text(`Importo: ${pdfMoney.format(amount)}`, 14, 106);
+    doc.text(`المبلغ: ${pdfMoney.format(amount)}`, 196, 106, { align: 'right', maxWidth: 180 });
     doc.setDrawColor(90, 100, 93);
     doc.rect(14, 230, 82, 38);
-    doc.setFont('helvetica', 'normal');
+    doc.setFont('DejaVuSans', 'normal');
     doc.setFontSize(9);
-    doc.text('Firma del dipendente per ricevuta', 18, 264);
+    doc.text('توقيع الموظف بالإقرار بالاستلام', 96, 264, { align: 'center', maxWidth: 78 });
     doc.line(18, 258, 92, 258);
     return doc;
   };
   const savePdf = (doc: jsPDF, filename: string) => doc.save(filename);
+  const pdfShopName = () => translateItalianText(data?.settings.shop_name ?? 'إدارة المتجر');
   const exportEmployeePdf = async (employee: Employee) => {
     try {
       const doc = await createEmployeePdf(employee);
-      savePdf(doc, `dipendente-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}.pdf`);
+      savePdf(doc, `موظف-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}.pdf`);
     } catch (error) {
       notify(errorText(error));
     }
@@ -636,7 +663,7 @@ export default function App() {
   const printEmployeePdf = async (employee: Employee) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
-      notify('Consenti le finestre popup per stampare la scheda dipendente.');
+      notify('اسمح بالنوافذ المنبثقة لطباعة بطاقة الموظف.');
       return;
     }
     try {
@@ -657,15 +684,15 @@ export default function App() {
     }
     const monthDate = new Date(`${payrollMonth}-01T00:00:00`);
     const monthName = monthDate.toLocaleDateString('ar-EG', { month: 'long' });
-    const folderName = `Stipendi ${monthName.charAt(0).toLocaleUpperCase('it-IT') + monthName.slice(1)} ${monthDate.getFullYear()}`;
+    const folderName = `الرواتب ${monthName} ${monthDate.getFullYear()}`;
     const zip = new JSZip();
     const folder = zip.folder(folderName);
     if (!folder) throw new Error('Impossibile creare la cartella delle ricevute.');
     for (const payment of payments) {
       const employee = data.employees.find((item) => item.id === payment.employee_id);
       if (!employee) throw new Error(`Dipendente non trovato per la ricevuta di ${payment.first_name} ${payment.last_name}.`);
-      const pdf = createSalaryPdf(employee, payment.payment_date, payment.pay_month, payment.amount);
-      folder.file(`Stipendio-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}-${payment.payment_date}.pdf`, pdf.output('blob'));
+      const pdf = await createSalaryPdf(employee, payment.payment_date, payment.pay_month, payment.amount);
+      folder.file(`راتب-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}-${payment.payment_date}.pdf`, pdf.output('blob'));
     }
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
@@ -680,7 +707,7 @@ export default function App() {
       await window.gestionale.paySalary({ employee_id: employee.id, pay_month: payrollMonth, payment_date: payrollDate });
       const next = await refresh();
       const payment = next.payrollPayments.find((item) => item.employee_id === employee.id && item.pay_month === payrollMonth);
-      if (payment) savePdf(createSalaryPdf(employee, payment.payment_date, payment.pay_month, payment.amount), `Stipendio-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}-${payment.payment_date}.pdf`);
+      if (payment) savePdf(await createSalaryPdf(employee, payment.payment_date, payment.pay_month, payment.amount), `راتب-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}-${payment.payment_date}.pdf`);
       notify(`Stipendio di ${employee.first_name} registrato.`);
     } catch (error) {
       notify(errorText(error));
@@ -847,7 +874,7 @@ export default function App() {
       return;
     }
     const existingCodes = new Set(data?.voucherBatches.flatMap((batch) => batch.codes) ?? []);
-    const prefix = voucherCodePrefix(data?.settings.shop_name ?? 'Il tuo supermercato');
+    const prefix = voucherCodePrefix(data?.settings.shop_name ?? 'متجرك');
     const usedShopCodes = [...existingCodes].filter((code) => code.startsWith(prefix)).length;
     if (quantity > voucherCodeSpace - usedShopCodes) {
       notify('Non ci sono abbastanza codici univoci disponibili per questa quantità.');
@@ -911,50 +938,52 @@ export default function App() {
       notify(errorText(error));
     }
   };
-  const downloadVoucherBatch = (batch: AppState['voucherBatches'][number]) => {
+  const downloadVoucherBatch = async (batch: AppState['voucherBatches'][number]) => {
     const doc = new jsPDF();
+    await configureArabicPdf(doc);
     const barcodes = batch.codes.map((code) => barcodePng(code));
     doc.setFontSize(16);
-    doc.text(`Buoni sconto gruppo ${batch.id}`, 14, 17);
+    doc.text(`قسائم خصم المجموعة ${batch.id}`, 196, 17, { align: 'right' });
     doc.setFontSize(10);
-    doc.text(`Sconto: ${batch.discount_percentage}%`, 14, 25);
-    doc.text(`Validità: ${batch.starts_at} - ${batch.ends_at}`, 14, 31);
+    doc.text(`الخصم: ${batch.discount_percentage}%`, 196, 25, { align: 'right' });
+    doc.text(`الصلاحية: ${batch.starts_at} - ${batch.ends_at}`, 196, 31, { align: 'right' });
     autoTable(doc, {
       startY: 38,
-      head: [['Codice', 'Barcode', 'Sconto', 'Data inizio', 'Data scadenza']],
+      head: [['الرمز', 'الرمز الشريطي', 'الخصم', 'تاريخ البدء', 'تاريخ الانتهاء']],
       body: batch.codes.map((code) => [code, '', `${batch.discount_percentage}%`, batch.starts_at, batch.ends_at]),
-      styles: { fontSize: 9, minCellHeight: 18 },
-      headStyles: { fillColor: [56, 104, 78] },
+      styles: { font: 'DejaVuSans', fontSize: 9, minCellHeight: 18, halign: 'right' },
+      headStyles: { fillColor: [56, 104, 78], font: 'DejaVuSans', halign: 'right' },
       didDrawCell: (cell) => {
         if (cell.section === 'body' && cell.column.index === 1) {
           doc.addImage(barcodes[cell.row.index], 'PNG', cell.cell.x + 2, cell.cell.y + 3, cell.cell.width - 4, 12);
         }
       },
     });
-    doc.save(`buoni-sconto-gruppo-${batch.id}.pdf`);
+    doc.save(`قسائم-خصم-المجموعة-${batch.id}.pdf`);
   };
-  const exportLoyaltyCards = (cards: LoyaltyCard[]) => {
+  const exportLoyaltyCards = async (cards: LoyaltyCard[]) => {
     if (!cards.length) {
       notify('Non ci sono tessere da scaricare per questa ricerca.');
       return;
     }
     const doc = new jsPDF();
+    await configureArabicPdf(doc);
     const barcodes = cards.map((card) => barcodePng(card.barcode));
     doc.setFontSize(16);
-    doc.text('Lista tessere fedeltà', 14, 17);
+    doc.text('قائمة بطاقات الولاء', 196, 17, { align: 'right' });
     autoTable(doc, {
       startY: 25,
-      head: [['Codice tessera', 'Barcode', 'Cliente', 'Sconto', 'Punti']],
+      head: [['رمز البطاقة', 'الرمز الشريطي', 'العميل', 'الخصم', 'النقاط']],
       body: cards.map((card) => [card.code, '', `${card.first_name ?? ''} ${card.last_name ?? ''}`.trim(), `${card.discount_percentage}%`, String(card.points)]),
-      styles: { fontSize: 8, minCellHeight: 18 },
-      headStyles: { fillColor: [56, 104, 78] },
+      styles: { font: 'DejaVuSans', fontSize: 8, minCellHeight: 18, halign: 'right' },
+      headStyles: { fillColor: [56, 104, 78], font: 'DejaVuSans', halign: 'right' },
       didDrawCell: (cell) => {
         if (cell.section === 'body' && cell.column.index === 1) {
           doc.addImage(barcodes[cell.row.index], 'PNG', cell.cell.x + 2, cell.cell.y + 3, cell.cell.width - 4, 12);
         }
       },
     });
-    doc.save('lista-tessere-fedelta.pdf');
+    doc.save('قائمة-بطاقات-الولاء.pdf');
   };
   const applyVoucherCode = async (code: string) => {
     const normalized = code.trim();
@@ -1274,102 +1303,107 @@ export default function App() {
       notify(errorText(error));
     }
   };
-  const exportReport = (respectTimeFilters: boolean) => {
+  const exportReport = async (respectTimeFilters: boolean) => {
     if (!data) return;
+    const doc = new jsPDF({ orientation: 'portrait' });
+    await configureArabicPdf(doc);
     const reportSales = data.sales.filter((sale) => !respectTimeFilters || matchesSalesPeriod(sale.created_at));
     const gross = reportSales.reduce((sum, sale) => sum + sale.gross_total, 0);
     const net = reportSales.reduce((sum, sale) => sum + sale.total, 0);
     const cost = reportSales.reduce((sum, sale) => sum + sale.items.reduce((subtotal, item) => subtotal + item.purchase_price * item.quantity, 0), 0);
-    const reportPeriod = respectTimeFilters ? ` · Periodo: ${salesPeriod}` : ' · Tutto il periodo';
-    const doc = new jsPDF({ orientation: 'portrait' });
+    const reportPeriod = respectTimeFilters ? ` · الفترة: ${translateItalianText(salesPeriod)}` : ' · كامل الفترة';
     doc.setFillColor(43, 82, 61);
     doc.rect(0, 0, 210, 36, 'F');
     doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('DejaVuSans', 'bold');
     doc.setFontSize(18);
-    doc.text(data.settings.shop_name, 14, 16);
-    doc.setFont('helvetica', 'normal');
+    doc.text(pdfShopName(), 196, 16, { align: 'right', maxWidth: 180 });
+    doc.setFont('DejaVuSans', 'normal');
     doc.setFontSize(10);
-    doc.text(`Report vendite · Esportato il ${pdfDate.format(new Date())}${reportPeriod}`, 14, 26);
+    doc.text(`تقرير المبيعات · تاريخ التصدير ${pdfDate.format(new Date())}${reportPeriod}`, 196, 26, { align: 'right', maxWidth: 180 });
     doc.setTextColor(41, 51, 46);
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('DejaVuSans', 'bold');
     doc.setFontSize(10);
-    doc.text(`Vendite: ${reportSales.length}`, 14, 45);
-    doc.text(`Lordo: ${pdfMoney.format(gross)}`, 14, 52);
-    doc.text(`Costo merce: ${pdfMoney.format(cost)}`, 77, 52);
-    doc.text(`Profitto: ${pdfMoney.format(net - cost)}`, 145, 52);
+    doc.text(`المبيعات: ${reportSales.length.toLocaleString('ar-EG')}`, 196, 45, { align: 'right' });
+    doc.text(`الإجمالي قبل الخصم: ${pdfMoney.format(gross)}`, 196, 52, { align: 'right' });
+    doc.text(`تكلفة البضائع: ${pdfMoney.format(cost)}`, 135, 52, { align: 'right' });
+    doc.text(`الربح: ${pdfMoney.format(net - cost)}`, 74, 52, { align: 'right' });
     autoTable(doc, {
       startY: 59,
-      head: [['Scontrino', 'Data e ora', 'Articoli', 'Pagamento', 'Prezzo acquisto', 'Prezzo vendita', 'Profitto', 'Sconto', 'Totale']],
+      head: [['الإيصال', 'التاريخ والوقت', 'الكميات', 'الدفع', 'سعر الشراء', 'سعر البيع', 'الربح', 'الخصم', 'الإجمالي']],
       body: reportSales.map((sale) => {
         const purchasePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.purchase_price, 0);
         const salePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-        const items = sale.items.map((item) => `${pdfQuantity.format(item.quantity)} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}`).join(', ');
-        return [sale.receipt_no, pdfDateTime.format(new Date(sale.created_at)), items, sale.payment_method, pdfMoney.format(purchasePrice), pdfMoney.format(salePrice), pdfMoney.format(sale.total - purchasePrice), pdfMoney.format(sale.discount), pdfMoney.format(sale.total)];
+        const items = sale.items.map((item) => `${pdfQuantity.format(item.quantity)} ${item.unit === 'KG' ? 'كغ' : item.unit === 'LITRO' ? 'لتر' : 'قطعة'}`).join('، ');
+        return [sale.receipt_no, pdfDateTime.format(new Date(sale.created_at)), items, translateItalianText(sale.payment_method), pdfMoney.format(purchasePrice), pdfMoney.format(salePrice), pdfMoney.format(sale.total - purchasePrice), pdfMoney.format(sale.discount), pdfMoney.format(sale.total)];
       }),
       showHead: 'firstPage',
       theme: 'striped',
-      styles: { fontSize: 6.5, cellPadding: 2, overflow: 'linebreak', textColor: [49, 60, 53], lineColor: [224, 230, 224] },
-      headStyles: { fillColor: [56, 104, 78], fontStyle: 'bold' },
+      styles: { font: 'DejaVuSans', fontSize: 6.5, cellPadding: 2, overflow: 'linebreak', textColor: [49, 60, 53], lineColor: [224, 230, 224], halign: 'right' },
+      headStyles: { fillColor: [56, 104, 78], font: 'DejaVuSans', fontStyle: 'bold', halign: 'right' },
       alternateRowStyles: { fillColor: [244, 247, 244] },
       margin: { left: 8, right: 8, bottom: 14 },
       didDrawPage: () => {
+        doc.setFont('DejaVuSans', 'normal');
         doc.setFontSize(8);
         doc.setTextColor(120, 130, 122);
-        doc.text(`${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`, 8, 290);
+        doc.text(`${pdfShopName()} · الصفحة ${doc.getNumberOfPages().toLocaleString('ar-EG')}`, 202, 290, { align: 'right', maxWidth: 190 });
       },
     });
-    doc.save(`report-vendite-${respectTimeFilters ? salesPeriod.toLowerCase().replaceAll(' ', '-') : 'tutto'}-${todayKey}.pdf`);
+    doc.save(`تقرير-المبيعات-${todayKey}.pdf`);
   };
-  const exportInventoryReport = () => {
+  const exportInventoryReport = async () => {
     if (!data) return;
     const doc = new jsPDF({ orientation: 'landscape' });
+    await configureArabicPdf(doc);
     const stockValue = data.products.reduce((sum, item) => sum + item.stock * item.purchase_price, 0);
     const lowStockCount = data.products.filter((item) => item.stock <= item.low_stock_threshold).length;
     doc.setFillColor(43, 82, 61);
     doc.rect(0, 0, 297, 36, 'F');
     doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('DejaVuSans', 'bold');
     doc.setFontSize(18);
-    doc.text(data.settings.shop_name, 14, 16);
-    doc.setFont('helvetica', 'normal');
+    doc.text(pdfShopName(), 283, 16, { align: 'right', maxWidth: 265 });
+    doc.setFont('DejaVuSans', 'normal');
     doc.setFontSize(10);
-    doc.text('Report magazzino · Esportato il ' + pdfDate.format(new Date()), 14, 26);
+    doc.text('تقرير المخزون · تاريخ التصدير ' + pdfDate.format(new Date()), 283, 26, { align: 'right', maxWidth: 265 });
     doc.setTextColor(41, 51, 46);
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('DejaVuSans', 'bold');
     doc.setFontSize(10);
-    doc.text(`Articoli: ${data.products.length}`, 14, 47);
-    doc.text(`Sotto soglia: ${lowStockCount}`, 74, 47);
-    doc.text(`Valore acquisto giacenze: ${pdfMoney.format(stockValue)}`, 164, 47);
+    doc.text(`المنتجات: ${data.products.length.toLocaleString('ar-EG')}`, 283, 47, { align: 'right' });
+    doc.text(`دون الحد الأدنى: ${lowStockCount.toLocaleString('ar-EG')}`, 200, 47, { align: 'right' });
+    doc.text(`قيمة المخزون بسعر الشراء: ${pdfMoney.format(stockValue)}`, 110, 47, { align: 'right' });
     autoTable(doc, {
       startY: 55,
-      head: [['Codice', 'Articolo', 'Categoria', 'Vendita / unità', 'Acquisto / unità', 'Giacenza', 'Soglia minima', 'Scadenza']],
-      body: data.products.map((item) => [item.code, item.name, item.category, pdfMoney.format(item.sale_price), pdfMoney.format(item.purchase_price), `${item.stock} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'}`, String(item.low_stock_threshold), item.expiry_enabled && item.expiry_date ? pdfDate.format(new Date(`${item.expiry_date}T00:00:00`)) : '—']),
+      head: [['الرمز', 'المنتج', 'الفئة', 'سعر البيع / الوحدة', 'سعر الشراء / الوحدة', 'المخزون', 'الحد الأدنى', 'الصلاحية']],
+      body: data.products.map((item) => [item.code, translateItalianText(item.name), translateItalianText(item.category), pdfMoney.format(item.sale_price), pdfMoney.format(item.purchase_price), `${pdfQuantity.format(item.stock)} ${item.unit === 'KG' ? 'كغ' : item.unit === 'LITRO' ? 'لتر' : 'قطعة'}`, pdfQuantity.format(item.low_stock_threshold), item.expiry_enabled && item.expiry_date ? pdfDate.format(new Date(`${item.expiry_date}T00:00:00`)) : '—']),
       theme: 'striped',
-      styles: { fontSize: 8, cellPadding: 3, textColor: [49, 60, 53], lineColor: [224, 230, 224] },
-      headStyles: { fillColor: [56, 104, 78], fontStyle: 'bold' },
+      styles: { font: 'DejaVuSans', fontSize: 8, cellPadding: 3, textColor: [49, 60, 53], lineColor: [224, 230, 224], halign: 'right' },
+      headStyles: { fillColor: [56, 104, 78], font: 'DejaVuSans', fontStyle: 'bold', halign: 'right' },
       alternateRowStyles: { fillColor: [244, 247, 244] },
       margin: { left: 14, right: 14, bottom: 16 },
       didDrawPage: () => {
+        doc.setFont('DejaVuSans', 'normal');
         doc.setFontSize(8);
         doc.setTextColor(120, 130, 122);
-        doc.text(`${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`, 14, 202);
+        doc.text(`${pdfShopName()} · الصفحة ${doc.getNumberOfPages().toLocaleString('ar-EG')}`, 283, 202, { align: 'right', maxWidth: 265 });
       },
     });
-    doc.save(`report-magazzino-${todayKey}.pdf`);
+    doc.save(`تقرير-المخزون-${todayKey}.pdf`);
   };
   const exportEmployeeList = async () => {
     if (!data) return;
     try {
       if (!data.employees.length) {
-        notify('Non ci sono dipendenti da esportare.');
+        notify('لا يوجد موظفون للتصدير.');
         return;
       }
-      const doc = new jsPDF();
+      const doc = new jsPDF({ orientation: 'portrait' });
+      await configureArabicPdf(doc);
       for (const [index, employee] of data.employees.entries()) {
         await createEmployeePdf(employee, doc, index > 0);
       }
-      doc.save(`lista-dipendenti-${todayKey}.pdf`);
+      doc.save(`قائمة-الموظفين-${todayKey}.pdf`);
     } catch (error) {
       notify(errorText(error));
     }
@@ -1378,26 +1412,26 @@ export default function App() {
     if (!data) return;
     const reportSales = data.sales.filter((sale) => !respectTimeFilters || matchesSalesPeriod(sale.created_at));
     const quote = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
-    const csvNumber = new Intl.NumberFormat('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const csvQuantity = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 3 });
+    const csvNumber = new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const csvQuantity = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 3 });
     const rows = [
-      ['Numero scontrino', 'Data e ora', 'Metodo di pagamento', 'Articoli', 'Quantità totale', 'Totale lordo', 'Sconto', 'Totale netto'],
+      ['رقم الإيصال', 'التاريخ والوقت', 'طريقة الدفع', 'الكميات', 'إجمالي الكمية', 'الإجمالي قبل الخصم', 'الخصم', 'الإجمالي الصافي'],
       ...reportSales.map((sale) => [
         sale.receipt_no,
         csvDateTime.format(new Date(sale.created_at)),
-        sale.payment_method,
-        sale.items.map((item) => `${csvQuantity.format(item.quantity)} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}`).join(', '),
+        translateItalianText(sale.payment_method),
+        sale.items.map((item) => `${csvQuantity.format(item.quantity)} ${item.unit === 'KG' ? 'كغ' : item.unit === 'LITRO' ? 'لتر' : 'قطعة'}`).join('، '),
         csvQuantity.format(sale.items.reduce((sum, item) => sum + item.quantity, 0)),
         csvNumber.format(sale.gross_total),
         csvNumber.format(sale.discount),
         csvNumber.format(sale.total),
       ]),
     ];
-    const csv = `\uFEFFsep=;\r\n${rows.map((row) => row.map(quote).join(';')).join('\r\n')}`;
+    const csv = `\uFEFF${rows.map((row) => row.map(quote).join(';')).join('\r\n')}`;
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = `vendite-${todayKey}.csv`;
+    link.download = `المبيعات-${todayKey}.csv`;
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -1497,16 +1531,16 @@ export default function App() {
     return { mese: month.toLocaleDateString('ar-EG', { month: 'short' }), totale: monthSales.reduce((sum, sale) => sum + sale.total, 0) };
   });
   const chartDays = Array.from({ length: 7 }, (_, index) => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - 6 + index); const sales = statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()); return { giorno: date.toLocaleDateString('ar-EG', { weekday: 'short' }), totale: sales.reduce((sum, sale) => sum + sale.total, 0) }; });
-  const downloadFinancialBalance = (respectTimeFilters: boolean) => {
+  const downloadFinancialBalance = async (respectTimeFilters: boolean) => {
     if (!data) return;
     const doc = new jsPDF({ orientation: 'landscape' });
+    await configureArabicPdf(doc);
     const reportSales = respectTimeFilters ? balanceSales : data.sales;
     const reportExpenses = respectTimeFilters ? balanceExpenses : data.expenses;
     const reportRevenue = reportSales.reduce((sum, sale) => sum + sale.total, 0);
     const reportGoodsCost = reportSales.reduce((sum, sale) => sum + sale.items.reduce((cost, item) => cost + item.quantity * item.purchase_price, 0), 0);
     const reportOperatingExpenses = reportExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-    const periodLabel = respectTimeFilters ? balancePeriod : 'Tutto il periodo';
-    const filename = `bilancio-gestionale-${periodLabel.toLowerCase().replaceAll(' ', '-')}-${todayKey}.pdf`;
+    const periodLabel = respectTimeFilters ? translateItalianText(balancePeriod) : 'كامل الفترة';
     const allDates = [...reportSales.map((sale) => sale.created_at.slice(0, 10)), ...reportExpenses.map((expense) => expense.expense_date)].sort();
     const monthlyStartDate = respectTimeFilters || !allDates.length ? balanceFirstMonth : new Date(`${allDates[0]}T00:00:00`);
     const firstMonth = new Date(monthlyStartDate.getFullYear(), monthlyStartDate.getMonth(), 1);
@@ -1518,76 +1552,79 @@ export default function App() {
       const revenue = sales.reduce((sum, sale) => sum + sale.total, 0);
       const cost = sales.reduce((sum, sale) => sum + sale.items.reduce((subtotal, item) => subtotal + item.quantity * item.purchase_price, 0), 0);
       const expenses = reportExpenses.filter((expense) => expense.expense_date.startsWith(monthKey)).reduce((sum, expense) => sum + expense.amount, 0);
-      return { month: month.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' }), revenue, cost, expenses, result: revenue - cost - expenses };
+      return { month: month.toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }), revenue, cost, expenses, result: revenue - cost - expenses };
     });
     const pageHeading = (title: string) => {
       doc.setFillColor(47, 91, 66);
       doc.rect(0, 0, 297, 28, 'F');
       doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
+      doc.setFont('DejaVuSans', 'bold');
       doc.setFontSize(13);
-      doc.text(title, 12, 13);
-      doc.setFont('helvetica', 'normal');
+      doc.text(title, 285, 13, { align: 'right', maxWidth: 270 });
+      doc.setFont('DejaVuSans', 'normal');
       doc.setFontSize(8);
-      doc.text(`${data.settings.shop_name} · ${periodLabel} · ${pdfDate.format(new Date())}`, 12, 21);
+      doc.text(`${pdfShopName()} · ${periodLabel} · ${pdfDate.format(new Date())}`, 285, 21, { align: 'right', maxWidth: 270 });
     };
-    pageHeading('Bilancio gestionale');
+    pageHeading('الميزانية الإدارية');
     autoTable(doc, {
       startY: 36,
-      head: [['Ricavi vendite', 'Costo merce', 'Spese operative', 'Risultato', 'Valore magazzino']],
+      head: [['إيرادات المبيعات', 'تكلفة البضائع', 'المصروفات التشغيلية', 'النتيجة', 'قيمة المخزون']],
       body: [[pdfMoney.format(reportRevenue), pdfMoney.format(reportGoodsCost), pdfMoney.format(reportOperatingExpenses), pdfMoney.format(reportRevenue - reportGoodsCost - reportOperatingExpenses), pdfMoney.format(stockCost)]],
       theme: 'grid',
-      styles: { fontSize: 9, cellPadding: 5, halign: 'center' },
-      headStyles: { fillColor: [56, 104, 78] },
+      styles: { font: 'DejaVuSans', fontSize: 9, cellPadding: 5, halign: 'center' },
+      headStyles: { fillColor: [56, 104, 78], font: 'DejaVuSans' },
     });
     autoTable(doc, {
       startY: 67,
-      head: [['Mese', 'Ricavi', 'Costo merce', 'Spese operative', 'Risultato']],
+      head: [['الشهر', 'الإيرادات', 'تكلفة البضائع', 'المصروفات التشغيلية', 'النتيجة']],
       body: reportMonthly.map((month) => [month.month, pdfMoney.format(month.revenue), pdfMoney.format(month.cost), pdfMoney.format(month.expenses), pdfMoney.format(month.result)]),
       theme: 'striped',
-      styles: { fontSize: 8, cellPadding: 3 },
-      headStyles: { fillColor: [56, 104, 78] },
+      styles: { font: 'DejaVuSans', fontSize: 8, cellPadding: 3, halign: 'right' },
+      headStyles: { fillColor: [56, 104, 78], font: 'DejaVuSans', halign: 'right' },
       didDrawPage: () => {
+        doc.setFont('DejaVuSans', 'normal');
         doc.setFontSize(8);
         doc.setTextColor(120, 130, 122);
-        doc.text(`${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`, 12, 202);
+        doc.text(`${pdfShopName()} · الصفحة ${doc.getNumberOfPages().toLocaleString('ar-EG')}`, 285, 202, { align: 'right', maxWidth: 270 });
       },
     });
     doc.addPage();
-    pageHeading('Dettaglio vendite');
+    pageHeading('تفاصيل المبيعات');
     autoTable(doc, {
       startY: 36,
-      head: [['Scontrino', 'Data e ora', 'Articoli', 'Costo merce', 'Totale vendita', 'Profitto']],
+      head: [['الإيصال', 'التاريخ والوقت', 'الكميات', 'تكلفة البضائع', 'إجمالي البيع', 'الربح']],
       body: reportSales.map((sale) => {
         const cost = sale.items.reduce((sum, item) => sum + item.quantity * item.purchase_price, 0);
-        const items = sale.items.map((item) => `${pdfQuantity.format(item.quantity)} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}`).join(', ');
+        const items = sale.items.map((item) => `${pdfQuantity.format(item.quantity)} ${item.unit === 'KG' ? 'كغ' : item.unit === 'LITRO' ? 'لتر' : 'قطعة'}`).join('، ');
         return [sale.receipt_no, pdfDateTime.format(new Date(sale.created_at)), items, pdfMoney.format(cost), pdfMoney.format(sale.total), pdfMoney.format(sale.total - cost)];
       }),
       theme: 'striped',
-      styles: { fontSize: 7.5, cellPadding: 2, overflow: 'linebreak' },
-      headStyles: { fillColor: [56, 104, 78] },
+      styles: { font: 'DejaVuSans', fontSize: 7.5, cellPadding: 2, overflow: 'linebreak', halign: 'right' },
+      headStyles: { fillColor: [56, 104, 78], font: 'DejaVuSans', halign: 'right' },
       didDrawPage: () => {
+        doc.setFont('DejaVuSans', 'normal');
         doc.setFontSize(8);
         doc.setTextColor(120, 130, 122);
-        doc.text(`${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`, 12, 202);
+        doc.text(`${pdfShopName()} · الصفحة ${doc.getNumberOfPages().toLocaleString('ar-EG')}`, 285, 202, { align: 'right', maxWidth: 270 });
       },
     });
     doc.addPage();
-    pageHeading('Dettaglio spese operative');
+    pageHeading('تفاصيل المصروفات التشغيلية');
     autoTable(doc, {
       startY: 36,
-      head: [['Data', 'Descrizione', 'Categoria', 'Importo']],
-      body: reportExpenses.map((expense) => [expense.expense_date, expense.description, expense.category, pdfMoney.format(expense.amount)]),
+      head: [['التاريخ', 'الوصف', 'الفئة', 'المبلغ']],
+      body: reportExpenses.map((expense) => [expense.expense_date, expense.description, translateItalianText(expense.category), pdfMoney.format(expense.amount)]),
       theme: 'striped',
-      styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
-      headStyles: { fillColor: [56, 104, 78] },
+      styles: { font: 'DejaVuSans', fontSize: 8, cellPadding: 3, overflow: 'linebreak', halign: 'right' },
+      headStyles: { fillColor: [56, 104, 78], font: 'DejaVuSans', halign: 'right' },
       didDrawPage: () => {
+        doc.setFont('DejaVuSans', 'normal');
         doc.setFontSize(8);
         doc.setTextColor(120, 130, 122);
-        doc.text(`${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`, 12, 202);
+        doc.text(`${pdfShopName()} · الصفحة ${doc.getNumberOfPages().toLocaleString('ar-EG')}`, 285, 202, { align: 'right', maxWidth: 270 });
       },
     });
-    doc.save(filename);
+    doc.save(`الميزانية-الإدارية-${todayKey}.pdf`);
   };
   const expiryLimit = new Date();
   expiryLimit.setDate(expiryLimit.getDate() + 10);
@@ -1708,39 +1745,40 @@ export default function App() {
   const promotionDiscountLabel = (offer: Promotion) => offer.discount_type === 'percentage'
     ? `${offer.percentage}%`
     : `${offer.buy_quantity}+${offer.free_quantity}`;
-  const createUnsoldListPdf = () => {
+  const createUnsoldListPdf = async () => {
     const doc = new jsPDF();
+    await configureArabicPdf(doc);
     doc.setFontSize(18);
-    doc.text(data?.settings.shop_name ?? 'Gestione Supermercato', 14, 17);
+    doc.text(pdfShopName(), 196, 17, { align: 'right' });
     doc.setFontSize(11);
-    doc.text('Articoli ancora in magazzino', 14, 25);
+    doc.text('المنتجات المتبقية في المخزون', 196, 25, { align: 'right' });
     autoTable(doc, {
       startY: 32,
-      head: [['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']],
-      body: unsoldProducts.map((product) => [product.name, product.category, `${product.stock} ${product.unit ?? 'PEZZO'}`, pdfMoney.format(product.sale_price)]),
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [56, 104, 78] },
+      head: [['المنتج', 'الفئة', 'الكمية غير المباعة', 'سعر البيع']],
+      body: unsoldProducts.map((product) => [translateItalianText(product.name), translateItalianText(product.category), `${pdfQuantity.format(product.stock)} ${product.unit === 'KG' ? 'كغ' : product.unit === 'LITRO' ? 'لتر' : 'قطعة'}`, pdfMoney.format(product.sale_price)]),
+      styles: { font: 'DejaVuSans', fontSize: 9, halign: 'right' },
+      headStyles: { fillColor: [56, 104, 78], font: 'DejaVuSans', halign: 'right' },
     });
     return doc;
   };
   const shareUnsoldList = async () => {
     try {
-      const doc = createUnsoldListPdf();
-      const file = new File([doc.output('blob')], `articoli-magazzino-${todayKey}.pdf`, { type: 'application/pdf' });
+      const doc = await createUnsoldListPdf();
+      const file = new File([doc.output('blob')], `المنتجات-المتبقية-${todayKey}.pdf`, { type: 'application/pdf' });
       if (!navigator.share || !navigator.canShare?.({ files: [file] })) {
         doc.save(file.name);
-        notify('La condivisione non è supportata qui: ho scaricato la lista in PDF.');
+        notify('المشاركة غير مدعومة هنا؛ تم تنزيل القائمة بصيغة PDF.');
         return;
       }
-      await navigator.share({ files: [file], title: 'Articoli ancora in magazzino' });
-      notify('Lista PDF condivisa.');
+      await navigator.share({ files: [file], title: 'المنتجات المتبقية في المخزون' });
+      notify('تمت مشاركة القائمة بصيغة PDF.');
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       notify(errorText(error));
     }
   };
 
-  if (locked) return <div className="lock-screen"><div className="lock-panel"><div className="brand-mark"><Store size={23} /></div><p className="eyebrow">ACCESSO AL GESTIONALE</p><h1>{data?.settings.shop_name ?? 'Il tuo supermercato'}</h1><p className="muted">Inserisci il PIN per continuare</p><form onSubmit={unlock}><Field label="PIN di sicurezza" type="password" value={pin} onChange={(e) => setPin(e.target.value)} autoFocus /><button className="button button-primary full-width"><LockKeyhole size={16} /> Accedi</button></form></div>{notice && <div className="toast">{notice}</div>}</div>;
+  if (locked) return <div className="lock-screen"><div className="lock-panel"><div className="brand-mark"><Store size={23} /></div><p className="eyebrow">ACCESSO AL GESTIONALE</p><h1>{data?.settings.shop_name ?? 'متجرك'}</h1><p className="muted">Inserisci il PIN per continuare</p><form onSubmit={unlock}><Field label="PIN di sicurezza" type="password" value={pin} onChange={(e) => setPin(e.target.value)} autoFocus /><button className="button button-primary full-width"><LockKeyhole size={16} /> Accedi</button></form></div>{notice && <div className="toast">{notice}</div>}</div>;
   if (!data) return <div className="loading-screen"><span className="loader" />Caricamento archivio…</div>;
 
   return <div className="app-shell">
@@ -1770,7 +1808,7 @@ export default function App() {
       {section === 'home' && <div className="page-content home-page"><img className="home-banner" src={homeBanner} alt="Illustrazione di un supermercato con prodotti freschi" /><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length.toLocaleString('ar-EG')} scontrini emessi`} /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyProfit)} detail="Profitto dopo sconti e costo merce" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString('ar-EG')} detail="Pezzi registrati oggi" /></div><section className="expiry-alert expiry-home-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length.toLocaleString('ar-EG')} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length.toLocaleString('ar-EG')} articoli sotto soglia`} action={<button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); setSection('inventory'); }}>Vai al magazzino →</button>} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => setSelectedProduct(p)}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock.toLocaleString('ar-EG')}</td><td>{p.low_stock_threshold.toLocaleString('ar-EG')}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => setSection('sales')}>Tutte le vendite →</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
 
       {section === 'inventory' && <div className="page-content">
-        <div className="page-toolbar inventory-toolbar"><div><h2>Articoli in magazzino</h2><p>{data.products.length} articoli registrati</p></div><div className="toolbar-actions"><button className="button button-outline" onClick={exportInventoryReport}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-primary" onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct }); }}><Plus size={16} /> Aggiungi nuovo articolo</button></div></div>
+        <div className="page-toolbar inventory-toolbar"><div><h2>Articoli in magazzino</h2><p>{data.products.length} articoli registrati</p></div><div className="toolbar-actions"><button className="button button-outline" onClick={() => void exportInventoryReport().catch((error: unknown) => notify(errorText(error)))}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-primary" onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct }); }}><Plus size={16} /> Aggiungi nuovo articolo</button></div></div>
         <div className="filter-row"><SearchInput value={inventorySearch} onChange={setInventorySearch} placeholder="Cerca per nome o codice…" /><label className="select-wrap"><span>Categoria</span><select value={category} onChange={(e) => setCategory(e.target.value)}><option>Tutte</option>{categories.map((item) => <option key={item}>{item}</option>)}</select><ChevronDown size={14} /></label><details className="inventory-filter-dropdown"><summary className="select-wrap"><span>Disponibilità: {inventoryFilters.find((item) => item.value === inventoryStatus)?.label}</span><ChevronDown size={14} /></summary><div className="inventory-status-filters" role="group" aria-label="Filtra prodotti per disponibilità">{inventoryFilters.map(({ value, label }) => <button key={value} className={`status-filter${inventoryStatus === value ? ' active' : ''}`} aria-pressed={inventoryStatus === value} onClick={(event) => { setInventoryStatus(value); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{label}</button>)}</div></details></div>
         <div className="expiry-panels">
           <section className="expiry-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section>
@@ -1848,7 +1886,7 @@ export default function App() {
       {section === 'payroll' && <div className="page-content">
         <div className="page-toolbar"><div><h2>Gestione stipendi</h2><p>Registra i pagamenti mensili e scarica le ricevute PDF.</p></div></div>
         <div className="panel payroll-toolbar"><Field label="Mese di competenza" type="month" value={payrollMonth} onChange={(event) => setPayrollMonth(event.target.value)} /><Field label="Data di pagamento" type="date" value={payrollDate} onChange={(event) => setPayrollDate(event.target.value)} /><button className="button button-primary" onClick={() => void payAllEmployees()}><Banknote size={15} /> Paga tutti gli stipendi</button><button className="button button-outline" onClick={() => { const payments = data.payrollPayments.filter((payment) => payment.pay_month === payrollMonth); void exportPayrollZip(payments).catch((error: unknown) => notify(errorText(error))); }}><ArrowDownToLine size={15} /> Scarica ricevute del mese</button></div>
-        <Table headings={['Dipendente', 'Ruolo', 'Stipendio', 'Metodo', 'Stato', 'Azione']}><>{data.employees.map((employee) => { const payment = data.payrollPayments.find((item) => item.employee_id === employee.id && item.pay_month === payrollMonth); return <tr key={employee.id}><td className="cell-primary">{employee.first_name} {employee.last_name}</td><td>{employee.role}</td><td>{money.format(employee.salary)}</td><td>{employee.payment_method}</td><td><span className={`stock-badge${payment ? '' : ' low'}`}>{payment ? `Pagato il ${payment.payment_date}` : 'Da pagare'}</span></td><td>{payment ? <button className="button button-outline" onClick={() => savePdf(createSalaryPdf(employee, payment.payment_date, payment.pay_month, payment.amount), `Stipendio-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}-${payment.payment_date}.pdf`)}><ArrowDownToLine size={14} /> Ricevuta</button> : <button className="button button-primary" onClick={() => void payEmployee(employee)}><Check size={14} /> Paga</button>}</td></tr>; })}</>{!data.employees.length && <tr><td colSpan={6} className="empty-cell">Nessun dipendente registrato.</td></tr>}</Table>
+        <Table headings={['Dipendente', 'Ruolo', 'Stipendio', 'Metodo', 'Stato', 'Azione']}><>{data.employees.map((employee) => { const payment = data.payrollPayments.find((item) => item.employee_id === employee.id && item.pay_month === payrollMonth); return <tr key={employee.id}><td className="cell-primary">{employee.first_name} {employee.last_name}</td><td>{employee.role}</td><td>{money.format(employee.salary)}</td><td>{employee.payment_method}</td><td><span className={`stock-badge${payment ? '' : ' low'}`}>{payment ? `Pagato il ${payment.payment_date}` : 'Da pagare'}</span></td><td>{payment ? <button className="button button-outline" onClick={() => void createSalaryPdf(employee, payment.payment_date, payment.pay_month, payment.amount).then((doc) => savePdf(doc, `راتب-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}-${payment.payment_date}.pdf`)).catch((error: unknown) => notify(errorText(error)))}><ArrowDownToLine size={14} /> Ricevuta</button> : <button className="button button-primary" onClick={() => void payEmployee(employee)}><Check size={14} /> Paga</button>}</td></tr>; })}</>{!data.employees.length && <tr><td colSpan={6} className="empty-cell">Nessun dipendente registrato.</td></tr>}</Table>
       </div>}
       {section === 'clients' && <div className="page-content"><div className="page-toolbar"><div><h2>Gestione clienti e tessere</h2><p>Seleziona una funzione per gestire l’anagrafica e il programma fedeltà.</p></div></div><div className="client-shortcuts">{([['client-list', 'Lista clienti'], ['cards-list', 'Lista tessere'], ['cards-activate', 'Attiva tessera'], ['cards-create', 'Sviluppa tessera'], ['cards-developed', 'Tessere sviluppate']] as const).map(([target, label]) => <button className="panel client-shortcut" key={target} onClick={() => navigateTo(target)}><CreditCard size={20} /><strong>{label}</strong><span>Apri gestione →</span></button>)}</div></div>}
       {section === 'client-list' && <div className="page-content"><section className="panel client-form-panel"><form className="client-form" onSubmit={(event) => void saveCustomer(event)}><Field label="Nome" value={customerForm.first_name} onChange={(event) => setCustomerForm({ ...customerForm, first_name: event.target.value })} required /><Field label="Cognome" value={customerForm.last_name} onChange={(event) => setCustomerForm({ ...customerForm, last_name: event.target.value })} required /><Field label="Telefono" type="tel" value={customerForm.phone} onChange={(event) => setCustomerForm({ ...customerForm, phone: event.target.value })} required /><Field label="Email" type="email" value={customerForm.email} onChange={(event) => setCustomerForm({ ...customerForm, email: event.target.value })} required /><button className="button button-primary customer-submit"><Plus size={15} /> Aggiungi cliente</button></form></section><Table headings={['Nome', 'Telefono', 'Email', 'Indirizzo', 'Registrato']}><>{data.customers.map((customer: Customer) => <tr key={customer.id}><td className="cell-primary">{customer.first_name} {customer.last_name}</td><td>{customer.phone}</td><td>{customer.email}</td><td>{customer.address}</td><td>{receiptDate.format(new Date(customer.created_at))}</td></tr>)}</>{!data.customers.length && <tr><td colSpan={5} className="empty-cell">Nessun cliente registrato.</td></tr>}</Table></div>}
@@ -1941,7 +1979,7 @@ export default function App() {
     </main>
 
     {unsoldListOpen && <Modal title="Articoli ancora in magazzino" close={() => setUnsoldListOpen(false)} wide><div id="unsold-list-print"><Table headings={['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']}><>{unsoldProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td>{product.category}</td><td>{product.stock} {product.unit ?? 'PEZZO'}</td><td>{money.format(product.sale_price)}</td></tr>)}</>{!unsoldProducts.length && <tr><td colSpan={4} className="empty-cell">Non risultano articoli rimanenti in magazzino.</td></tr>}</Table></div><div className="unsold-list-actions no-print"><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa</button><button className="button button-primary" onClick={() => void shareUnsoldList()}><Share2 size={16} /> Condividi</button></div></Modal>}
-    {reportExportOpen && <Modal title={reportExportType.startsWith('sales') ? 'Esporta report vendite' : 'Esporta report contabilità e finanza'} close={() => setReportExportOpen(false)}><div className="report-export-options"><p>Vuoi applicare al report il filtro temporale selezionato ({reportExportType.startsWith('sales') ? salesPeriod : balancePeriod}) o includere tutto il periodo disponibile?</p><button className="button button-primary" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(true); else if (reportExportType === 'sales-csv') exportSalesCsv(true); else downloadFinancialBalance(true); }}><Check size={15} /> Rispetta il filtro di tempo</button><button className="button button-outline" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(false); else if (reportExportType === 'sales-csv') exportSalesCsv(false); else downloadFinancialBalance(false); }}><ArrowDownToLine size={15} /> Esporta tutto</button></div></Modal>}
+    {reportExportOpen && <Modal title={reportExportType.startsWith('sales') ? 'Esporta report vendite' : 'Esporta report contabilità e finanza'} close={() => setReportExportOpen(false)}><div className="report-export-options"><p>Vuoi applicare al report il filtro temporale selezionato ({reportExportType.startsWith('sales') ? salesPeriod : balancePeriod}) o includere tutto il periodo disponibile?</p><button className="button button-primary" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') void exportReport(true).catch((error: unknown) => notify(errorText(error))); else if (reportExportType === 'sales-csv') exportSalesCsv(true); else void downloadFinancialBalance(true).catch((error: unknown) => notify(errorText(error))); }}><Check size={15} /> Rispetta il filtro di tempo</button><button className="button button-outline" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') void exportReport(false).catch((error: unknown) => notify(errorText(error))); else if (reportExportType === 'sales-csv') exportSalesCsv(false); else void downloadFinancialBalance(false).catch((error: unknown) => notify(errorText(error))); }}><ArrowDownToLine size={15} /> Esporta tutto</button></div></Modal>}
     {employeeDetails && <Modal title={`${employeeDetails.first_name} ${employeeDetails.last_name}`} close={() => setEmployeeDetails(null)} rightHalf>
       <div className="employee-detail-content">
         <div className="employee-detail-hero"><img src={employeeDetails.photo_data} alt={`Foto di ${employeeDetails.first_name} ${employeeDetails.last_name}`} /><div><strong>{employeeDetails.role}</strong><span>{employeeDetails.operational_site} · {employeeDetails.shift}</span></div></div>

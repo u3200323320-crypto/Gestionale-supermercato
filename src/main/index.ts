@@ -6,6 +6,8 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, un
 import { join } from 'node:path';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
+import { translateItalianText } from '../shared/arabic';
+import arabicPdfFontPath from '../assets/DejaVuSans.ttf?asset';
 import type { CheckoutInput, Customer, CustomerInput, Employee, EmployeeInput, Expense, LoyaltyCard, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, SaleItem, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
 
 let database: Database.Database;
@@ -138,9 +140,9 @@ function state() {
       FROM payroll_payments payments JOIN employees ON employees.id = payments.employee_id
       ORDER BY payments.pay_month DESC, employees.last_name, employees.first_name`).all() as PayrollPayment[],
     settings: {
-      shop_name: setting('shop_name', 'Il tuo supermercato'),
+      shop_name: setting('shop_name', 'متجرك'),
       shop_logo: setting('shop_logo'),
-      archive_folder: setting('archive_folder', join(app.getPath('documents'), 'Gestionale-Archivio')),
+      archive_folder: setting('archive_folder', join(app.getPath('documents'), 'أرشيف-المتجر')),
       database_file: databaseFile,
       receipt_printer: setting('receipt_printer'),
       barcode_scanner_enabled: setting('barcode_scanner_enabled', 'true') === 'true',
@@ -344,9 +346,9 @@ function recordStockMovement(productId: number, productName: string, type: 'Cari
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(productId, productName, type, quantity, new Date().toISOString(), person, destination, note);
 }
 
-const archiveNumber = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 2 });
-const archiveMoney = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
-const archiveDateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' });
+const archiveNumber = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 2 });
+const archiveMoney = new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EUR' });
+const archiveDateTime = new Intl.DateTimeFormat('ar-EG', { dateStyle: 'short', timeStyle: 'short' });
 
 interface ArchiveSection {
   name: string;
@@ -356,7 +358,7 @@ interface ArchiveSection {
 }
 
 function removeLegacyTextBackups(folder: string): void {
-  for (const section of ['Magazzino', 'Cassa', 'Vendite', 'Promozioni', 'Statistiche']) {
+  for (const section of ['المخزون', 'نقطة البيع', 'المبيعات', 'العروض الترويجية', 'الإحصائيات']) {
     const dir = join(folder, section);
     if (!existsSync(dir)) continue;
     for (const fileName of readdirSync(dir)) {
@@ -367,8 +369,8 @@ function removeLegacyTextBackups(folder: string): void {
 
 function archiveDay(day: string): Promise<void> {
   const [dayStart, dayEnd] = localDayBounds(day);
-  const folder = setting('archive_folder', join(app.getPath('documents'), 'Gestionale-Archivio'));
-  const shopName = setting('shop_name', 'Gestione Supermercato');
+  const folder = setting('archive_folder', join(app.getPath('documents'), 'أرشيف-المتجر'));
+  const shopName = setting('shop_name', 'إدارة المتجر');
   const products = database.prepare('SELECT code, name, category, unit, sale_price, purchase_price, stock FROM products ORDER BY name').all() as Array<Record<string, string | number>>;
   const sales = database.prepare('SELECT receipt_no, created_at, payment_method, gross_total, discount, total FROM sales WHERE created_at >= ? AND created_at < ? ORDER BY created_at').all(dayStart, dayEnd) as Array<Record<string, string | number>>;
   const saleItemsForDay = database.prepare(`SELECT s.receipt_no, i.name, i.unit, i.quantity, i.unit_price FROM sale_items i JOIN sales s ON s.id = i.sale_id WHERE s.created_at >= ? AND s.created_at < ? ORDER BY s.created_at`).all(dayStart, dayEnd) as Array<Record<string, string | number>>;
@@ -376,45 +378,45 @@ function archiveDay(day: string): Promise<void> {
   const statistics = database.prepare(`SELECT COUNT(*) AS transactions, COALESCE(SUM(total), 0) AS net, COALESCE(SUM((SELECT SUM(quantity) FROM sale_items WHERE sale_id = sales.id)), 0) AS quantity FROM sales WHERE created_at >= ? AND created_at < ?`).get(dayStart, dayEnd) as { transactions: number; net: number; quantity: number };
   const sections: ArchiveSection[] = [
     {
-      name: 'Magazzino',
-      columns: ['Codice', 'Articolo', 'Categoria', 'Vendita', 'Acquisto', 'Giacenza'],
+      name: 'المخزون',
+      columns: ['الرمز', 'المنتج', 'الفئة', 'البيع', 'الشراء', 'المخزون'],
       weights: [1.1, 2.2, 1.25, 1, 1, 0.9],
-      rows: products.map((product) => [String(product.code), String(product.name), String(product.category), archiveMoney.format(Number(product.sale_price)), archiveMoney.format(Number(product.purchase_price)), `${archiveNumber.format(Number(product.stock))} ${product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'lit.' : 'pz'}`]),
+      rows: products.map((product) => [String(product.code), translateItalianText(String(product.name)), translateItalianText(String(product.category)), archiveMoney.format(Number(product.sale_price)), archiveMoney.format(Number(product.purchase_price)), `${archiveNumber.format(Number(product.stock))} ${product.unit === 'KG' ? 'كغ' : product.unit === 'LITRO' ? 'لتر' : 'قطعة'}`]),
     },
     {
-      name: 'Vendite',
-      columns: ['Scontrino', 'Data e ora', 'Pagamento', 'Lordo', 'Sconto', 'Netto'],
+      name: 'المبيعات',
+      columns: ['الإيصال', 'التاريخ والوقت', 'الدفع', 'الإجمالي قبل الخصم', 'الخصم', 'الصافي'],
       weights: [0.9, 1.4, 1.1, 1, 1, 1],
-      rows: sales.map((sale) => [String(sale.receipt_no), archiveDateTime.format(new Date(String(sale.created_at))), String(sale.payment_method), archiveMoney.format(Number(sale.gross_total)), archiveMoney.format(Number(sale.discount)), archiveMoney.format(Number(sale.total))]),
+      rows: sales.map((sale) => [String(sale.receipt_no), archiveDateTime.format(new Date(String(sale.created_at))), translateItalianText(String(sale.payment_method)), archiveMoney.format(Number(sale.gross_total)), archiveMoney.format(Number(sale.discount)), archiveMoney.format(Number(sale.total))]),
     },
     {
-      name: 'Cassa',
-      columns: ['Scontrino', 'Articolo', 'Quantità', 'Unità', 'Prezzo unitario'],
+      name: 'نقطة البيع',
+      columns: ['الإيصال', 'المنتج', 'الكمية', 'الوحدة', 'سعر الوحدة'],
       weights: [0.9, 2.2, 0.8, 0.8, 1.1],
-      rows: saleItemsForDay.map((item) => [String(item.receipt_no), String(item.name), archiveNumber.format(Number(item.quantity)), item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz', archiveMoney.format(Number(item.unit_price))]),
+      rows: saleItemsForDay.map((item) => [String(item.receipt_no), translateItalianText(String(item.name)), archiveNumber.format(Number(item.quantity)), item.unit === 'KG' ? 'كغ' : item.unit === 'LITRO' ? 'لتر' : 'قطعة', archiveMoney.format(Number(item.unit_price))]),
     },
     {
-      name: 'Promozioni',
-      columns: ['Promozione', 'Sconto', 'Categoria', 'Periodo', 'Spesa minima', 'Modalità'],
+      name: 'العروض الترويجية',
+      columns: ['العرض الترويجي', 'الخصم', 'الفئة', 'الفترة', 'الحد الأدنى للإنفاق', 'طريقة التطبيق'],
       weights: [1.6, 0.7, 1, 1.4, 1, 0.9],
       rows: promotions.map((promotion) => [
-        String(promotion.name),
+        translateItalianText(String(promotion.name)),
         promotion.discount_type === 'buy_get' ? `${promotion.buy_quantity}+${promotion.free_quantity}` : `${promotion.percentage}%`,
-        String(promotion.category),
+        translateItalianText(String(promotion.category)),
         `${promotion.starts_at} - ${promotion.ends_at}`,
         archiveMoney.format(Number(promotion.minimum_spend)),
-        String(promotion.application_mode),
+        translateItalianText(String(promotion.application_mode)),
       ]),
     },
     {
-      name: 'Statistiche',
-      columns: ['Indicatore', 'Valore'],
+      name: 'الإحصائيات',
+      columns: ['المؤشر', 'القيمة'],
       weights: [1.5, 1],
       rows: [
-        ['Data del report', day],
-        ['Vendite registrate', String(statistics.transactions)],
-        ['Incasso netto', archiveMoney.format(statistics.net)],
-        ['Quantità venduta', archiveNumber.format(statistics.quantity)],
+        ['تاريخ التقرير', day],
+        ['المبيعات المسجلة', archiveNumber.format(statistics.transactions)],
+        ['صافي الإيرادات', archiveMoney.format(statistics.net)],
+        ['الكمية المباعة', archiveNumber.format(statistics.quantity)],
       ],
     },
   ];
@@ -429,25 +431,25 @@ function archiveDay(day: string): Promise<void> {
     const drawHeader = () => {
       doc.save();
       doc.rect(0, 0, pageWidth, 105).fill('#2b523d');
-      doc.fillColor('#dce9de').font('Helvetica').fontSize(8).text('GESTIONALE  /  ARCHIVIO GIORNALIERO', 40, 27);
-      doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(22).text(name, 40, 43);
-      doc.fillColor('#e4eee5').font('Helvetica').fontSize(9).text(`${shopName}  ·  ${day}`, 40, 76);
+      doc.fillColor('#dce9de').font(arabicPdfFontPath).fontSize(8).text('نظام الإدارة  /  الأرشيف اليومي', 40, 27, { width: pageWidth - 80, align: 'right' });
+      doc.fillColor('#ffffff').font(arabicPdfFontPath).fontSize(22).text(name, 40, 43, { width: pageWidth - 80, align: 'right' });
+      doc.fillColor('#e4eee5').font(arabicPdfFontPath).fontSize(9).text(`${translateItalianText(shopName)}  ·  ${day}`, 40, 76, { width: pageWidth - 80, align: 'right' });
       doc.restore();
     };
     const columnWidths = weights.map((weight) => tableWidth * weight / weights.reduce((sum, item) => sum + item, 0));
     const drawColumnHeader = (y: number) => {
       doc.roundedRect(40, y, tableWidth, 24, 3).fill('#38684e');
-      let x = 46;
+      let x = pageWidth - 46;
       columns.forEach((column, index) => {
-        doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(8).text(column, x, y + 8, { width: columnWidths[index] - 10, lineBreak: false, ellipsis: true });
-        x += columnWidths[index];
+        x -= columnWidths[index];
+        doc.fillColor('#ffffff').font(arabicPdfFontPath).fontSize(8).text(column, x, y + 8, { width: columnWidths[index] - 10, align: 'right', lineBreak: false, ellipsis: true });
       });
     };
     drawHeader();
     let y = 124;
     drawColumnHeader(y);
     y += 24;
-    const dataRows = rows.length ? rows : [columns.map((_, index) => index === 0 ? 'Nessun dato disponibile' : '')];
+    const dataRows = rows.length ? rows : [columns.map((_, index) => index === 0 ? 'لا توجد بيانات متاحة' : '')];
     dataRows.forEach((row, rowIndex) => {
       if (y + 25 > pageHeight - 38) {
         doc.addPage();
@@ -459,11 +461,11 @@ function archiveDay(day: string): Promise<void> {
       if (rowIndex % 2 === 0) doc.rect(40, y, tableWidth, 25).fill('#f1f5f1');
       doc.save();
       doc.rect(40, y, tableWidth, 25).lineWidth(0.4).stroke('#e1e8e1');
-      let x = 46;
+      let x = pageWidth - 46;
       columns.forEach((_, index) => {
-        doc.fillColor('#34443a').font(index === 0 && name === 'Statistiche' ? 'Helvetica-Bold' : 'Helvetica').fontSize(8)
-          .text(row[index] ?? '', x, y + 8, { width: columnWidths[index] - 10, lineBreak: false, ellipsis: true });
-        x += columnWidths[index];
+        x -= columnWidths[index];
+        doc.fillColor('#34443a').font(arabicPdfFontPath).fontSize(8)
+          .text(row[index] ?? '', x, y + 8, { width: columnWidths[index] - 10, align: 'right', lineBreak: false, ellipsis: true });
       });
       doc.restore();
       y += 25;
@@ -471,8 +473,8 @@ function archiveDay(day: string): Promise<void> {
     const pages = doc.bufferedPageRange();
     for (let index = 0; index < pages.count; index += 1) {
       doc.switchToPage(pages.start + index);
-      doc.fillColor('#839087').font('Helvetica').fontSize(8)
-        .text(`${shopName}  ·  ${name}  ·  Pagina ${index + 1} di ${pages.count}`, 40, pageHeight - 25, { width: tableWidth, align: 'right' });
+      doc.fillColor('#839087').font(arabicPdfFontPath).fontSize(8)
+        .text(`${translateItalianText(shopName)}  ·  ${name}  ·  الصفحة ${archiveNumber.format(index + 1)} من ${archiveNumber.format(pages.count)}`, 40, pageHeight - 25, { width: tableWidth, align: 'right' });
     }
     stream.on('finish', resolve);
     stream.on('error', reject);
@@ -484,7 +486,7 @@ async function archiveMissingDays(): Promise<void> {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const lastDay = localDate(yesterday);
-  removeLegacyTextBackups(setting('archive_folder', join(app.getPath('documents'), 'Gestionale-Archivio')));
+  removeLegacyTextBackups(setting('archive_folder', join(app.getPath('documents'), 'أرشيف-المتجر')));
   const lastArchivedDay = setting('last_archive_day');
   if (!lastArchivedDay) {
     await archiveDay(lastDay);
@@ -510,7 +512,7 @@ function createWindow(): void {
     minWidth: 1120,
     minHeight: 720,
     backgroundColor: '#f6f7f5',
-    title: 'Gestione Supermercato',
+    title: 'إدارة المتجر',
     webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false },
   });
   if (process.env.ELECTRON_RENDERER_URL) mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
@@ -746,7 +748,7 @@ app.whenReady().then(() => {
     if (!Number.isFinite(batch.discount_percentage) || batch.discount_percentage < 1 || batch.discount_percentage > 100
       || !isValidDate(batch.starts_at) || !isValidDate(batch.ends_at) || batch.ends_at < batch.starts_at
       || (batch.id === undefined && !batch.codes.length) || (batch.id === undefined && batch.codes.some((code) => {
-        const prefix = voucherCodePrefix(setting('shop_name', 'Il tuo supermercato'));
+        const prefix = voucherCodePrefix(setting('shop_name', 'متجرك'));
         return typeof code !== 'string' || !code.startsWith(prefix) || !/^\d{10}$/.test(code.slice(prefix.length));
       })) || (batch.id === undefined && uniqueCodes.size !== batch.codes.length)) {
       throw new Error('Controlla percentuale, date e codici del buono sconto.');
@@ -901,8 +903,7 @@ app.whenReady().then(() => {
       || !Number.isFinite(input.discount_percentage) || input.discount_percentage < 0 || input.discount_percentage > 100) {
       throw new Error('Inserisci una quantità da 1 a 5000 e uno sconto tra 0 e 100%.');
     }
-    const storeName = setting('shop_name', 'Il tuo supermercato').replace(/[^a-z0-9]/gi, '');
-    if (!storeName) throw new Error('Imposta un nome negozio composto da lettere o numeri prima di generare tessere.');
+    const storeName = setting('shop_name', 'متجرك').replace(/[^a-z0-9]/gi, '') || 'STORE';
     const insert = database.prepare(`INSERT INTO loyalty_cards (code, barcode, discount_percentage, status, created_at)
       VALUES (?, ?, ?, 'Sviluppata', ?)`);
     const usedCodes = new Set((database.prepare('SELECT code FROM loyalty_cards').all() as Array<{ code: string }>).map(({ code }) => code));
@@ -1032,7 +1033,7 @@ app.whenReady().then(() => {
     });
   });
   ipcMain.handle('settings:choose-shop-logo', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, { properties: ['openFile'], filters: [{ name: 'Immagini', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] });
+    const result = await dialog.showOpenDialog(mainWindow, { properties: ['openFile'], filters: [{ name: 'الصور', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] });
     if (result.canceled || !result.filePaths[0]) return null;
     const filePath = result.filePaths[0];
     const image = readFileSync(filePath);
@@ -1047,10 +1048,10 @@ app.whenReady().then(() => {
     if (setting('archive_folder')) {
       const confirmation = await dialog.showMessageBox(mainWindow, {
         type: 'warning',
-        title: 'Modifica cartella archivio',
-        message: 'Stai per modificare la cartella usata per i backup giornalieri.',
-        detail: 'I backup successivi verranno salvati nella nuova cartella. Vuoi continuare?',
-        buttons: ['Annulla', 'Continua'],
+        title: 'تغيير مجلد الأرشيف',
+        message: 'أنت على وشك تغيير المجلد المستخدم للنسخ الاحتياطية اليومية.',
+        detail: 'سيتم حفظ النسخ الاحتياطية التالية في المجلد الجديد. هل تريد المتابعة؟',
+        buttons: ['إلغاء', 'متابعة'],
         defaultId: 0,
         cancelId: 0,
       });
