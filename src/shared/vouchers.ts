@@ -3,5 +3,5 @@ export function voucherCodePrefix(shopName: string): string {
     .normalize('NFKD')
     .replace(/\p{Diacritic}/gu, '')
     .replace(/[^A-Za-z0-9]/g, '');
-  return normalizedName || 'STORE';
+  return normalizedName || 'Negozio';
 }
