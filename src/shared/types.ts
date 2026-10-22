@@ -1,4 +1,4 @@
-export type Section = 'home' | 'inventory' | 'expired-products' | 'inventory-history' | 'stock-movement' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'expenses' | 'financial-balance' | 'clients' | 'client-list' | 'cards-list' | 'cards-activate' | 'cards-create' | 'cards-developed' | 'employees' | 'employee-create' | 'payroll' | 'settings';
+export type Section = 'home' | 'inventory' | 'expired-products' | 'inventory-history' | 'stock-movement' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'expenses' | 'financial-balance' | 'employees' | 'employee-create' | 'payroll' | 'settings';
 export type ProductUnit = 'KG' | 'LITRO' | 'PEZZO';
 export type Printer = { name: string; displayName: string };
 
@@ -112,28 +112,6 @@ export interface Employee {
 }
 
 export type EmployeeInput = Omit<Employee, 'id' | 'created_at'> & { initial_password: string };
-export interface Customer {
-  id: number;
-  first_name: string;
-  last_name: string;
-  phone: string;
-  email: string;
-  address: string;
-  created_at: string;
-}
-export interface LoyaltyCard {
-  id: number;
-  code: string;
-  barcode: string;
-  discount_percentage: number;
-  customer_id: number | null;
-  status: 'Sviluppata' | 'Attiva';
-  points: number;
-  created_at: string;
-  activated_at: string | null;
-  first_name?: string;
-  last_name?: string;
-}
 export interface PayrollPayment {
   id: number;
   employee_id: number;
@@ -144,11 +122,11 @@ export interface PayrollPayment {
   first_name: string;
   last_name: string;
 }
-export type CustomerInput = Pick<Customer, 'first_name' | 'last_name' | 'phone' | 'email' | 'address'>;
 export type PayrollPaymentInput = { employee_id: number; pay_month: string; payment_date: string };
+export type CustomerInput = { first_name: string; last_name: string; phone: string; email: string; address: string };
 export type VoucherBatchInput = Pick<VoucherBatch, 'discount_percentage' | 'starts_at' | 'ends_at' | 'codes'> & { id?: number };
 export type PromotionInput = Omit<Promotion, 'id'> & { id?: number };
-export type CheckoutInput = { items: SaleItem[]; payment_method: string; voucher_code?: string; loyalty_card_id?: number; manual_promotion_id?: number; automatic_promotion_id?: number | null };
+export type CheckoutInput = { items: SaleItem[]; payment_method: string; voucher_code?: string; manual_promotion_id?: number; automatic_promotion_id?: number | null };
 export type VoucherValidation = { valid: true; discount_percentage: number } | { valid: false; message: string };
 
 export interface AppState {
@@ -157,10 +135,8 @@ export interface AppState {
   promotions: Promotion[];
   voucherBatches: VoucherBatch[];
   employees: Employee[];
-  customers: Customer[];
-  loyaltyCards: LoyaltyCard[];
   payrollPayments: PayrollPayment[];
-  settings: { shop_name: string; shop_logo?: string; archive_folder: string; database_file: string; receipt_printer: string; barcode_scanner_enabled: boolean; barcode_scanner_detected: boolean };
+  settings: { shop_name: string; shop_logo?: string; home_image?: string; archive_folder: string; database_file: string; receipt_printer: string; barcode_scanner_enabled: boolean; barcode_scanner_detected: boolean };
   stockMovements: StockMovement[];
   expenses: Expense[];
 }
@@ -198,11 +174,6 @@ declare global {
     saveEmployee: (employee: EmployeeInput) => Promise<void>;
     deleteProduct: (productId: number) => Promise<void>;
     disposeExpiredProduct: (productId: number) => Promise<void>;
-    saveCustomer: (customer: CustomerInput) => Promise<void>;
-    generateLoyaltyCards: (input: { quantity: number; discount_percentage: number }) => Promise<void>;
-    activateLoyaltyCard: (input: { card_id: number; customer_id: number }) => Promise<void>;
-    collectLoyaltyPoints: (input: { card_id: number; amount_spent: number }) => Promise<void>;
-    redeemLoyaltyPoints: (input: { card_id: number; points: number }) => Promise<void>;
     paySalary: (input: PayrollPaymentInput) => Promise<void>;
     payAllSalaries: (input: { pay_month: string; payment_date: string }) => Promise<void>;
     saveSetting: (key: 'shop_name' | 'archive_folder' | 'receipt_printer' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => Promise<void>;
@@ -213,9 +184,9 @@ declare global {
     deleteSale: (id: number, employeeBarcode: string) => Promise<void>;
     saveExpense: (expense: Pick<Expense, 'description' | 'category' | 'amount' | 'expense_date' | 'site' | 'receipt_data'>) => Promise<void>;
     deleteExpense: (id: number) => Promise<void>;
-    deleteLoyaltyCard: (id: number) => Promise<void>;
     chooseArchiveFolder: () => Promise<string | null>;
     chooseShopLogo: () => Promise<string | null>;
+    chooseHomepageImage: () => Promise<string | null>;
   }
 }
 }

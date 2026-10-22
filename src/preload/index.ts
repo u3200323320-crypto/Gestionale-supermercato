@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { CheckoutInput, CustomerInput, EmployeeInput, Expense, PayrollPaymentInput, Printer, ProductInput, PromotionInput, SaleItem, VoucherBatchInput } from '../shared/types';
+import type { CheckoutInput, EmployeeInput, Expense, PayrollPaymentInput, Printer, ProductInput, PromotionInput, SaleItem, VoucherBatchInput } from '../shared/types';
 
 contextBridge.exposeInMainWorld('gestionale', {
   getState: () => ipcRenderer.invoke('state:get'),
@@ -23,12 +23,6 @@ contextBridge.exposeInMainWorld('gestionale', {
   saveEmployee: (employee: EmployeeInput) => ipcRenderer.invoke('employee:save', employee),
   deleteProduct: (productId: number) => ipcRenderer.invoke('product:delete', productId),
   disposeExpiredProduct: (productId: number) => ipcRenderer.invoke('product:dispose-expired', productId),
-  saveCustomer: (customer: CustomerInput) => ipcRenderer.invoke('customer:save', customer),
-  generateLoyaltyCards: (input: { quantity: number; discount_percentage: number }) => ipcRenderer.invoke('loyalty-cards:generate', input),
-  activateLoyaltyCard: (input: { card_id: number; customer_id: number }) => ipcRenderer.invoke('loyalty-card:activate', input),
-  collectLoyaltyPoints: (input: { card_id: number; amount_spent: number }) => ipcRenderer.invoke('loyalty-card:collect-points', input),
-  redeemLoyaltyPoints: (input: { card_id: number; points: number }) => ipcRenderer.invoke('loyalty-card:redeem-points', input),
-  deleteLoyaltyCard: (id: number) => ipcRenderer.invoke('loyalty-card:delete', id),
   paySalary: (input: PayrollPaymentInput) => ipcRenderer.invoke('payroll:pay', input),
   payAllSalaries: (input: { pay_month: string; payment_date: string }) => ipcRenderer.invoke('payroll:pay-all', input),
   saveSetting: (key: 'shop_name' | 'archive_folder' | 'receipt_printer' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => ipcRenderer.invoke('settings:save', key, value),
@@ -41,4 +35,5 @@ contextBridge.exposeInMainWorld('gestionale', {
   deleteExpense: (id: number) => ipcRenderer.invoke('expense:delete', id),
   chooseArchiveFolder: () => ipcRenderer.invoke('archive:choose-folder'),
   chooseShopLogo: () => ipcRenderer.invoke('settings:choose-shop-logo'),
+  chooseHomepageImage: () => ipcRenderer.invoke('settings:choose-homepage-image'),
 });

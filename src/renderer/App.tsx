@@ -3,18 +3,20 @@ import type { FormEvent, InputHTMLAttributes, ReactNode } from 'react';
 import { Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Camera, Check, ChevronDown, CircleAlert, ClipboardList, CreditCard, Eye, House, LockKeyhole, Minus, Package, Palette, Pencil, Plus, Printer, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Store, Trash2, TrendingUp, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import autoTable, { Table as AutoTableTable } from 'jspdf-autotable';
 import JSZip from 'jszip';
 import JsBarcode from 'jsbarcode';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
 import homeBanner from './home-banner.svg';
-import type { AppState, Customer, Employee, EmployeeInput, Expense, LoyaltyCard, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, Sale, SaleItem, Section } from '../shared/types';
+import type { AppState, Employee, EmployeeInput, Expense, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, Sale, SaleItem, Section } from '../shared/types';
 
 const money = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
 const dateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' });
 const receiptDate = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short' });
 const receiptTime = new Intl.DateTimeFormat('it-IT', { timeStyle: 'short' });
+const navbarDate = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const navbarTime = new Intl.DateTimeFormat('it-IT', { hour: '2-digit', minute: '2-digit' });
 const quantityFormat = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 3 });
 const receiptQuantity = quantityFormat;
 const roundQuantity = (quantity: number) => Math.round((quantity + Number.EPSILON) * 1000) / 1000;
@@ -41,9 +43,8 @@ const sectionNames: Partial<Record<Section, string>> = {
   'inventory-history': 'Storico Magazzino', 'stock-movement': 'Carica e scarica merce',
   'sale-management': 'Modifica o Elimina', promotions: 'Offerta', 'vouchers-create': 'Crea buoni sconto',
   'vouchers-list': 'Lista buoni sconto',
-  expenses: 'Spese', statistics: 'Analisi vendite', 'financial-balance': 'Bilancio gestionale', clients: 'Clienti',
-  'client-list': 'Lista clienti', 'cards-list': 'Lista tessere', 'cards-activate': 'Attiva tessera',
-  'cards-create': 'Sviluppa tessera', 'cards-developed': 'Tessere sviluppate', 'expired-products': 'Gestisci articoli scaduti',
+  expenses: 'Spese', statistics: 'Analisi vendite', 'financial-balance': 'Bilancio gestionale',
+  'expired-products': 'Gestisci articoli scaduti',
   employees: 'Lista Dipendenti', 'employee-create': 'Crea Dipendente', payroll: 'Paga Stipendi',
 };
 const voucherCodeSpace = 10_000_000_000;
@@ -255,7 +256,7 @@ function EmployeeForm({ initial, save, cancel, notify }: { initial: EmployeeInpu
       <Field label="Password iniziale" type="password" autoComplete="new-password" minLength={8} value={employee.initial_password} onChange={(event) => setEmployee({ ...employee, initial_password: event.target.value })} required />
       <Field label="Numero di telefono" type="tel" value={employee.phone} onChange={(event) => setEmployee({ ...employee, phone: event.target.value })} required />
       <Field label="Sede Operativa" value={employee.operational_site} onChange={(event) => setEmployee({ ...employee, operational_site: event.target.value })} required />
-      <Field label="Ruolo" value={employee.role} onChange={(event) => setEmployee({ ...employee, role: event.target.value })} required />
+      <label className="field"><span>Ruolo</span><input list="employee-role-options" value={employee.role} onChange={(event) => setEmployee({ ...employee, role: event.target.value })} required /><datalist id="employee-role-options"><option value="Proprietario" /><option value="Direttore" /><option value="Contabilità" /><option value="cassiere" /></datalist></label>
       <label className="field"><span>Turno</span><select value={employee.shift} onChange={(event) => setEmployee({ ...employee, shift: event.target.value })} required><option value="">Seleziona turno</option><option>Mattina</option><option>Pomeriggio</option><option>Notte</option><option>Turno unico</option><option>Variabile</option></select></label>
       <label className="field"><span>Metodo di pagamento</span><select value={employee.payment_method} onChange={(event) => setEmployee({ ...employee, payment_method: event.target.value as EmployeeInput['payment_method'], iban: event.target.value === 'Bonifico' ? employee.iban : '' })} required><option>Contanti</option><option>Bonifico</option></select></label>
       <Field label="IBAN" value={employee.iban} onChange={(event) => setEmployee({ ...employee, iban: event.target.value.toUpperCase() })} disabled={employee.payment_method !== 'Bonifico'} required={employee.payment_method === 'Bonifico'} />
@@ -295,7 +296,7 @@ function ProductForm({ initial, save, close, categories, onDelete }: { initial: 
 export default function App() {
   const [data, setData] = useState<AppState | null>(null);
   const [section, setSection] = useState<Section>('cash');
-  const [openSidebarMenu, setOpenSidebarMenu] = useState<'inventory' | 'offers' | 'statistics' | 'employees' | 'clients' | null>(null);
+  const [openSidebarMenu, setOpenSidebarMenu] = useState<'inventory' | 'offers' | 'statistics' | 'employees' | null>(null);
   const [stockMovementType, setStockMovementType] = useState<'Carico' | 'Scarico'>('Carico');
   const [stockMovementProduct, setStockMovementProduct] = useState('');
   const [stockMovementQuantity, setStockMovementQuantity] = useState('');
@@ -308,6 +309,8 @@ export default function App() {
   const [statisticsPeriod, setStatisticsPeriod] = useState('Tutti');
   const [unsoldListOpen, setUnsoldListOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
+  const [deviceTab, setDeviceTab] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState(() => new Date());
   const [appTheme, setAppTheme] = useState<AppTheme>(() => {
     const savedTheme = window.localStorage.getItem('app-theme');
     return appThemes.find((theme) => theme.id === savedTheme)?.id ?? 'green';
@@ -345,15 +348,6 @@ export default function App() {
   const [employeeDetails, setEmployeeDetails] = useState<Employee | null>(null);
   const [reportExportOpen, setReportExportOpen] = useState(false);
   const [reportExportType, setReportExportType] = useState<'sales-pdf' | 'sales-csv' | 'balance'>('sales-pdf');
-  const [customerForm, setCustomerForm] = useState({ first_name: '', last_name: '', phone: '', email: '', address: '' });
-  const [cardQuantity, setCardQuantity] = useState('1');
-  const [cardDiscount, setCardDiscount] = useState('0');
-  const [activationCardId, setActivationCardId] = useState('');
-  const [activationCustomerId, setActivationCustomerId] = useState('');
-  const [cardSearch, setCardSearch] = useState('');
-  const [developedCardSearch, setDevelopedCardSearch] = useState('');
-  const [checkoutCardBarcode, setCheckoutCardBarcode] = useState('');
-  const [checkoutRedeemPoints, setCheckoutRedeemPoints] = useState('');
   const [payrollMonth, setPayrollMonth] = useState(localDateKey().slice(0, 7));
   const [payrollDate, setPayrollDate] = useState(localDateKey());
   const [expenseSearch, setExpenseSearch] = useState('');
@@ -446,16 +440,6 @@ export default function App() {
       await window.gestionale.deleteExpense(expense.id);
       await refresh();
       notify('Spesa eliminata.');
-    } catch (error) {
-      notify(errorText(error));
-    }
-  };
-  const deleteLoyaltyCard = async (card: LoyaltyCard) => {
-    if (!window.confirm(`Eliminare la tessera ${card.code}?`)) return;
-    try {
-      await window.gestionale.deleteLoyaltyCard(card.id);
-      await refresh();
-      notify('Tessera eliminata.');
     } catch (error) {
       notify(errorText(error));
     }
@@ -645,55 +629,6 @@ export default function App() {
       notify(errorText(error));
     }
   };
-  const saveCustomer = async (event: FormEvent) => {
-    event.preventDefault();
-    try {
-      await window.gestionale.saveCustomer(customerForm);
-      await refresh();
-      setCustomerForm({ first_name: '', last_name: '', phone: '', email: '', address: '' });
-      notify('Cliente registrato.');
-    } catch (error) {
-      notify(errorText(error));
-    }
-  };
-  const generateCards = async (event: FormEvent) => {
-    event.preventDefault();
-    try {
-      await window.gestionale.generateLoyaltyCards({ quantity: Number(cardQuantity), discount_percentage: Number(cardDiscount) });
-      await refresh();
-      setCardQuantity('');
-      setCardDiscount('');
-      notify('Tessere sviluppate correttamente.');
-    } catch (error) {
-      notify(errorText(error));
-    }
-  };
-  const activateCard = async (event: FormEvent) => {
-    event.preventDefault();
-    try {
-      await window.gestionale.activateLoyaltyCard({ card_id: Number(activationCardId), customer_id: Number(activationCustomerId) });
-      await refresh();
-      setActivationCardId('');
-      setActivationCustomerId('');
-      notify('Tessera attivata e associata al cliente.');
-    } catch (error) {
-      notify(errorText(error));
-    }
-  };
-  const redeemCheckoutPoints = async () => {
-    const card = data?.loyaltyCards.find((candidate) => candidate.barcode === checkoutCardBarcode.trim() && candidate.status === 'Attiva');
-    if (!card) { notify('Scansiona il barcode di una tessera attiva.'); return; }
-    const points = Number(checkoutRedeemPoints);
-    if (!Number.isInteger(points) || points < 1 || points > card.points) { notify('Inserisci un numero di punti valido e disponibile.'); return; }
-    try {
-      await window.gestionale.redeemLoyaltyPoints({ card_id: card.id, points });
-      await refresh();
-      setCheckoutRedeemPoints('');
-      notify('Punti scaricati dalla tessera.');
-    } catch (error) {
-      notify(errorText(error));
-    }
-  };
   useEffect(() => { void window.gestionale.hasPin().then((exists) => { setHasPin(exists); if (!exists) { setLocked(false); void refresh(); } }); }, []);
   useEffect(() => window.gestionale.onSalesExpired(() => {
     void refresh().catch((error: unknown) => notify(errorText(error)));
@@ -702,6 +637,10 @@ export default function App() {
     document.documentElement.dataset.theme = appTheme;
     window.localStorage.setItem('app-theme', appTheme);
   }, [appTheme]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTime(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
   useEffect(() => { const openCash = (event: KeyboardEvent) => { if (event.key === 'F2') { event.preventDefault(); navigateTo('cash'); } }; window.addEventListener('keydown', openCash); return () => window.removeEventListener('keydown', openCash); }, []);
   useEffect(() => {
     if (section === 'cash' && !camera && !pendingUnknownCode && !productForm) {
@@ -868,29 +807,6 @@ export default function App() {
     });
     doc.save(`buoni-sconto-gruppo-${batch.id}.pdf`);
   };
-  const exportLoyaltyCards = (cards: LoyaltyCard[]) => {
-    if (!cards.length) {
-      notify('Non ci sono tessere da scaricare per questa ricerca.');
-      return;
-    }
-    const doc = new jsPDF();
-    const barcodes = cards.map((card) => barcodePng(card.barcode));
-    doc.setFontSize(16);
-    doc.text('Lista tessere fedeltà', 14, 17);
-    autoTable(doc, {
-      startY: 25,
-      head: [['Codice tessera', 'Barcode', 'Cliente', 'Sconto', 'Punti']],
-      body: cards.map((card) => [card.code, '', `${card.first_name ?? ''} ${card.last_name ?? ''}`.trim(), `${card.discount_percentage}%`, String(card.points)]),
-      styles: { fontSize: 8, minCellHeight: 18 },
-      headStyles: { fillColor: [56, 104, 78] },
-      didDrawCell: (cell) => {
-        if (cell.section === 'body' && cell.column.index === 1) {
-          doc.addImage(barcodes[cell.row.index], 'PNG', cell.cell.x + 2, cell.cell.y + 3, cell.cell.width - 4, 12);
-        }
-      },
-    });
-    doc.save('lista-tessere-fedelta.pdf');
-  };
   const applyVoucherCode = async (code: string) => {
     const normalized = code.trim();
     setVoucherCode(normalized);
@@ -917,8 +833,7 @@ export default function App() {
       void window.gestionale.saveSetting('barcode_scanner_detected', 'true').catch((error: unknown) => notify(errorText(error)));
     }
     if (checkoutOpen) {
-      if (data.loyaltyCards.some((card) => card.barcode === normalized && card.status === 'Attiva')) setCheckoutCardBarcode(normalized);
-      else void applyVoucherCode(normalized);
+      void applyVoucherCode(normalized);
     }
     else if (section === 'cash') scanCode(normalized);
     else if (section === 'inventory' && stockProduct) {
@@ -931,7 +846,6 @@ export default function App() {
       setStockMovementEmployeeBarcode(normalized);
       notify(`Personale riconosciuto: ${employee.first_name} ${employee.last_name}.`);
     } else if (section === 'inventory') setInventorySearch(normalized);
-    else if (section === 'cards-list') setCardSearch(normalized);
     else if (section === 'sales') setSaleSearch(normalized.replace(/\D/g, ''));
     else if (section === 'sale-management') {
       if (saleAction) void authorizeSaleAction(normalized);
@@ -941,7 +855,7 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const saleAuthorizationScan = section === 'sale-management' && saleAction !== null;
-      if (!['cash', 'inventory', 'sales', 'stock-movement', 'sale-management', 'cards-list'].includes(section)
+      if (!['cash', 'inventory', 'sales', 'stock-movement', 'sale-management'].includes(section)
         || (!data?.settings.barcode_scanner_enabled && !saleAuthorizationScan)) return;
       const now = performance.now();
       const sequence = scannerSequence.current;
@@ -971,9 +885,9 @@ export default function App() {
     return () => document.removeEventListener('keydown', onKeyDown, true);
   }, [data, section, checkoutOpen, stockProduct, saleAction]);
   useEffect(() => {
-    if (section !== 'settings' || settingsTab !== 'Dispositivi') return;
+    if (section !== 'settings' || settingsTab !== 'Dispositivi' || deviceTab !== 'Stampante scontrini') return;
     void window.gestionale.getPrinters().then(setPrinters).catch((error: unknown) => notify(errorText(error)));
-  }, [section, settingsTab]);
+  }, [section, settingsTab, deviceTab]);
   const changeSaleDiscount = (percentage: number) => {
     if (!saleDialog) return;
     const gross = saleDialog.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
@@ -1119,15 +1033,6 @@ export default function App() {
   const totalBeforeVoucher = Math.max(0, subtotal - automaticDiscount - manualDiscount);
   const voucherDiscount = Math.round(totalBeforeVoucher * voucherDiscountPercentage) / 100;
   const total = Math.max(0, totalBeforeVoucher - voucherDiscount);
-  const checkoutLoyaltyCard = data?.loyaltyCards.find((card) => card.barcode === checkoutCardBarcode.trim() && card.status === 'Attiva');
-  const activeLoyaltyCards = (data?.loyaltyCards ?? []).filter((card) => card.status === 'Attiva');
-  const developedLoyaltyCards = (data?.loyaltyCards ?? []).filter((card) => card.status === 'Sviluppata');
-  const customersWithoutCard = (data?.customers ?? []).filter((customer) =>
-    !activeLoyaltyCards.some((card) => card.customer_id === customer.id));
-  const filteredDevelopedLoyaltyCards = developedLoyaltyCards.filter((card) =>
-    `${card.code} ${card.barcode}`.toLowerCase().includes(developedCardSearch.trim().toLowerCase()));
-  const filteredLoyaltyCards = activeLoyaltyCards.filter((card) =>
-    `${card.code} ${card.barcode} ${card.first_name ?? ''} ${card.last_name ?? ''}`.toLowerCase().includes(cardSearch.trim().toLowerCase()));
   const stockMovementSites = [...new Set((data?.employees ?? []).map((employee) => employee.operational_site.trim()).filter(Boolean))];
   const changeQuantity = (id: number, amount: number) => {
     const line = cart.find((item) => item.product_id === id);
@@ -1142,7 +1047,6 @@ export default function App() {
         items: cart,
         payment_method: paymentMethod,
         voucher_code: voucherCode || undefined,
-        loyalty_card_id: checkoutLoyaltyCard?.id,
         manual_promotion_id: promotionDiscounts.manualPromotion?.id,
         automatic_promotion_id: automaticPromotionId,
       });
@@ -1150,8 +1054,6 @@ export default function App() {
       setVoucherCode('');
       setVoucherMessage('');
       setVoucherDiscountPercentage(0);
-      setCheckoutCardBarcode('');
-      setCheckoutRedeemPoints('');
       setManualPromotionId(undefined);
       setAutomaticPromotionId(undefined);
       setCheckoutOpen(false);
@@ -1176,6 +1078,7 @@ export default function App() {
     } catch (error) { notify(errorText(error)); }
   };
   const chooseShopLogo = async () => { try { const logo = await window.gestionale.chooseShopLogo(); if (logo) { await refresh(); notify('Logo del negozio aggiornato'); } } catch (error) { notify(errorText(error)); } };
+  const chooseHomepageImage = async () => { try { const image = await window.gestionale.chooseHomepageImage(); if (image) { await refresh(); notify('Immagine homepage aggiornata'); } } catch (error) { notify(errorText(error)); } };
   const chooseFolder = async () => { const chosen = await window.gestionale.chooseArchiveFolder(); if (chosen) { setArchiveFolder(chosen); await refresh(); notify('Cartella archivio aggiornata'); } };
   const savePromotion = async (event: FormEvent) => {
     event.preventDefault();
@@ -1256,33 +1159,26 @@ export default function App() {
     });
     doc.save(`report-vendite-${respectTimeFilters ? salesPeriod.toLowerCase().replaceAll(' ', '-') : 'tutto'}-${todayKey}.pdf`);
   };
-  const exportInventoryReport = () => {
+  const exportInventoryReport = async () => {
     if (!data) return;
-    const doc = new jsPDF({ orientation: 'landscape' });
-    const stockValue = data.products.reduce((sum, item) => sum + item.stock * item.purchase_price, 0);
-    const lowStockCount = data.products.filter((item) => item.stock <= item.low_stock_threshold).length;
-    doc.setFillColor(43, 82, 61);
-    doc.rect(0, 0, 297, 36, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(18);
-    doc.text(data.settings.shop_name, 14, 16);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.text('Report magazzino · Esportato il ' + receiptDate.format(new Date()), 14, 26);
-    doc.setTextColor(41, 51, 46);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text(`Articoli: ${data.products.length}`, 14, 47);
-    doc.text(`Sotto soglia: ${lowStockCount}`, 74, 47);
-    doc.text(`Valore acquisto giacenze: ${money.format(stockValue)}`, 164, 47);
-    autoTable(doc, {
-      startY: 55,
+    try {
+      const doc = new jsPDF({ orientation: 'landscape' });
+      const stockValue = data.products.reduce((sum, item) => sum + item.stock * item.purchase_price, 0);
+      const lowStockCount = data.products.filter((item) => item.stock <= item.low_stock_threshold).length;
+      doc.setFillColor(43, 82, 61);
+      doc.rect(0, 0, 297, 36, 'F');
+      if (data.settings.shop_logo) doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', 123.5, 3, 50, 23);
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.text('Report magazzino · Esportato il ' + receiptDate.format(new Date()), 148.5, 31, { align: 'center' });
+      autoTable(doc, {
+      startY: 43,
       head: [['Codice', 'Articolo', 'Categoria', 'Vendita / unità', 'Acquisto / unità', 'Giacenza', 'Soglia minima', 'Scadenza']],
       body: data.products.map((item) => [item.code, item.name, item.category, money.format(item.sale_price), money.format(item.purchase_price), `${item.stock} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'}`, String(item.low_stock_threshold), item.expiry_enabled && item.expiry_date ? receiptDate.format(new Date(`${item.expiry_date}T00:00:00`)) : '—']),
       theme: 'striped',
       styles: { fontSize: 8, cellPadding: 3, textColor: [49, 60, 53], lineColor: [224, 230, 224] },
-      headStyles: { fillColor: [56, 104, 78], fontStyle: 'bold' },
+      headStyles: { fillColor: [56, 104, 78], textColor: [255, 255, 255], fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [244, 247, 244] },
       margin: { left: 14, right: 14, bottom: 16 },
       didDrawPage: () => {
@@ -1291,7 +1187,25 @@ export default function App() {
         doc.text(`${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`, 14, 202);
       },
     });
-    doc.save(`report-magazzino-${todayKey}.pdf`);
+      const tableLayout = (doc as jsPDF & { lastAutoTable?: AutoTableTable }).lastAutoTable;
+      if (tableLayout?.finalY === undefined) throw new Error('Impossibile determinare la fine della tabella del report.');
+      let summaryY = tableLayout.finalY + 8;
+      if (summaryY + 14 > 195) {
+        doc.addPage();
+        summaryY = 20;
+      }
+      doc.setFillColor(56, 104, 78);
+      doc.roundedRect(14, summaryY, 269, 14, 2, 2, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(255, 255, 255);
+      doc.text(`Qtà articoli: ${data.products.length}`, 20, summaryY + 9);
+      doc.text(`Sotto soglia: ${lowStockCount}`, 99, summaryY + 9);
+      doc.text(`Valore acquisto giacenze: ${money.format(stockValue)}`, 170, summaryY + 9);
+      doc.save(`report-magazzino-${todayKey}.pdf`);
+    } catch (error) {
+      notify(errorText(error));
+    }
   };
   const exportEmployeeList = async () => {
     if (!data) return;
@@ -1693,16 +1607,14 @@ export default function App() {
         <button className={`nav-item${section === 'sale-management' ? ' active' : ''}`} onClick={() => navigateTo('sale-management')}><ClipboardList size={18} /><span>Modifica o Elimina</span></button>
         <button aria-expanded={openSidebarMenu === 'offers'} className={`nav-item${['promotions', 'vouchers-create', 'vouchers-list'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'offers' ? null : 'offers')}><TrendingUp size={18} /><span>Offerta</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'offers' ? ' open' : ''}`} size={15} /></button>
         {openSidebarMenu === 'offers' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'promotions' ? ' selected' : ''}`} onClick={() => navigateTo('promotions')}>Promozioni</button><button className={`sidebar-subitem${section === 'vouchers-create' ? ' selected' : ''}`} onClick={() => { cancelVoucherPreview(); navigateTo('vouchers-create'); }}>Crea buoni sconto</button><button className={`sidebar-subitem${section === 'vouchers-list' ? ' selected' : ''}`} onClick={() => navigateTo('vouchers-list')}>Lista buoni sconto</button></div>}
-        <button aria-expanded={openSidebarMenu === 'clients'} className={`nav-item${['clients', 'client-list', 'cards-list', 'cards-activate', 'cards-create', 'cards-developed'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'clients' ? null : 'clients')}><ShoppingBasket size={18} /><span>Clienti</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'clients' ? ' open' : ''}`} size={15} /></button>
-        {openSidebarMenu === 'clients' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'client-list' ? ' selected' : ''}`} onClick={() => navigateTo('client-list')}>Lista clienti</button><button className={`sidebar-subitem${section === 'cards-activate' ? ' selected' : ''}`} onClick={() => navigateTo('cards-activate')}>Attiva tessera</button><button className={`sidebar-subitem${section === 'cards-list' ? ' selected' : ''}`} onClick={() => navigateTo('cards-list')}>Lista tessere</button><button className={`sidebar-subitem${section === 'cards-create' ? ' selected' : ''}`} onClick={() => navigateTo('cards-create')}>Sviluppa tessera</button><button className={`sidebar-subitem${section === 'cards-developed' ? ' selected' : ''}`} onClick={() => navigateTo('cards-developed')}>Tessere sviluppate</button></div>}
         <button aria-expanded={openSidebarMenu === 'employees'} className={`nav-item${['employees', 'employee-create', 'payroll'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'employees' ? null : 'employees')}><ClipboardList size={18} /><span>Dipendenti</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'employees' ? ' open' : ''}`} size={15} /></button>
         {openSidebarMenu === 'employees' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => navigateTo('employees')}>Lista Dipendenti</button><button className={`sidebar-subitem${section === 'employee-create' ? ' selected' : ''}`} onClick={startEmployeeCreation}>Crea Dipendente</button><button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => navigateTo('payroll')}>Paga Stipendi</button></div>}
       </nav>
-      <div className="sidebar-bottom"><button className={`nav-item settings-link${section === 'settings' ? ' active' : ''}`} onClick={() => { setSettingsTab(null); navigateTo('settings'); }}><Settings size={18} /><span>Impostazioni</span></button><div className="user-card"><div className="user-avatar">{data.settings.shop_name.slice(0, 1).toUpperCase()}</div><div><strong>Gestore</strong><small>Account locale</small></div></div></div>
+      <div className="sidebar-bottom"><button className={`nav-item settings-link${section === 'settings' ? ' active' : ''}`} onClick={() => { setSettingsTab(null); setDeviceTab(null); navigateTo('settings'); }}><Settings size={18} /><span>Impostazioni</span></button><div className="user-card"><div className="user-avatar">{data.settings.shop_name.slice(0, 1).toUpperCase()}</div><div><strong>Gestore</strong><small>Account locale</small></div></div></div>
     </aside>
-    <main className="main-content"><header className="topbar"><h1>{sectionLabel}</h1>{data.settings.shop_logo ? <img className="topbar-logo" src={data.settings.shop_logo} alt="Logo negozio" /> : <div className="topbar-logo-fallback"><Store size={19} /></div>}<div className="topbar-right"><div className="today-date">{new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}</div><span className="store-chip"><span className="status-dot" />Operativo</span></div></header>
+    <main className="main-content"><header className="topbar"><h1>{sectionLabel}</h1>{data.settings.shop_logo ? <img className="topbar-logo" src={data.settings.shop_logo} alt="Logo negozio" /> : <div className="topbar-logo-fallback"><Store size={19} /></div>}<div className="topbar-right"><div className="today-date">{navbarDate.format(currentTime)} · {navbarTime.format(currentTime)}</div></div></header>
 
-      {section === 'home' && <div className="page-content home-page"><img className="home-banner" src={homeBanner} alt="Illustrazione di un supermercato con prodotti freschi" /><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length} scontrini emessi`} /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyProfit)} detail="Profitto dopo sconti e costo merce" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString('it-IT')} detail="Pezzi registrati oggi" /></div><section className="expiry-alert expiry-home-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length} articoli sotto soglia`} action={<button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); setSection('inventory'); }}>Vai al magazzino →</button>} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => setSelectedProduct(p)}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock}</td><td>{p.low_stock_threshold}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => setSection('sales')}>Tutte le vendite →</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
+      {section === 'home' && <div className="page-content home-page"><img className="home-banner" src={data.settings.home_image || homeBanner} alt="Immagine homepage" /><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length} scontrini emessi`} /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyProfit)} detail="Profitto dopo sconti e costo merce" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString('it-IT')} detail="Pezzi registrati oggi" /></div><section className="expiry-alert expiry-home-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length} articoli sotto soglia`} action={<button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); setSection('inventory'); }}>Vai al magazzino →</button>} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => setSelectedProduct(p)}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock}</td><td>{p.low_stock_threshold}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => setSection('sales')}>Tutte le vendite →</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
 
       {section === 'inventory' && <div className="page-content">
         <div className="page-toolbar inventory-toolbar"><div><h2>Articoli in magazzino</h2><p>{data.products.length} articoli registrati</p></div><div className="toolbar-actions"><button className="button button-outline" onClick={exportInventoryReport}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-primary" onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct }); }}><Plus size={16} /> Aggiungi nuovo articolo</button></div></div>
@@ -1725,7 +1637,7 @@ export default function App() {
           <div className="cash-search-row"><div className="search-field"><Barcode size={17} /><input id="scanner-field" placeholder="Cerca o scansiona un codice a barre…" value={scannerSearch} onChange={(e) => setScannerSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scanCode(scannerSearch); } }} /><button type="button" className="search-clear" aria-label="Cancella ricerca" disabled={!scannerSearch} onClick={() => setScannerSearch('')}><X size={15} /></button></div><button className="icon-button camera-button" title="Scansiona con fotocamera" onClick={() => setCamera(true)}><Camera size={18} /></button></div>
           <div className="cash-product-grid">{data.products.filter((p) => (p.name.toLowerCase().includes(scannerSearch.toLowerCase()) || p.code.includes(scannerSearch)) && p.stock > 0).map((product) => { const remainingStock = Math.max(0, product.stock - (cart.find((item) => item.product_id === product.id)?.quantity ?? 0)); return <button className="cash-product" key={product.id} disabled={remainingStock === 0} onClick={() => addProductToCart(product)}><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="cash-product-bottom"><b>{money.format(product.sale_price)}{product.unit === 'KG' ? ' / kg' : product.unit === 'LITRO' ? ' / lit.' : ''}</b><small>{quantityFormat.format(remainingStock)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'lit.' : 'pz'}</small></span></button>; })}</div>
         </section>
-        <aside className="cart-panel"><div className="cart-heading"><div className="cart-heading-title"><h2>CARRELLO <span>{quantityFormat.format(cart.reduce((sum, item) => sum + item.quantity, 0))}</span></h2></div><button className="icon-button" title="Svuota carrello" aria-label="Svuota carrello" disabled={!cart.length} onClick={() => { setCart([]); setManualPromotionId(undefined); setAutomaticPromotionId(undefined); }}><Trash2 size={17} /></button></div><div className="cart-lines">{cart.map((item) => <div className="cart-line" key={item.product_id}><div className="cart-line-name"><strong>{item.name}</strong><small>{quantityFormat.format(item.quantity)} {item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}</small></div><div className="quantity-control"><button onClick={() => changeQuantity(item.product_id, -1)} aria-label="Rimuovi uno"><Minus size={13} /></button><span>{quantityFormat.format(item.quantity)}</span><button onClick={() => changeQuantity(item.product_id, 1)} aria-label="Aggiungi uno"><Plus size={13} /></button></div><strong className="line-total">{money.format(item.quantity * item.unit_price)}</strong></div>)}{!cart.length && <div className="cart-empty"><ShoppingBasket size={25} /><span>Seleziona gli articoli<br />per iniziare una vendita</span></div>}</div><div className="receipt-summary"><div><span>Subtotale</span><span>{money.format(subtotal)}</span></div><div className="total-row"><strong>TOTALE</strong><strong>{money.format(subtotal)}</strong></div></div><button className="button button-primary checkout-button" disabled={!cart.length} onClick={() => { setCheckoutCardBarcode(''); setCheckoutRedeemPoints(''); setCheckoutOpen(true); }}>Procedi al pagamento <span>→</span></button></aside>
+        <aside className="cart-panel"><div className="cart-heading"><div className="cart-heading-title"><h2>CARRELLO <span>{quantityFormat.format(cart.reduce((sum, item) => sum + item.quantity, 0))}</span></h2></div><button className="icon-button" title="Svuota carrello" aria-label="Svuota carrello" disabled={!cart.length} onClick={() => { setCart([]); setManualPromotionId(undefined); setAutomaticPromotionId(undefined); }}><Trash2 size={17} /></button></div><div className="cart-lines">{cart.map((item) => <div className="cart-line" key={item.product_id}><div className="cart-line-name"><strong>{item.name}</strong><small>{quantityFormat.format(item.quantity)} {item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}</small></div><div className="quantity-control"><button onClick={() => changeQuantity(item.product_id, -1)} aria-label="Rimuovi uno"><Minus size={13} /></button><span>{quantityFormat.format(item.quantity)}</span><button onClick={() => changeQuantity(item.product_id, 1)} aria-label="Aggiungi uno"><Plus size={13} /></button></div><strong className="line-total">{money.format(item.quantity * item.unit_price)}</strong></div>)}{!cart.length && <div className="cart-empty"><ShoppingBasket size={25} /><span>Seleziona gli articoli<br />per iniziare una vendita</span></div>}</div><div className="receipt-summary"><div><span>Subtotale</span><span>{money.format(subtotal)}</span></div><div className="total-row"><strong>TOTALE</strong><strong>{money.format(subtotal)}</strong></div></div><button className="button button-primary checkout-button" disabled={!cart.length} onClick={() => setCheckoutOpen(true)}>Procedi al pagamento <span>→</span></button></aside>
       </div></div>}
 
       {section === 'sales' && <div className="page-content"><div className="sale-tools"><button className="button button-outline sale-camera-button" onClick={() => setCamera(true)}><Camera size={16} /> Cerca con fotocamera</button><SearchInput value={saleSearch} onChange={setSaleSearch} placeholder="Cerca numero scontrino…" numericOnly /><button className="button button-outline" onClick={() => { setReportExportType('sales-pdf'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-outline" onClick={() => { setReportExportType('sales-csv'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Esporta CSV</button></div><div className="sale-filters"><SelectField label="Periodo" value={salesPeriod} onChange={setSalesPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A']} />{salesPeriod === 'Da - A' && <><Field label="Da" type="date" value={salesFrom} onChange={(event) => setSalesFrom(event.target.value)} /><Field label="A" type="date" value={salesTo} onChange={(event) => setSalesTo(event.target.value)} /></>}<SelectField label="Categoria" value={salesCategory} onChange={setSalesCategory} options={['Tutte', ...categories]} /></div><SalesTable sales={salesList} onSelect={setReceipt} /></div>}
@@ -1785,13 +1697,6 @@ export default function App() {
         <div className="panel payroll-toolbar"><Field label="Mese di competenza" type="month" value={payrollMonth} onChange={(event) => setPayrollMonth(event.target.value)} /><Field label="Data di pagamento" type="date" value={payrollDate} onChange={(event) => setPayrollDate(event.target.value)} /><button className="button button-primary" onClick={() => void payAllEmployees()}><Banknote size={15} /> Paga tutti gli stipendi</button><button className="button button-outline" onClick={() => { const payments = data.payrollPayments.filter((payment) => payment.pay_month === payrollMonth); void exportPayrollZip(payments).catch((error: unknown) => notify(errorText(error))); }}><ArrowDownToLine size={15} /> Scarica ricevute del mese</button></div>
         <Table headings={['Dipendente', 'Ruolo', 'Stipendio', 'Metodo', 'Stato', 'Azione']}><>{data.employees.map((employee) => { const payment = data.payrollPayments.find((item) => item.employee_id === employee.id && item.pay_month === payrollMonth); return <tr key={employee.id}><td className="cell-primary">{employee.first_name} {employee.last_name}</td><td>{employee.role}</td><td>{money.format(employee.salary)}</td><td>{employee.payment_method}</td><td><span className={`stock-badge${payment ? '' : ' low'}`}>{payment ? `Pagato il ${payment.payment_date}` : 'Da pagare'}</span></td><td>{payment ? <button className="button button-outline" onClick={() => savePdf(createSalaryPdf(employee, payment.payment_date, payment.pay_month, payment.amount), `Stipendio-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}-${payment.payment_date}.pdf`)}><ArrowDownToLine size={14} /> Ricevuta</button> : <button className="button button-primary" onClick={() => void payEmployee(employee)}><Check size={14} /> Paga</button>}</td></tr>; })}</>{!data.employees.length && <tr><td colSpan={6} className="empty-cell">Nessun dipendente registrato.</td></tr>}</Table>
       </div>}
-      {section === 'clients' && <div className="page-content"><div className="page-toolbar"><div><h2>Gestione clienti e tessere</h2><p>Seleziona una funzione per gestire l’anagrafica e il programma fedeltà.</p></div></div><div className="client-shortcuts">{([['client-list', 'Lista clienti'], ['cards-list', 'Lista tessere'], ['cards-activate', 'Attiva tessera'], ['cards-create', 'Sviluppa tessera'], ['cards-developed', 'Tessere sviluppate']] as const).map(([target, label]) => <button className="panel client-shortcut" key={target} onClick={() => navigateTo(target)}><CreditCard size={20} /><strong>{label}</strong><span>Apri gestione →</span></button>)}</div></div>}
-      {section === 'client-list' && <div className="page-content"><section className="panel client-form-panel"><form className="client-form" onSubmit={(event) => void saveCustomer(event)}><Field label="Nome" value={customerForm.first_name} onChange={(event) => setCustomerForm({ ...customerForm, first_name: event.target.value })} required /><Field label="Cognome" value={customerForm.last_name} onChange={(event) => setCustomerForm({ ...customerForm, last_name: event.target.value })} required /><Field label="Telefono" type="tel" value={customerForm.phone} onChange={(event) => setCustomerForm({ ...customerForm, phone: event.target.value })} required /><Field label="Email" type="email" value={customerForm.email} onChange={(event) => setCustomerForm({ ...customerForm, email: event.target.value })} required /><button className="button button-primary customer-submit"><Plus size={15} /> Aggiungi cliente</button></form></section><Table headings={['Nome', 'Telefono', 'Email', 'Indirizzo', 'Registrato']}><>{data.customers.map((customer: Customer) => <tr key={customer.id}><td className="cell-primary">{customer.first_name} {customer.last_name}</td><td>{customer.phone}</td><td>{customer.email}</td><td>{customer.address}</td><td>{receiptDate.format(new Date(customer.created_at))}</td></tr>)}</>{!data.customers.length && <tr><td colSpan={5} className="empty-cell">Nessun cliente registrato.</td></tr>}</Table></div>}
-      {section === 'cards-create' && <div className="page-content"><section className="panel client-form-panel"><div className="panel-heading"><div><h2>Sviluppa tessere fedeltà</h2><p>Ogni codice è composto da 5 cifre, dal nome del negozio e da 8 cifre.</p></div></div><form className="client-form card-generation-form" onSubmit={(event) => void generateCards(event)}><Field label="Quantità tessere" type="number" min="1" max="5000" step="1" value={cardQuantity} onChange={(event) => setCardQuantity(event.target.value)} required /><Field label="Percentuale sconto" type="number" min="0" max="100" step="0.01" value={cardDiscount} onChange={(event) => setCardDiscount(event.target.value)} required /><div className="card-form-actions"><button className="button button-outline" type="button" onClick={() => { setCardQuantity(''); setCardDiscount(''); }}>Annulla</button><button className="button button-primary"><Plus size={15} /> Sviluppa tessere</button></div></form></section><div className="page-toolbar"><div className="card-page-heading"><h2>Tessere sviluppate</h2><p>{developedLoyaltyCards.length} tessere non ancora attivate</p></div><button className="button button-outline" onClick={() => navigateTo('cards-developed')}>Visualizza lista</button></div></div>}
-      {section === 'cards-developed' && <div className="page-content"><div className="card-list-toolbar"><SearchInput value={developedCardSearch} onChange={setDevelopedCardSearch} placeholder="Cerca tessera per codice…" /><button className="button button-outline" onClick={() => exportLoyaltyCards(filteredDevelopedLoyaltyCards)}><ArrowDownToLine size={16} /> Scarica lista tessere</button></div><Table headings={['Codice tessera', 'Barcode', 'Sconto', 'Stato', 'Data creazione', '']}><>{filteredDevelopedLoyaltyCards.map((card) => <tr key={card.id}><td className="mono">{card.code}</td><td><BarcodeImage value={card.barcode} /></td><td>{card.discount_percentage}%</td><td>{card.status}</td><td>{receiptDate.format(new Date(card.created_at))}</td><td><button className="icon-button small" title="Elimina tessera" aria-label={`Elimina la tessera ${card.code}`} onClick={() => void deleteLoyaltyCard(card)}><Trash2 size={15} /></button></td></tr>)}</>{!filteredDevelopedLoyaltyCards.length && <tr><td colSpan={6} className="empty-cell">{developedLoyaltyCards.length ? 'Nessuna tessera corrisponde alla ricerca.' : 'Nessuna tessera sviluppata in attesa di attivazione.'}</td></tr>}</Table></div>}
-      {section === 'cards-activate' && <div className="page-content"><section className="panel client-form-panel"><div className="panel-heading"><div><h2>Attiva tessera</h2></div></div><hr className="client-section-rule" /><form className="client-form card-generation-form" onSubmit={(event) => void activateCard(event)}><label className="field"><span>Tessera sviluppata</span><select value={activationCardId} onChange={(event) => setActivationCardId(event.target.value)} required><option value="">Seleziona tessera</option>{developedLoyaltyCards.map((card) => <option value={card.id} key={card.id}>{card.code} · {card.discount_percentage}%</option>)}</select></label><label className="field"><span>Cliente</span><select value={activationCustomerId} onChange={(event) => setActivationCustomerId(event.target.value)} required disabled={!customersWithoutCard.length}><option value="">{customersWithoutCard.length ? 'Seleziona cliente' : 'Nessun cliente senza tessera'}</option>{customersWithoutCard.map((customer) => <option value={customer.id} key={customer.id}>{customer.first_name} {customer.last_name}</option>)}</select></label><div className="card-form-actions"><button className="button button-outline" type="button" onClick={() => { setActivationCardId(''); setActivationCustomerId(''); }}>Annulla</button><button className="button button-primary" disabled={!customersWithoutCard.length || !developedLoyaltyCards.length}><Check size={15} /> Attiva tessera</button></div></form></section></div>}
-      {section === 'cards-list' && <div className="page-content"><div className="card-list-toolbar"><SearchInput value={cardSearch} onChange={setCardSearch} placeholder="Cerca tessera per codice o cliente…" /><button className="button button-outline" onClick={() => exportLoyaltyCards(filteredLoyaltyCards)}><ArrowDownToLine size={16} /> Scarica lista tessere</button></div><Table headings={['Codice tessera', 'Barcode', 'Cliente', 'Sconto tessera', 'Punti', 'Valore punti']}><>{filteredLoyaltyCards.map((card) => <tr key={card.id}><td className="mono">{card.code}</td><td><BarcodeImage value={card.barcode} /></td><td className="cell-primary">{card.first_name} {card.last_name}</td><td>{card.discount_percentage}%</td><td>{card.points}</td><td>{money.format(card.points * 0.1)}</td></tr>)}</>{!filteredLoyaltyCards.length && <tr><td colSpan={6} className="empty-cell">{activeLoyaltyCards.length ? 'Nessuna tessera corrisponde alla ricerca.' : 'Nessuna tessera attiva.'}</td></tr>}</Table></div>}
-
       {section === 'expenses' && <div className="page-content accounting-page">
         <section className="panel expense-entry-panel"><div className="panel-heading"><div><h3>Registra una spesa</h3><p>Inserisci descrizione, categoria, importo e data.</p></div></div>
           <form className="expense-form" onSubmit={(event) => void saveExpense(event)}>
@@ -1856,7 +1761,6 @@ export default function App() {
       </section></div>}
 
       {section === 'statistics' && <div className="page-content">
-        <div className="page-toolbar"><div><h2>Analisi vendite</h2><p>Andamento e prodotti venduti nel periodo selezionato.</p></div><span className="period-chip">Dati aggiornati in tempo reale</span></div>
         <div className="statistics-periods" role="group" aria-label="Filtra statistiche per periodo">{statisticsPeriods.map((period) => <button key={period} className={`status-filter${statisticsPeriod === period ? ' active' : ''}`} aria-pressed={statisticsPeriod === period} onClick={() => setStatisticsPeriod(period)}>{period}</button>)}</div>
         <section className="panel product-sales-panel"><div className="panel-heading"><div><h3>Prodotti più e meno venduti</h3></div></div><Table headings={['Posizione', 'Prodotto', 'Quantità venduta', 'Ricavi']}><>{productSalesRanking.map((product, index) => <tr key={product.id}><td>{index + 1}</td><td className="cell-primary">{product.name}</td><td>{quantityFormat.format(product.quantitySold)} {product.unit === 'PEZZO' ? 'pz' : product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : ''}</td><td>{money.format(product.revenue)}</td></tr>)}</>{!productSalesRanking.length && <tr><td colSpan={4} className="empty-cell">Nessun prodotto registrato.</td></tr>}</Table></section>
         <div className="metric-grid stats-metrics"><Metric icon={Banknote} label="Vendite" value={money.format(soldTotal)} detail="Incassi registrati nel periodo" /><Metric icon={CreditCard} label="Acquisto merce venduta" value={money.format(soldCost)} detail="Costo degli articoli venduti" /><Metric icon={TrendingUp} label="Netto stimato" value={money.format(estimatedNet)} detail="Ricavi meno costo del venduto e spese" /><Metric icon={ShoppingBasket} label="Quantità vendite" value={`${soldUnits.toLocaleString('it-IT')} di ${totalTrackedUnits.toLocaleString('it-IT')}`} detail="Articoli venduti rispetto a quelli ancora in magazzino" action={<button className="text-button metric-action" onClick={() => setUnsoldListOpen(true)}>Vedi lista</button>} /></div>
@@ -1866,12 +1770,14 @@ export default function App() {
         <section className="panel category-panel"><div className="panel-heading"><div><h3>Vendite per categoria</h3><p>Valore degli articoli venduti nel periodo selezionato</p></div></div><div className="category-chart"><ResponsiveContainer width="100%" height={230}><PieChart><Pie data={Object.entries(categoriesSales).map(([name, value]) => ({ name, value }))} dataKey="value" nameKey="name" innerRadius={57} outerRadius={88} paddingAngle={3}>{Object.keys(categoriesSales).map((name, i) => <Cell key={name} fill={colors[i % colors.length]} />)}</Pie><Tooltip formatter={(value) => money.format(Number(value))} /></PieChart></ResponsiveContainer><div className="chart-legend">{Object.entries(categoriesSales).length ? Object.entries(categoriesSales).map(([name, value], i) => <div key={name}><span style={{ backgroundColor: colors[i % colors.length] }} /><span>{name}</span><strong>{money.format(value)}</strong></div>) : <span className="muted">Le categorie appariranno dopo la prima vendita.</span>}</div></div></section>
       </div>}
 
-      {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">{settingsTab === null ? <nav className="settings-nav">{[{ name: 'Nome negozio', icon: Store }, { name: 'Sicurezza', icon: ShieldCheck }, { name: 'Archivio dati', icon: Archive }, { name: 'Dispositivi', icon: Barcode }, { name: "Tema dell'app", icon: Palette }].map(({ name, icon: Icon }) => <button key={name} onClick={() => setSettingsTab(name)}><Icon size={17} />{name}</button>)}</nav> : <section className="settings-panel"><button className="settings-back" onClick={() => setSettingsTab(null)}><ArrowLeft size={15} /> Impostazioni</button>
+      {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">{settingsTab === null ? <nav className="settings-nav">{[{ name: 'Nome negozio', icon: Store }, { name: 'Sicurezza', icon: ShieldCheck }, { name: 'Archivio dati', icon: Archive }, { name: 'Dispositivi', icon: Barcode }, { name: "Tema dell'app", icon: Palette }, { name: 'Operativo', icon: Check }].map(({ name, icon: Icon }) => <button key={name} onClick={() => { setSettingsTab(name); setDeviceTab(null); }}><Icon size={17} />{name}</button>)}</nav> : <section className="settings-panel"><button className="settings-back" onClick={() => { if (settingsTab === 'Dispositivi' && deviceTab) setDeviceTab(null); else { setSettingsTab(null); setDeviceTab(null); } }}><ArrowLeft size={15} />{settingsTab === 'Dispositivi' && deviceTab ? 'Dispositivi' : 'Impostazioni'}</button>
         {settingsTab === 'Nome negozio' && <><div className="settings-title"><h2>Info negozio</h2><p>Nome e logo del negozio per il menu e la barra superiore.</p></div><form className="settings-form" onSubmit={saveStoreName}><Field label="Nome attività" value={shopName} onChange={(e) => setShopName(e.target.value)} required /><div className="receipt-preview"><Store size={17} /><span>{shopName || 'Nome negozio'}</span><small>Anteprima intestazione scontrino</small></div><div className="shop-logo-setting"><span className="field-label">Logo del negozio</span>{data.settings.shop_logo && <img src={data.settings.shop_logo} alt="Logo attuale" />}<button className="button button-outline" type="button" onClick={() => void chooseShopLogo()}><Store size={15} /> {data.settings.shop_logo ? 'Sostituisci logo' : 'Scegli logo'}</button></div><button className="button button-primary"><Check size={16} /> Salva nome</button></form></>}
         {settingsTab === 'Sicurezza' && <><div className="settings-title"><h2>Accesso e sicurezza</h2><p>Proteggi l’apertura del gestionale con un PIN.</p></div><div className="security-status"><div className="security-icon"><ShieldCheck size={20} /></div><div><strong>{hasPin ? 'PIN attivo' : 'Nessun PIN configurato'}</strong><span>{hasPin ? 'Il PIN viene richiesto all’avvio.' : 'Scegli un codice da 4 a 8 cifre.'}</span></div></div><form className="settings-form" onSubmit={async (event) => { event.preventDefault(); try { await window.gestionale.setPin(newPin); setHasPin(true); setNewPin(''); notify('PIN aggiornato'); } catch (error) { notify(errorText(error)); } }}><Field label={hasPin ? 'Nuovo PIN (4–8 cifre)' : 'PIN (4–8 cifre)'} type="password" inputMode="numeric" minLength={4} maxLength={8} pattern="[0-9]{4,8}" value={newPin} onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))} required /><button className="button button-primary"><LockKeyhole size={16} />{hasPin ? 'Aggiorna PIN' : 'Attiva PIN'}</button></form></>}
         {settingsTab === 'Archivio dati' && <><div className="settings-title"><h2>Archivio locale</h2><p>Database SQLite e copie giornaliere dei dati.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Archivio locale attivo</div><div className="database-card"><div className="security-icon"><Archive size={20} /></div><div><strong>Database SQLite</strong><span className="database-path">{data.settings.database_file}</span></div><span className="stock-badge">Attivo</span></div><div className="settings-form"><label className="field"><span>Cartella esportazioni giornaliere</span><div className="folder-input"><input value={archiveFolder} readOnly /><button className="button button-outline" type="button" onClick={() => void chooseFolder()}>Scegli cartella</button></div></label><p className="help-copy">Ogni giorno a mezzanotte vengono aggiornati file TXT e PDF nelle cartelle Magazzino, Cassa, Vendite e Statistiche.</p></div></>}
-        {settingsTab === 'Dispositivi' && <><div className="settings-title"><h2>Dispositivi</h2><p>Configura il lettore di codici a barre e la stampante degli scontrini.</p></div><div className="device-setting"><div className="device-heading"><div className="security-icon"><Barcode size={20} /></div><div><strong>Lettore di codici a barre</strong><span>{data.settings.barcode_scanner_detected ? 'Rilevato: è stata acquisita almeno una scansione su questo computer.' : 'In attesa della prima lettura del lettore USB/HID.'}</span></div><button className={`toggle-button${data.settings.barcode_scanner_enabled ? ' enabled' : ''}`} type="button" role="switch" aria-checked={data.settings.barcode_scanner_enabled} onClick={() => void toggleBarcodeScanner()}>{data.settings.barcode_scanner_enabled ? 'Attivo' : 'Disattivo'}</button></div><p className="help-copy">I lettori USB che si comportano come tastiera vengono riconosciuti automaticamente quando inviano un codice. La preferenza resta salvata tra gli avvii.</p></div><div className="device-setting"><div className="settings-title"><h3>Stampante scontrini</h3><p>Le stampanti rilevate dal sistema possono essere collegate in modo permanente.</p></div><div className="device-printer-row"><SelectField label="Stampante collegata" value={data.settings.receipt_printer} onChange={(value) => void saveReceiptPrinter(value)} options={['', ...printers.map((printer) => printer.name)]} labels={['Seleziona stampante', ...printers.map((printer) => printer.displayName || printer.name)]} /><button className="button button-outline" type="button" onClick={() => void window.gestionale.getPrinters().then(setPrinters).catch((error: unknown) => notify(errorText(error)))}><Printer size={15} /> Rileva stampanti</button></div>{!printers.length && <p className="help-copy">Nessuna stampante rilevata. Verifica che sia collegata e installata nel sistema.</p>}{data.settings.receipt_printer && !printers.some((printer) => printer.name === data.settings.receipt_printer) && <p className="help-copy">La stampante salvata non è attualmente disponibile: selezionane una nuova.</p>}</div></>}
+        {settingsTab === 'Dispositivi' && (deviceTab === null ? <><div className="settings-title"><h2>Dispositivi</h2><p>Seleziona un dispositivo per configurarlo.</p></div><nav className="settings-nav device-menu"><button onClick={() => setDeviceTab('Lettore barcode')}><Barcode size={17} />Lettore di codici a barre</button><button onClick={() => setDeviceTab('Stampante scontrini')}><Printer size={17} />Stampante scontrini</button></nav></> : deviceTab === 'Lettore barcode' ? <><div className="settings-title"><h2>Lettore di codici a barre</h2><p>Configura il lettore collegato al computer.</p></div><div className="device-setting"><div className="device-heading"><div className="security-icon"><Barcode size={20} /></div><div><strong>Lettore di codici a barre</strong><span>{data.settings.barcode_scanner_detected ? 'Rilevato: è stata acquisita almeno una scansione su questo computer.' : 'In attesa della prima lettura del lettore USB/HID.'}</span></div><button className={`toggle-button${data.settings.barcode_scanner_enabled ? ' enabled' : ''}`} type="button" role="switch" aria-checked={data.settings.barcode_scanner_enabled} onClick={() => void toggleBarcodeScanner()}>{data.settings.barcode_scanner_enabled ? 'Attivo' : 'Disattivo'}</button></div><p className="help-copy">I lettori USB che si comportano come tastiera vengono riconosciuti automaticamente quando inviano un codice. La preferenza resta salvata tra gli avvii.</p></div></> : <><div className="settings-title"><h2>Stampante scontrini</h2><p>Collega una stampante rilevata dal sistema.</p></div><div className="device-setting"><div className="device-printer-row"><SelectField label="Stampante collegata" value={data.settings.receipt_printer} onChange={(value) => void saveReceiptPrinter(value)} options={['', ...printers.map((printer) => printer.name)]} labels={['Seleziona stampante', ...printers.map((printer) => printer.displayName || printer.name)]} /><button className="button button-outline" type="button" onClick={() => void window.gestionale.getPrinters().then(setPrinters).catch((error: unknown) => notify(errorText(error)))}><Printer size={15} /> Rileva stampanti</button></div>{!printers.length && <p className="help-copy">Nessuna stampante rilevata. Verifica che sia collegata e installata nel sistema.</p>}{data.settings.receipt_printer && !printers.some((printer) => printer.name === data.settings.receipt_printer) && <p className="help-copy">La stampante salvata non è attualmente disponibile: selezionane una nuova.</p>}</div></>)}
         {settingsTab === "Tema dell'app" && <><div className="settings-title"><h2>Tema dell'app</h2><p>Scegli i colori dell’interfaccia. La selezione viene salvata su questo dispositivo.</p></div><div className="theme-options" role="group" aria-label="Temi dell'app">{appThemes.map((theme) => <button key={theme.id} className={`theme-option${appTheme === theme.id ? ' selected' : ''}`} type="button" aria-pressed={appTheme === theme.id} onClick={() => setAppTheme(theme.id)}><span className="theme-swatch" style={{ backgroundColor: theme.color }} /><span>{theme.label}</span>{appTheme === theme.id && <Check size={15} />}</button>)}</div></>}
+        {settingsTab === "Tema dell'app" && <><div className="settings-title"><h2>Tema dell'app</h2><p>Scegli i colori dell’interfaccia. La selezione viene salvata su questo dispositivo.</p></div><div className="theme-options" role="group" aria-label="Temi dell'app">{appThemes.map((theme) => <button key={theme.id} className={`theme-option${appTheme === theme.id ? ' selected' : ''}`} type="button" aria-pressed={appTheme === theme.id} onClick={() => setAppTheme(theme.id)}><span className="theme-swatch" style={{ backgroundColor: theme.color }} /><span>{theme.label}</span>{appTheme === theme.id && <Check size={15} />}</button>)}</div><div className="settings-title homepage-image-title"><h2>Immagine homepage</h2><p>Scegli un’immagine salvata nel gestionale per la pagina iniziale.</p></div><div className="shop-logo-setting">{data.settings.home_image && <img src={data.settings.home_image} alt="Immagine homepage attuale" />}<button className="button button-outline" type="button" onClick={() => void chooseHomepageImage()}><House size={15} />{data.settings.home_image ? 'Sostituisci immagine' : 'Scegli immagine'}</button></div></>}
+        {settingsTab === 'Operativo' && <><div className="settings-title"><h2>Stato operativo</h2><p>Stato corrente del gestionale.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Operativo</div></>}
       </section>}</div></div>}
     </main>
 
@@ -1895,7 +1801,7 @@ export default function App() {
       <Field fieldClassName="movement-barcode-field" label="Barcode del personale (scansiona il badge)" value={stockMovementEmployeeBarcode} readOnly autoFocus disabled={!data.settings.barcode_scanner_enabled} placeholder={data.settings.barcode_scanner_enabled ? 'In attesa della scansione…' : 'Attiva il lettore barcode nelle impostazioni'} />
       <div className="form-actions"><button className="button button-quiet full-width" type="button" onClick={() => { setStockProduct(null); setStockMovementEmployeeBarcode(''); }}>Annulla</button><button className="button button-primary full-width" disabled={!data.settings.barcode_scanner_enabled || !stockMovementEmployeeBarcode}><Check size={16} /> Conferma giacenza</button></div>
     </form></Modal>}{selectedProduct && <div className="drawer-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedProduct(null); }}><aside className="detail-drawer"><header className="drawer-header"><div><p className="eyebrow">DETTAGLIO ARTICOLO</p><h2>{selectedProduct.name}</h2></div><button className="icon-button" onClick={() => setSelectedProduct(null)}><X size={18} /></button></header><div className="drawer-content"><div className="detail-icon"><Package size={26} /></div><span className="stock-badge">{selectedProduct.category}</span><div className="detail-list"><Detail label="Codice a barre" value={selectedProduct.code} /><Detail label="Prezzo vendita" value={money.format(selectedProduct.sale_price)} /><Detail label="Prezzo acquisto" value={money.format(selectedProduct.purchase_price)} /><Detail label="Giacenza" value={`${selectedProduct.stock} ${selectedProduct.unit ?? 'PEZZO'}`} /><Detail label="Soglia minima" value={`${selectedProduct.low_stock_threshold} ${selectedProduct.unit ?? 'PEZZO'}`} />{selectedProduct.expiry_enabled && selectedProduct.expiry_date && <Detail label="Data di scadenza" value={receiptDate.format(new Date(`${selectedProduct.expiry_date}T00:00:00`))} />}<Detail label="Margine unitario" value={money.format(selectedProduct.sale_price - selectedProduct.purchase_price)} /></div></div><footer className="drawer-footer"><button className="button button-outline full-width" onClick={() => { setProductEditingId(selectedProduct.id); setProductForm({ code: selectedProduct.code, name: selectedProduct.name, unit: selectedProduct.unit ?? 'PEZZO', category: selectedProduct.category, sale_price: selectedProduct.sale_price, purchase_price: selectedProduct.purchase_price, stock: selectedProduct.stock, low_stock_threshold: selectedProduct.low_stock_threshold, expiry_enabled: selectedProduct.expiry_enabled, expiry_date: selectedProduct.expiry_date }); setSelectedProduct(null); }}><Settings size={15} /> Modifica articolo</button><button className="button button-outline full-width" onClick={() => { setStockInput(''); setStockProduct(selectedProduct); setSelectedProduct(null); }}><Package size={15} /> Nuova quantità</button></footer></aside></div>}
-    {checkoutOpen && <Modal title="Pagamento" close={() => { setCheckoutOpen(false); setVoucherCode(''); setVoucherMessage(''); setVoucherDiscountPercentage(0); setCheckoutCardBarcode(''); setCheckoutRedeemPoints(''); }} rightHalf narrowPanel><div className="payment-content">
+    {checkoutOpen && <Modal title="Pagamento" close={() => { setCheckoutOpen(false); setVoucherCode(''); setVoucherMessage(''); setVoucherDiscountPercentage(0); }} rightHalf narrowPanel><div className="payment-content">
       <details className="payment-promotion-info">
         <summary><strong>Offerte automatiche applicate</strong></summary>
         <div className="payment-offer-list"><div className="payment-offer-toggle-row"><span>Applica sconti automatici</span><button className={`switch-button${automaticPromotionId !== null ? ' is-on' : ''}`} type="button" role="switch" aria-checked={automaticPromotionId !== null} onClick={() => setAutomaticPromotionId(automaticPromotionId === null ? undefined : null)}>{automaticPromotionId === null ? 'OFF' : 'ON'}</button></div>{automaticPromotionId !== null && (automaticApplicableOffers.length ? automaticApplicableOffers.map((offer) => <div className="payment-offer" key={offer.id}>
@@ -1910,7 +1816,6 @@ export default function App() {
           {manualDiscount > 0 && <small>Risparmio: {money.format(manualDiscount)}</small>}</div>
       </details>}
       <SelectField label="Metodo di pagamento" value={paymentMethod} onChange={setPaymentMethod} options={['Carta', 'Contanti', 'Bancomat', 'Buono']} />
-      <section className="loyalty-checkout"><h3>Tessera fedeltà</h3><Field label="Barcode tessera (scansiona la carta)" value={checkoutCardBarcode} onChange={(event) => setCheckoutCardBarcode(event.target.value.trim())} placeholder="Scansiona o inserisci il barcode" />{checkoutCardBarcode && (checkoutLoyaltyCard ? <div className="loyalty-card-details"><div><strong>{checkoutLoyaltyCard.first_name} {checkoutLoyaltyCard.last_name}</strong><span>{checkoutLoyaltyCard.points} punti disponibili</span></div><div className="loyalty-redeem-controls"><Field label="Punti da scaricare" type="number" min="1" max={checkoutLoyaltyCard.points} step="1" value={checkoutRedeemPoints} onChange={(event) => setCheckoutRedeemPoints(event.target.value)} /><button className="button button-outline" type="button" disabled={!checkoutRedeemPoints || Number(checkoutRedeemPoints) > checkoutLoyaltyCard.points} onClick={() => void redeemCheckoutPoints()}>Scarica punti</button></div></div> : <small className="voucher-status invalid">Tessera non trovata o non attiva.</small>)}{checkoutLoyaltyCard && <small className="loyalty-points-note">I punti valgono 0,10 € ciascuno. Se ne raccoglie 1 per ogni euro intero.</small>}</section>
       <div className="voucher-checkout"><Field label="Buono sconto" value={voucherCode} onChange={(event) => { setVoucherCode(event.target.value); setVoucherMessage(''); setVoucherDiscountPercentage(0); }} placeholder="Scansiona o inserisci il codice" /><button className="button button-outline" type="button" onClick={() => void applyVoucherCode(voucherCode)} disabled={!voucherCode.trim()}><Barcode size={16} /> Verifica</button>{voucherMessage && <small className={voucherDiscountPercentage > 0 ? 'voucher-status valid' : 'voucher-status invalid'}>{voucherMessage}</small>}</div>
       <div className="payment-total">{total < subtotal && <div className="payment-total-before"><span>Prezzo prima dello sconto</span><strong>{money.format(subtotal)}</strong></div>}{voucherDiscount > 0 && <div className="payment-total-before"><span>Buono sconto ({voucherDiscountPercentage}%)</span><strong>− {money.format(voucherDiscount)}</strong></div>}<div className="payment-total-after"><span>Totale da pagare</span><strong>{money.format(total)}</strong></div></div>
       <div className="payment-note"><ShieldCheck size={16} />Lo scontrino viene registrato nel database locale.</div>

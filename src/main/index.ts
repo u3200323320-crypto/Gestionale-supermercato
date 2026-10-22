@@ -6,7 +6,7 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, un
 import { join } from 'node:path';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
-import type { CheckoutInput, Customer, CustomerInput, Employee, EmployeeInput, Expense, LoyaltyCard, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, SaleItem, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
+import type { CheckoutInput, CustomerInput, Employee, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, SaleItem, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
 
 let database: Database.Database;
 let mainWindow: BrowserWindow;
@@ -130,16 +130,13 @@ function state() {
     employees: database.prepare(`SELECT id, first_name, last_name, age, gender, home_address, email, phone, operational_site,
       role, shift, salary, payment_method, iban, recognition_code, barcode, photo_data, documents_data, contract_pdf_data, created_at
       FROM employees ORDER BY last_name, first_name`).all() as Employee[],
-    customers: database.prepare('SELECT * FROM customers ORDER BY last_name, first_name').all() as Customer[],
-    loyaltyCards: database.prepare(`SELECT cards.*, customers.first_name, customers.last_name
-      FROM loyalty_cards cards LEFT JOIN customers ON customers.id = cards.customer_id
-      ORDER BY cards.created_at DESC, cards.id DESC`).all() as LoyaltyCard[],
     payrollPayments: database.prepare(`SELECT payments.*, employees.first_name, employees.last_name
       FROM payroll_payments payments JOIN employees ON employees.id = payments.employee_id
       ORDER BY payments.pay_month DESC, employees.last_name, employees.first_name`).all() as PayrollPayment[],
     settings: {
       shop_name: setting('shop_name', 'Il tuo supermercato'),
       shop_logo: setting('shop_logo'),
+      home_image: setting('home_image'),
       archive_folder: setting('archive_folder', join(app.getPath('documents'), 'Gestionale-Archivio')),
       database_file: databaseFile,
       receipt_printer: setting('receipt_printer'),
@@ -617,10 +614,6 @@ app.whenReady().then(() => {
     if (sale.manual_promotion_id !== undefined && !discounts.manualPromotion) {
       throw new Error('L’offerta selezionata non è più applicabile: controlla il periodo, la categoria e la spesa minima.');
     }
-    if (sale.loyalty_card_id !== undefined && (!Number.isInteger(sale.loyalty_card_id)
-      || !(database.prepare("SELECT 1 FROM loyalty_cards WHERE id = ? AND status = 'Attiva'").get(sale.loyalty_card_id)))) {
-      throw new Error('La tessera fedeltà non è attiva o non è valida.');
-    }
     const voucherCode = sale.voucher_code?.trim() ?? '';
     if (voucherCode && !findValidVoucher(voucherCode)) throw new Error('Buono sconto non valido, scaduto o già utilizzato.');
     const grossTotal = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
@@ -637,17 +630,6 @@ app.whenReady().then(() => {
         .run(receiptNo, new Date().toISOString(), sale.payment_method, discount, grossTotal, amountPaid);
       replaceItems(Number(result.lastInsertRowid), items);
       items.forEach((item) => recordStockMovement(item.product_id, item.name, 'Scarico', item.quantity, `Vendita #${receiptNo}`));
-      if (sale.loyalty_card_id !== undefined) {
-        const points = Math.floor(amountPaid);
-        if (points > 0) {
-          const cardResult = database.prepare("UPDATE loyalty_cards SET points = points + ? WHERE id = ? AND status = 'Attiva'")
-            .run(points, sale.loyalty_card_id);
-          if (!cardResult.changes) throw new Error('La tessera fedeltà non è più attiva.');
-          database.prepare(`INSERT INTO loyalty_point_transactions
-            (card_id, transaction_type, points, amount_eur, created_at) VALUES (?, 'Raccolta', ?, ?, ?)`)
-            .run(sale.loyalty_card_id, points, amountPaid, new Date().toISOString());
-        }
-      }
       if (voucher) {
         database.prepare('DELETE FROM vouchers WHERE id = ?').run(voucher.id);
         database.prepare('DELETE FROM voucher_batches WHERE id = ? AND NOT EXISTS (SELECT 1 FROM vouchers WHERE batch_id = ?)').run(voucher.batch_id, voucher.batch_id);
@@ -1007,24 +989,26 @@ app.whenReady().then(() => {
     const printer = setting('receipt_printer');
     if (!printer) throw new Error('Seleziona una stampante per gli scontrini nelle impostazioni Dispositivi.');
     await new Promise<void>((resolve, reject) => {
-      mainWindow.webContents.print({ silent: true, deviceName: printer, printBackground: true }, (success, failureReason) => {
+      mainWindow.webContents.print({ silent: true, deviceName: printer, printBackground: true, copies: 1 }, (success, failureReason) => {
         if (success) resolve();
         else reject(new Error(failureReason || 'Stampa dello scontrino non riuscita.'));
       });
     });
   });
-  ipcMain.handle('settings:choose-shop-logo', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, { properties: ['openFile'], filters: [{ name: 'Immagini', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] });
+  const chooseImage = async (settingKey: 'shop_logo' | 'home_image', title: string) => {
+    const result = await dialog.showOpenDialog(mainWindow, { title, properties: ['openFile'], filters: [{ name: 'Immagini', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] });
     if (result.canceled || !result.filePaths[0]) return null;
     const filePath = result.filePaths[0];
     const image = readFileSync(filePath);
-    if (image.length > 5 * 1024 * 1024) throw new Error('Il logo deve essere inferiore a 5 MB.');
+    if (image.length > 5 * 1024 * 1024) throw new Error('L’immagine selezionata deve essere inferiore a 5 MB.');
     const extension = filePath.split('.').pop()?.toLowerCase();
     const mimeType = extension === 'png' ? 'image/png' : extension === 'webp' ? 'image/webp' : 'image/jpeg';
-    const logo = `data:${mimeType};base64,${image.toString('base64')}`;
-    setSetting('shop_logo', logo);
-    return logo;
-  });
+    const imageData = `data:${mimeType};base64,${image.toString('base64')}`;
+    setSetting(settingKey, imageData);
+    return imageData;
+  };
+  ipcMain.handle('settings:choose-shop-logo', () => chooseImage('shop_logo', 'Scegli il logo del negozio'));
+  ipcMain.handle('settings:choose-homepage-image', () => chooseImage('home_image', 'Scegli l’immagine homepage'));
   ipcMain.handle('archive:choose-folder', async () => {
     if (setting('archive_folder')) {
       const confirmation = await dialog.showMessageBox(mainWindow, {
