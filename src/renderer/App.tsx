@@ -28,7 +28,7 @@ const promotionDurations = ['1 giorno', '3 giorni', '7 giorni', '1 mese', 'Sempr
 const expenseCategories = ['Affitto', 'Utenze', 'Forniture', 'Stipendi', 'Manutenzione', 'Trasporti', 'Altro'];
 const appThemes = [
   { id: 'green', label: 'Verde', color: '#72bf6a' },
-  { id: 'blue', label: 'Blu', color: '#0000a1' },
+  { id: 'blue', label: 'Blu', color: '#42A4F6' },
   { id: 'purple', label: 'Viola', color: '#8b74a6' },
   { id: 'orange', label: 'Arancione', color: '#F3500A' },
 ] as const;
@@ -218,7 +218,7 @@ function EmployeeForm({ initial, save, cancel, notify }: { initial: EmployeeInpu
   };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!employee.photo_data || !documentImages.length || !employee.contract_pdf_data) {
+    if (!editing && (!employee.photo_data || !documentImages.length || !employee.contract_pdf_data)) {
       notify('Allega la foto del dipendente, la foto dei documenti e il contratto PDF.');
       return;
     }
@@ -400,7 +400,7 @@ export default function App() {
   const saveEmployee = async (employee: EmployeeInput) => {
     await window.gestionale.saveEmployee(employee);
     await refresh();
-    setSection('employees');
+    setSection(employee.id ? 'home' : 'employees');
     setOpenSidebarMenu(null);
     setEmployeeDraft(null);
     setEmployeeDetails(null);
@@ -1221,49 +1221,62 @@ export default function App() {
   const exportInventoryReport = async () => {
     if (!data) return;
     try {
-      const doc = new jsPDF({ orientation: 'landscape' });
+      const doc = new jsPDF({ orientation: 'portrait' });
       const stockValue = data.products.reduce((sum, item) => sum + item.stock * item.purchase_price, 0);
       const stockSaleValue = data.products.reduce((sum, item) => sum + item.stock * item.sale_price, 0);
       const lowStockCount = data.products.filter((item) => item.stock <= item.low_stock_threshold).length;
       doc.setFillColor(43, 82, 61);
-      doc.rect(0, 0, 297, 36, 'F');
-      if (data.settings.shop_logo) doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', 123.5, 3, 50, 23);
+      doc.rect(0, 0, 210, 36, 'F');
+      if (data.settings.shop_logo) doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', 12, 5, 24, 24);
       doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(15);
+      doc.text(data.settings.shop_name, data.settings.shop_logo ? 43 : 14, 15);
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.text('Report magazzino · Esportato il ' + receiptDate.format(new Date()), 148.5, 31, { align: 'center' });
+      doc.setFontSize(9);
+      doc.text('Report magazzino · Esportato il ' + receiptDate.format(new Date()), data.settings.shop_logo ? 43 : 14, 26);
       autoTable(doc, {
-      startY: 43,
-      head: [['Codice', 'Articolo', 'Categoria', 'Vendita / unità', 'Acquisto / unità', 'Profitto', 'Giacenza', 'Soglia minima', 'Scadenza']],
-      body: data.products.map((item) => [item.code, item.name, item.category, money.format(item.sale_price), money.format(item.purchase_price), money.format(item.sale_price - item.purchase_price), `${item.stock} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'}`, String(item.low_stock_threshold), item.expiry_enabled && item.expiry_date ? receiptDate.format(new Date(`${item.expiry_date}T00:00:00`)) : '—']),
-      theme: 'striped',
-      styles: { fontSize: 8, cellPadding: 3, textColor: [49, 60, 53], lineColor: [224, 230, 224] },
-      headStyles: { fillColor: [56, 104, 78], textColor: [255, 255, 255], fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: [244, 247, 244] },
-      margin: { left: 14, right: 14, bottom: 16 },
-      didDrawPage: () => {
-        doc.setFontSize(8);
-        doc.setTextColor(120, 130, 122);
-        doc.text(`${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`, 14, 202);
-      },
-    });
+        startY: 43,
+        head: [['Codice', 'Articolo', 'Categoria', 'Vendita', 'Acquisto', 'Profitto', 'Giacenza', 'Soglia', 'Scadenza']],
+        body: data.products.map((item) => [item.code, item.name, item.category, money.format(item.sale_price), money.format(item.purchase_price), money.format(item.sale_price - item.purchase_price), `${item.stock} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'}`, String(item.low_stock_threshold), item.expiry_enabled && item.expiry_date ? receiptDate.format(new Date(`${item.expiry_date}T00:00:00`)) : '—']),
+        theme: 'striped',
+        styles: { fontSize: 6, cellPadding: 1.5, overflow: 'linebreak', textColor: [49, 60, 53], lineColor: [224, 230, 224] },
+        headStyles: { fillColor: [56, 104, 78], textColor: [255, 255, 255], fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [244, 247, 244] },
+        margin: { left: 8, right: 8, bottom: 22 },
+        didDrawPage: () => {
+          doc.setFontSize(8);
+          doc.setTextColor(120, 130, 122);
+          doc.text(`${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`, 8, 287);
+        },
+      });
       const tableLayout = (doc as jsPDF & { lastAutoTable?: AutoTableTable }).lastAutoTable;
       if (tableLayout?.finalY === undefined) throw new Error('Impossibile determinare la fine della tabella del report.');
       let summaryY = tableLayout.finalY + 8;
-      if (summaryY + 14 > 195) {
+      if (summaryY + 24 > 279) {
         doc.addPage();
         summaryY = 20;
+        doc.setFontSize(8);
+        doc.setTextColor(120, 130, 122);
+        doc.text(`${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`, 8, 287);
       }
       doc.setFillColor(56, 104, 78);
-      doc.roundedRect(14, summaryY, 269, 14, 2, 2, 'F');
+      doc.roundedRect(14, summaryY, 182, 24, 2, 2, 'F');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(6.8);
+      doc.setFontSize(5.5);
       doc.setTextColor(255, 255, 255);
-      doc.text(`Articoli: ${data.products.length}`, 18, summaryY + 9);
-      doc.text(`Sotto soglia: ${lowStockCount}`, 68, summaryY + 9);
-      doc.text(`Valore acquisto giacenze: ${money.format(stockValue)}`, 116, summaryY + 9);
-      doc.text(`Valore vendita giacenze: ${money.format(stockSaleValue)}`, 174, summaryY + 9);
-      doc.text(`Netto giacenze: ${money.format(stockSaleValue - stockValue)}`, 232, summaryY + 9);
+      const summary = [
+        ['Articoli', String(data.products.length)],
+        ['Sotto soglia', String(lowStockCount)],
+        ['Acquisto giacenze', money.format(stockValue)],
+        ['Vendita giacenze', money.format(stockSaleValue)],
+        ['Netto giacenze', money.format(stockSaleValue - stockValue)],
+      ];
+      summary.forEach(([label, value], index) => {
+        const x = 17 + index * 36;
+        doc.text(label, x, summaryY + 9, { maxWidth: 34 });
+        doc.text(value, x, summaryY + 18, { maxWidth: 34 });
+      });
       doc.save(`report-magazzino-${todayKey}.pdf`);
     } catch (error) {
       notify(errorText(error));

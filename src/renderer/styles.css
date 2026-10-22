@@ -20,10 +20,10 @@
 }
 
 [data-theme='blue'] {
-  --green: #0000a1;
-  --green-dark: #00006e;
-  --green-soft: #d4d4ff;
-  --green-block: #aaaaff;
+  --green: #42A4F6;
+  --green-dark: #1685dc;
+  --green-soft: #d9edff;
+  --green-block: #c5e4fc;
 }
 [data-theme='purple'] {
   --green: #8b74a6;
@@ -659,7 +659,8 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .employee-barcode { display: grid; min-height: 37px; justify-items: center; gap: 5px; }
 .employee-barcode .barcode-image { width: min(420px, 100%); height: 70px; }
 .employee-barcode small { color: #657168; font-family: 'DM Mono', 'Consolas', monospace; font-size: 9px; }
-.employee-form .form-actions { border-top: 1px solid var(--line); }
+.employee-form .form-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--line); }
+.employee-form .form-actions .button { width: 100%; }
 .employee-list-photo { display: block; width: 38px; height: 38px; border-radius: 4px; object-fit: cover; }
 .employee-table-row { cursor: pointer; }
 .employee-table-row:hover { background: #f5f8f5; }
@@ -686,7 +687,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .employee-detail-barcode h3 { color: var(--muted); font-size: 9px; font-weight: 500; }
 .employee-detail-barcode .barcode-image { width: min(210px, 100%); height: 42px; }
 .employee-detail-barcode strong { color: #657168; font-family: 'DM Mono', 'Consolas', monospace; font-size: 10px; }
-.employee-profile-actions { grid-template-columns: repeat(3, 1fr); }
+.employee-profile-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .report-export-options { display: grid; gap: 10px; padding: 20px; }
 .report-export-options p { margin-bottom: 4px; color: #66736a; font-size: 11px; line-height: 1.6; }
 .payroll-toolbar { display: grid; grid-template-columns: 1fr 1fr auto auto; align-items: end; gap: 12px; margin-bottom: 20px; padding: 16px; }
@@ -767,8 +768,6 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
   .expenses-total { font-size: 10px; }
 }
 
-.home-page, .home-page * { color: #000 !important; font-weight: 700 !important; }
-
 @media (max-width: 1000px) {
   .payroll-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .client-shortcuts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -783,6 +782,3 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
   .product-form .form-actions.has-delete { grid-template-columns: 1fr; }
   .product-form .product-delete-button { grid-row: auto; }
 }
-
-*, *::before, *::after { color: #000 !important; }
-::placeholder { color: #000 !important; opacity: 1; }

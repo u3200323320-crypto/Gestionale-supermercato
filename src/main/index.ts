@@ -790,8 +790,7 @@ app.whenReady().then(() => {
   ipcMain.handle('employee:save', (_event, employee: EmployeeInput) => {
     const requiredText: Array<keyof EmployeeInput> = [
       'first_name', 'last_name', 'gender', 'home_address', 'email', 'phone', 'operational_site',
-      'role', 'shift', 'payment_method', 'recognition_code', 'barcode', 'photo_data', 'documents_data',
-      'contract_pdf_data',
+      'role', 'shift', 'payment_method',
     ];
     const isDataUrl = (value: string, mime: RegExp, maxBytes: number) => {
       if (!mime.test(value)) return false;
@@ -810,28 +809,46 @@ app.whenReady().then(() => {
     }
     const editing = Boolean(employee?.id);
     const existingEmployee = editing && Number.isInteger(employee.id) && typeof employee.id === 'number' && employee.id > 0
-      ? database.prepare('SELECT id FROM employees WHERE id = ?').get(employee.id)
+      ? database.prepare('SELECT id, recognition_code, barcode, photo_data, documents_data, contract_pdf_data FROM employees WHERE id = ?').get(employee.id) as {
+        id: number;
+        recognition_code: string;
+        barcode: string;
+        photo_data: string;
+        documents_data: string;
+        contract_pdf_data: string;
+      } | undefined
       : undefined;
-    const initialPassword = employee?.initial_password ?? '';
-    if (!employee || (employee.id !== undefined && (!Number.isInteger(employee.id) || employee.id < 1))
+    const candidate = employee && existingEmployee ? {
+      ...employee,
+      recognition_code: existingEmployee.recognition_code,
+      barcode: existingEmployee.barcode,
+      photo_data: employee.photo_data || existingEmployee.photo_data,
+      documents_data: employee.documents_data || existingEmployee.documents_data,
+      contract_pdf_data: employee.contract_pdf_data || existingEmployee.contract_pdf_data,
+    } : employee;
+    const initialPassword = candidate?.initial_password ?? '';
+    const documentImagesChanged = !editing || candidate?.documents_data !== existingEmployee?.documents_data;
+    const photoChanged = !editing || candidate?.photo_data !== existingEmployee?.photo_data;
+    const contractChanged = !editing || candidate?.contract_pdf_data !== existingEmployee?.contract_pdf_data;
+    if (!candidate || (candidate.id !== undefined && (!Number.isInteger(candidate.id) || candidate.id < 1))
       || (editing && !existingEmployee)
-      || requiredText.some((field) => typeof employee[field] !== 'string' || !employee[field]!.trim())
-      || !Number.isInteger(employee.age) || employee.age < 16 || employee.age > 100
-      || !Number.isFinite(employee.salary) || employee.salary < 0
-      || !['Bonifico', 'Contanti'].includes(employee.payment_method)
-      || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(employee.email)
+      || requiredText.some((field) => typeof candidate[field] !== 'string' || !candidate[field]!.trim())
+      || !Number.isInteger(candidate.age) || candidate.age < 16 || candidate.age > 100
+      || !Number.isFinite(candidate.salary) || candidate.salary < 0
+      || !['Bonifico', 'Contanti'].includes(candidate.payment_method)
+      || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate.email)
       || (!editing && (initialPassword.length < 8 || initialPassword.length > 128))
       || (initialPassword.length > 0 && (initialPassword.length < 8 || initialPassword.length > 128))
-      || (employee.payment_method === 'Bonifico' && !/^[A-Z0-9 ]{15,34}$/i.test(employee.iban))
-      || (employee.payment_method === 'Contanti' && employee.iban !== '')
-      || !/^DIP\d{8}$/.test(employee.recognition_code) || employee.barcode !== employee.recognition_code
-      || !isDataUrl(employee.photo_data, /^data:image\/(?:png|jpeg|webp);base64,/i, 5 * 1024 * 1024)
-      || documentImages.length === 0 || documentImages.length > 20
-      || documentImages.some((image) => typeof image !== 'string' || !isDataUrl(image, /^data:image\/(?:png|jpeg|webp);base64,/i, 5 * 1024 * 1024))
-      || !isDataUrl(employee.contract_pdf_data, /^data:application\/pdf;base64,/i, 10 * 1024 * 1024)) {
+      || (candidate.payment_method === 'Bonifico' && !/^[A-Z0-9 ]{15,34}$/i.test(candidate.iban))
+      || (candidate.payment_method === 'Contanti' && candidate.iban !== '')
+      || (!editing && (!/^DIP\d{8}$/.test(candidate.recognition_code) || candidate.barcode !== candidate.recognition_code))
+      || (photoChanged && !isDataUrl(candidate.photo_data, /^data:image\/(?:png|jpeg|webp);base64,/i, 5 * 1024 * 1024))
+      || (documentImagesChanged && (documentImages.length === 0 || documentImages.length > 20
+        || documentImages.some((image) => typeof image !== 'string' || !isDataUrl(image, /^data:image\/(?:png|jpeg|webp);base64,/i, 5 * 1024 * 1024))))
+      || (contractChanged && !isDataUrl(candidate.contract_pdf_data, /^data:application\/pdf;base64,/i, 10 * 1024 * 1024))) {
       throw new Error('Controlla i dati obbligatori, gli allegati e i codici del dipendente.');
     }
-    const { id, initial_password: _initialPassword, ...employeeDetails } = employee;
+    const { id, initial_password: _initialPassword, ...employeeDetails } = candidate;
     let passwordHash: string | undefined;
     if (initialPassword) {
       const salt = randomBytes(16).toString('hex');
