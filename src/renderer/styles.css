@@ -20,10 +20,10 @@
 }
 
 [data-theme='blue'] {
-  --green: #1a8ae5;
-  --green-dark: #135da0;
-  --green-soft: #b8dcf8;
-  --green-block: #a6d0f4;
+  --green: #0000a1;
+  --green-dark: #00006e;
+  --green-soft: #d4d4ff;
+  --green-block: #aaaaff;
 }
 [data-theme='purple'] {
   --green: #8b74a6;
@@ -706,7 +706,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .expense-receipt-field small { color: var(--green); font-size: 9px; }
 .expense-receipt-download { min-height: 29px; padding: 0 8px; font-size: 9px; }
 .expense-actions { display: flex; grid-column: 1 / -1; gap: 9px; }
-.expense-actions .button { min-width: 128px; min-height: 37px; }
+.expense-actions .button { min-width: 0; min-height: 37px; flex: 1; }
 .product-sales-panel { margin-bottom: 16px; }
 
 .theme-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-top: 18px; }

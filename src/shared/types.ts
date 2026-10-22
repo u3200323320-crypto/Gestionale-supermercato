@@ -111,7 +111,7 @@ export interface Employee {
   created_at: string;
 }
 
-export type EmployeeInput = Omit<Employee, 'id' | 'created_at'> & { initial_password: string };
+export type EmployeeInput = Omit<Employee, 'id' | 'created_at'> & { id?: number; initial_password?: string };
 export interface PayrollPayment {
   id: number;
   employee_id: number;
@@ -161,6 +161,7 @@ declare global {
     onSalesExpired: (callback: () => void) => () => void;
     hasPin: () => Promise<boolean>;
     verifyPin: (pin: string) => Promise<boolean>;
+    verifyEmployeeBarcode: (barcode: string) => Promise<boolean>;
     setPin: (pin: string) => Promise<void>;
     saveProduct: (product: ProductInput) => Promise<void>;
     updateStock: (productId: number, stock: number) => Promise<void>;

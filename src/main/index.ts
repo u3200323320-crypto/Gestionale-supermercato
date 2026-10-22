@@ -524,6 +524,7 @@ app.whenReady().then(() => {
     const [salt, hash] = stored.split(':');
     return timingSafeEqual(scryptSync(pin, salt, 64), Buffer.from(hash, 'hex'));
   });
+  ipcMain.handle('employee:authorize', (_event, barcode: string) => isEmployeeBarcode(barcode));
   ipcMain.handle('pin:set', (_event, pin: string) => {
     if (!/^\d{4,8}$/.test(pin)) throw new Error('Il PIN deve contenere da 4 a 8 cifre.');
     const salt = randomBytes(16).toString('hex');
@@ -790,7 +791,7 @@ app.whenReady().then(() => {
     const requiredText: Array<keyof EmployeeInput> = [
       'first_name', 'last_name', 'gender', 'home_address', 'email', 'phone', 'operational_site',
       'role', 'shift', 'payment_method', 'recognition_code', 'barcode', 'photo_data', 'documents_data',
-      'contract_pdf_data', 'initial_password',
+      'contract_pdf_data',
     ];
     const isDataUrl = (value: string, mime: RegExp, maxBytes: number) => {
       if (!mime.test(value)) return false;
@@ -807,12 +808,20 @@ app.whenReady().then(() => {
         documentImages = [employee.documents_data];
       }
     }
-    if (!employee || requiredText.some((field) => typeof employee[field] !== 'string' || !employee[field].trim())
+    const editing = Boolean(employee?.id);
+    const existingEmployee = editing && Number.isInteger(employee.id) && typeof employee.id === 'number' && employee.id > 0
+      ? database.prepare('SELECT id FROM employees WHERE id = ?').get(employee.id)
+      : undefined;
+    const initialPassword = employee?.initial_password ?? '';
+    if (!employee || (employee.id !== undefined && (!Number.isInteger(employee.id) || employee.id < 1))
+      || (editing && !existingEmployee)
+      || requiredText.some((field) => typeof employee[field] !== 'string' || !employee[field]!.trim())
       || !Number.isInteger(employee.age) || employee.age < 16 || employee.age > 100
       || !Number.isFinite(employee.salary) || employee.salary < 0
       || !['Bonifico', 'Contanti'].includes(employee.payment_method)
       || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(employee.email)
-      || employee.initial_password.length < 8 || employee.initial_password.length > 128
+      || (!editing && (initialPassword.length < 8 || initialPassword.length > 128))
+      || (initialPassword.length > 0 && (initialPassword.length < 8 || initialPassword.length > 128))
       || (employee.payment_method === 'Bonifico' && !/^[A-Z0-9 ]{15,34}$/i.test(employee.iban))
       || (employee.payment_method === 'Contanti' && employee.iban !== '')
       || !/^DIP\d{8}$/.test(employee.recognition_code) || employee.barcode !== employee.recognition_code
@@ -822,21 +831,34 @@ app.whenReady().then(() => {
       || !isDataUrl(employee.contract_pdf_data, /^data:application\/pdf;base64,/i, 10 * 1024 * 1024)) {
       throw new Error('Controlla i dati obbligatori, gli allegati e i codici del dipendente.');
     }
-    const { initial_password: initialPassword, ...employeeDetails } = employee;
-    const salt = randomBytes(16).toString('hex');
-    const passwordHash = `${salt}:${scryptSync(initialPassword, salt, 64).toString('hex')}`;
+    const { id, initial_password: _initialPassword, ...employeeDetails } = employee;
+    let passwordHash: string | undefined;
+    if (initialPassword) {
+      const salt = randomBytes(16).toString('hex');
+      passwordHash = `${salt}:${scryptSync(initialPassword, salt, 64).toString('hex')}`;
+    }
     try {
-      database.prepare(`INSERT INTO employees (
-        first_name, last_name, age, gender, home_address, email, initial_password_hash, phone, operational_site,
-        role, shift, salary, payment_method, iban, recognition_code, barcode, photo_data, documents_data, contract_pdf_data, created_at
-      ) VALUES (
-        @first_name, @last_name, @age, @gender, @home_address, @email, @initial_password_hash, @phone, @operational_site,
-        @role, @shift, @salary, @payment_method, @iban, @recognition_code, @barcode, @photo_data, @documents_data, @contract_pdf_data, @created_at
-      )`).run({
-        ...employeeDetails,
-        initial_password_hash: passwordHash,
-        created_at: new Date().toISOString(),
-      });
+      if (editing) {
+        const result = database.prepare(`UPDATE employees SET
+          first_name=@first_name, last_name=@last_name, age=@age, gender=@gender, home_address=@home_address, email=@email,
+          phone=@phone, operational_site=@operational_site, role=@role, shift=@shift, salary=@salary, payment_method=@payment_method,
+          iban=@iban, recognition_code=@recognition_code, barcode=@barcode, photo_data=@photo_data, documents_data=@documents_data,
+          contract_pdf_data=@contract_pdf_data, initial_password_hash=COALESCE(@initial_password_hash, initial_password_hash)
+          WHERE id=@id`).run({ ...employeeDetails, id, initial_password_hash: passwordHash ?? null });
+        if (!result.changes) throw new Error('Dipendente non trovato.');
+      } else {
+        database.prepare(`INSERT INTO employees (
+          first_name, last_name, age, gender, home_address, email, initial_password_hash, phone, operational_site,
+          role, shift, salary, payment_method, iban, recognition_code, barcode, photo_data, documents_data, contract_pdf_data, created_at
+        ) VALUES (
+          @first_name, @last_name, @age, @gender, @home_address, @email, @initial_password_hash, @phone, @operational_site,
+          @role, @shift, @salary, @payment_method, @iban, @recognition_code, @barcode, @photo_data, @documents_data, @contract_pdf_data, @created_at
+        )`).run({
+          ...employeeDetails,
+          initial_password_hash: passwordHash,
+          created_at: new Date().toISOString(),
+        });
+      }
     } catch (error) {
       if (error instanceof Error && error.message.includes('UNIQUE constraint failed: employees.email')) {
         throw new Error('Esiste già un dipendente con questo indirizzo email.');

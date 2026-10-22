@@ -28,7 +28,7 @@ const promotionDurations = ['1 giorno', '3 giorni', '7 giorni', '1 mese', 'Sempr
 const expenseCategories = ['Affitto', 'Utenze', 'Forniture', 'Stipendi', 'Manutenzione', 'Trasporti', 'Altro'];
 const appThemes = [
   { id: 'green', label: 'Verde', color: '#72bf6a' },
-  { id: 'blue', label: 'Blu', color: '#1a8ae5' },
+  { id: 'blue', label: 'Blu', color: '#0000a1' },
   { id: 'purple', label: 'Viola', color: '#8b74a6' },
   { id: 'orange', label: 'Arancione', color: '#F3500A' },
 ] as const;
@@ -174,6 +174,7 @@ function BarcodeImage({ value }: { value: string }) {
 function EmployeeForm({ initial, save, cancel, notify }: { initial: EmployeeInput; save: (employee: EmployeeInput) => Promise<void>; cancel: () => void; notify: (message: string) => void }) {
   const [employee, setEmployee] = useState(initial);
   const [saving, setSaving] = useState(false);
+  const editing = Boolean(initial.id);
   const documentImages = employeeDocumentImages(employee.documents_data);
   const setAttachment = async (field: 'photo_data' | 'contract_pdf_data', file: File | undefined) => {
     if (!file) return;
@@ -253,7 +254,7 @@ function EmployeeForm({ initial, save, cancel, notify }: { initial: EmployeeInpu
       <label className="field"><span>Sesso</span><select value={employee.gender} onChange={(event) => setEmployee({ ...employee, gender: event.target.value })} required><option value="">Seleziona sesso</option><option>Donna</option><option>Uomo</option><option>Altro</option></select></label>
       <Field fieldClassName="employee-wide-field" label="Indirizzo di casa" value={employee.home_address} onChange={(event) => setEmployee({ ...employee, home_address: event.target.value })} required />
       <Field label="Indirizzo email" type="email" value={employee.email} onChange={(event) => setEmployee({ ...employee, email: event.target.value })} required />
-      <Field label="Password iniziale" type="password" autoComplete="new-password" minLength={8} value={employee.initial_password} onChange={(event) => setEmployee({ ...employee, initial_password: event.target.value })} required />
+      <Field label={editing ? 'Nuova password (opzionale)' : 'Password iniziale'} type="password" autoComplete="new-password" minLength={8} value={employee.initial_password ?? ''} onChange={(event) => setEmployee({ ...employee, initial_password: event.target.value })} required={!editing} />
       <Field label="Numero di telefono" type="tel" value={employee.phone} onChange={(event) => setEmployee({ ...employee, phone: event.target.value })} required />
       <Field label="Sede Operativa" value={employee.operational_site} onChange={(event) => setEmployee({ ...employee, operational_site: event.target.value })} required />
       <label className="field"><span>Ruolo</span><input list="employee-role-options" value={employee.role} onChange={(event) => setEmployee({ ...employee, role: event.target.value })} required /><datalist id="employee-role-options"><option value="Proprietario" /><option value="Direttore" /><option value="Contabilità" /><option value="cassiere" /></datalist></label>
@@ -264,7 +265,7 @@ function EmployeeForm({ initial, save, cancel, notify }: { initial: EmployeeInpu
       <Field label="Codice riconoscimento" value={employee.recognition_code} readOnly />
       <label className="field employee-barcode-field"><span>Barcode di riconoscimento</span>      <div className="employee-barcode"><BarcodeImage value={employee.recognition_code} /><small>{employee.recognition_code}</small></div></label>
     </div>
-    <div className="form-actions"><button className="button button-quiet" type="button" onClick={cancel}>Annulla</button><button className="button button-primary" disabled={saving}><Check size={16} /> Crea dipendente</button></div>
+    <div className="form-actions"><button className="button button-quiet" type="button" onClick={cancel}>Annulla</button><button className="button button-primary" disabled={saving}><Check size={16} /> {editing ? 'Salva modifiche' : 'Crea dipendente'}</button></div>
   </form>;
 }
 
@@ -328,6 +329,9 @@ export default function App() {
   const [locked, setLocked] = useState(true);
   const [hasPin, setHasPin] = useState(false);
   const [pin, setPin] = useState('');
+  const [loginBarcode, setLoginBarcode] = useState('');
+  const [pinFallback, setPinFallback] = useState(false);
+  const loginBarcodeAttempt = useRef('');
   const [notice, setNotice] = useState('');
   const [productForm, setProductForm] = useState<ProductInput | null>(null);
   const [productEditingId, setProductEditingId] = useState<number | null>(null);
@@ -353,6 +357,7 @@ export default function App() {
   const [expenseSearch, setExpenseSearch] = useState('');
   const [expenseDescription, setExpenseDescription] = useState('');
   const [expenseCategory, setExpenseCategory] = useState(expenseCategories[0]);
+  const [expenseOtherCategory, setExpenseOtherCategory] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseDate, setExpenseDate] = useState(localDateKey());
   const [expenseReceiptData, setExpenseReceiptData] = useState('');
@@ -398,14 +403,19 @@ export default function App() {
     setSection('employees');
     setOpenSidebarMenu(null);
     setEmployeeDraft(null);
-    notify('Dipendente creato correttamente.');
+    setEmployeeDetails(null);
+    notify(employee.id ? 'Dipendente aggiornato correttamente.' : 'Dipendente creato correttamente.');
   };
   const saveExpense = async (event: FormEvent) => {
     event.preventDefault();
+    if (expenseCategory === 'Altro' && !expenseOtherCategory.trim()) {
+      notify('Inserisci il nome della categoria personalizzata.');
+      return;
+    }
     try {
       await window.gestionale.saveExpense({
         description: expenseDescription,
-        category: expenseCategory,
+        category: expenseCategory === 'Altro' ? expenseOtherCategory.trim() : expenseCategory,
         amount: Number(expenseAmount),
         expense_date: expenseDate,
         site: 'Negozio',
@@ -414,6 +424,7 @@ export default function App() {
       await refresh();
       setExpenseDescription('');
       setExpenseCategory(expenseCategories[0]);
+      setExpenseOtherCategory('');
       setExpenseAmount('');
       setExpenseDate(localDateKey());
       setExpenseReceiptData('');
@@ -476,7 +487,15 @@ export default function App() {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.text(`${data?.settings.shop_name ?? ''} · ${receiptDate.format(new Date())}`, 14, 25);
-    doc.addImage(photo, 'PNG', 154, 32, 42, 42);
+    doc.setFontSize(7);
+    doc.text('Foto dipendente', 14, 29);
+    doc.text('Foto documenti', 60, 29);
+    doc.addImage(photo, 'PNG', 14, 32, 38, 38);
+    documents.forEach((image, index) => {
+      const column = index % 5;
+      const row = Math.floor(index / 5);
+      doc.addImage(image, 'PNG', 60 + column * 26, 32 + row * 19, 23, 16, undefined, 'FAST');
+    });
     const details: [string, string][] = [
       ['Nome e cognome', `${employee.first_name} ${employee.last_name}`],
       ['Età', String(employee.age)],
@@ -495,7 +514,7 @@ export default function App() {
       ['Contratto', employee.contract_pdf_data ? 'PDF allegato' : 'Non presente'],
       ['Data di registrazione', dateTime.format(new Date(employee.created_at))],
     ];
-    let y = 38;
+    let y = 108;
     details.forEach(([label, value]) => {
       const wrappedValue = doc.splitTextToSize(value || '—', 126);
       doc.setFont('helvetica', 'bold');
@@ -503,17 +522,6 @@ export default function App() {
       doc.setFont('helvetica', 'normal');
       doc.text(wrappedValue, 58, y);
       y += Math.max(7, wrappedValue.length * 5);
-    });
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text('Foto documenti', 14, 151);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    if (!documents.length) doc.text('Nessuna immagine allegata', 14, 160);
-    documents.slice(0, 20).forEach((image, index) => {
-      const column = index % 4;
-      const row = Math.floor(index / 4);
-      doc.addImage(image, 'PNG', 14 + column * 46, 157 + row * 26, 42, 22, undefined, 'FAST');
     });
     return doc;
   };
@@ -629,7 +637,17 @@ export default function App() {
       notify(errorText(error));
     }
   };
-  useEffect(() => { void window.gestionale.hasPin().then((exists) => { setHasPin(exists); if (!exists) { setLocked(false); void refresh(); } }); }, []);
+  useEffect(() => {
+    const initialize = async () => {
+      const [next, pinExists] = await Promise.all([window.gestionale.getState(), window.gestionale.hasPin()]);
+      setData(next);
+      setShopName(next.settings.shop_name);
+      setArchiveFolder(next.settings.archive_folder);
+      setHasPin(pinExists);
+      setLocked(next.employees.length > 0);
+    };
+    void initialize().catch((error: unknown) => notify(errorText(error)));
+  }, []);
   useEffect(() => window.gestionale.onSalesExpired(() => {
     void refresh().catch((error: unknown) => notify(errorText(error)));
   }), []);
@@ -702,7 +720,39 @@ export default function App() {
       notify(errorText(error));
     }
   };
-  const unlock = async (event: FormEvent) => { event.preventDefault(); if (!await window.gestionale.verifyPin(pin)) { notify('PIN non corretto'); return; } setLocked(false); setPin(''); await refresh(); };
+  const unlock = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      if (!await window.gestionale.verifyPin(pin)) {
+        notify('PIN non corretto');
+        return;
+      }
+      setLocked(false);
+      setPin('');
+      await refresh();
+    } catch (error) {
+      notify(errorText(error));
+    }
+  };
+  const unlockWithBarcode = async (barcode: string) => {
+    const normalized = barcode.trim();
+    if (!normalized || loginBarcodeAttempt.current === normalized) return;
+    loginBarcodeAttempt.current = normalized;
+    try {
+      if (!await window.gestionale.verifyEmployeeBarcode(normalized)) {
+        notify('Barcode non riconosciuto. Scansiona il badge di un dipendente registrato.');
+        setLoginBarcode('');
+        loginBarcodeAttempt.current = '';
+        return;
+      }
+      setLocked(false);
+      setLoginBarcode('');
+      await refresh();
+    } catch (error) {
+      loginBarcodeAttempt.current = '';
+      notify(errorText(error));
+    }
+  };
   const startVoucherBatchEdit = (batch: AppState['voucherBatches'][number]) => {
     setEditingVoucherBatchId(batch.id);
     setVoucherPercentage(String(batch.discount_percentage));
@@ -1112,58 +1162,68 @@ export default function App() {
       notify(errorText(error));
     }
   };
-  const exportReport = (respectTimeFilters: boolean) => {
+  const exportReport = async (respectTimeFilters: boolean) => {
     if (!data) return;
-    const reportSales = data.sales.filter((sale) => !respectTimeFilters || matchesSalesPeriod(sale.created_at));
-    const gross = reportSales.reduce((sum, sale) => sum + sale.gross_total, 0);
-    const net = reportSales.reduce((sum, sale) => sum + sale.total, 0);
-    const cost = reportSales.reduce((sum, sale) => sum + sale.items.reduce((subtotal, item) => subtotal + item.purchase_price * item.quantity, 0), 0);
-    const reportPeriod = respectTimeFilters ? ` · Periodo: ${salesPeriod}` : ' · Tutto il periodo';
-    const doc = new jsPDF({ orientation: 'portrait' });
-    doc.setFillColor(43, 82, 61);
-    doc.rect(0, 0, 210, 36, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(18);
-    doc.text(data.settings.shop_name, 14, 16);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.text(`Report vendite · Esportato il ${receiptDate.format(new Date())}${reportPeriod}`, 14, 26);
-    doc.setTextColor(41, 51, 46);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text(`Vendite: ${reportSales.length}`, 14, 45);
-    doc.text(`Lordo: ${money.format(gross)}`, 14, 52);
-    doc.text(`Costo merce: ${money.format(cost)}`, 77, 52);
-    doc.text(`Profitto: ${money.format(net - cost)}`, 145, 52);
-    autoTable(doc, {
-      startY: 59,
-      head: [['Scontrino', 'Data e ora', 'Articoli', 'Pagamento', 'Prezzo acquisto', 'Prezzo vendita', 'Profitto', 'Sconto', 'Totale']],
-      body: reportSales.map((sale) => {
-        const purchasePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.purchase_price, 0);
-        const salePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-        const items = sale.items.map((item) => `${item.name} × ${quantityFormat.format(item.quantity)}`).join(', ');
-        return [sale.receipt_no, dateTime.format(new Date(sale.created_at)), items, sale.payment_method, money.format(purchasePrice), money.format(salePrice), money.format(sale.total - purchasePrice), money.format(sale.discount), money.format(sale.total)];
-      }),
-      showHead: 'firstPage',
-      theme: 'striped',
-      styles: { fontSize: 6.5, cellPadding: 2, overflow: 'linebreak', textColor: [49, 60, 53], lineColor: [224, 230, 224] },
-      headStyles: { fillColor: [56, 104, 78], fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: [244, 247, 244] },
-      margin: { left: 8, right: 8, bottom: 14 },
-      didDrawPage: () => {
-        doc.setFontSize(8);
-        doc.setTextColor(120, 130, 122);
-        doc.text(`${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`, 8, 290);
-      },
-    });
-    doc.save(`report-vendite-${respectTimeFilters ? salesPeriod.toLowerCase().replaceAll(' ', '-') : 'tutto'}-${todayKey}.pdf`);
+    try {
+      const reportSales = data.sales.filter((sale) => !respectTimeFilters || matchesSalesPeriod(sale.created_at));
+      const gross = reportSales.reduce((sum, sale) => sum + sale.gross_total, 0);
+      const net = reportSales.reduce((sum, sale) => sum + sale.total, 0);
+      const cost = reportSales.reduce((sum, sale) => sum + sale.items.reduce((subtotal, item) => subtotal + item.purchase_price * item.quantity, 0), 0);
+      const reportPeriod = respectTimeFilters ? ` · Periodo: ${salesPeriod}` : ' · Tutto il periodo';
+      const doc = new jsPDF({ orientation: 'portrait' });
+      doc.setFillColor(43, 82, 61);
+      doc.rect(0, 0, 210, 36, 'F');
+      if (data.settings.shop_logo) {
+        doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', 12, 5, 24, 24);
+      }
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.text(data.settings.shop_name, data.settings.shop_logo ? 43 : 14, 15);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text(`Report vendite · Esportato il ${receiptDate.format(new Date())}${reportPeriod}`, data.settings.shop_logo ? 43 : 14, 26);
+      doc.setFillColor(56, 104, 78);
+      doc.roundedRect(8, 41, 194, 17, 2, 2, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.text(`Vendite: ${reportSales.length}`, 12, 51);
+      doc.text(`Lordo: ${money.format(gross)}`, 59, 51);
+      doc.text(`Costo merce: ${money.format(cost)}`, 106, 51);
+      doc.text(`Profitto: ${money.format(net - cost)}`, 157, 51);
+      autoTable(doc, {
+        startY: 64,
+        head: [['Scontrino', 'Data e ora', 'Articoli', 'Pagamento', 'Prezzo acquisto', 'Prezzo vendita', 'Profitto', 'Sconto', 'Totale']],
+        body: reportSales.map((sale) => {
+          const purchasePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.purchase_price, 0);
+          const salePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+          const totalQuantity = sale.items.reduce((sum, item) => sum + item.quantity, 0);
+          return [sale.receipt_no, dateTime.format(new Date(sale.created_at)), quantityFormat.format(totalQuantity), sale.payment_method, money.format(purchasePrice), money.format(salePrice), money.format(sale.total - purchasePrice), money.format(sale.discount), money.format(sale.total)];
+        }),
+        showHead: 'firstPage',
+        theme: 'striped',
+        styles: { fontSize: 6.5, cellPadding: 2, overflow: 'linebreak', textColor: [49, 60, 53], lineColor: [224, 230, 224] },
+        headStyles: { fillColor: [56, 104, 78], textColor: [255, 255, 255], fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [244, 247, 244] },
+        margin: { left: 8, right: 8, bottom: 14 },
+        didDrawPage: () => {
+          doc.setFontSize(8);
+          doc.setTextColor(120, 130, 122);
+          doc.text(`${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`, 8, 290);
+        },
+      });
+      doc.save(`report-vendite-${respectTimeFilters ? salesPeriod.toLowerCase().replaceAll(' ', '-') : 'tutto'}-${todayKey}.pdf`);
+    } catch (error) {
+      notify(errorText(error));
+    }
   };
   const exportInventoryReport = async () => {
     if (!data) return;
     try {
       const doc = new jsPDF({ orientation: 'landscape' });
       const stockValue = data.products.reduce((sum, item) => sum + item.stock * item.purchase_price, 0);
+      const stockSaleValue = data.products.reduce((sum, item) => sum + item.stock * item.sale_price, 0);
       const lowStockCount = data.products.filter((item) => item.stock <= item.low_stock_threshold).length;
       doc.setFillColor(43, 82, 61);
       doc.rect(0, 0, 297, 36, 'F');
@@ -1174,8 +1234,8 @@ export default function App() {
       doc.text('Report magazzino · Esportato il ' + receiptDate.format(new Date()), 148.5, 31, { align: 'center' });
       autoTable(doc, {
       startY: 43,
-      head: [['Codice', 'Articolo', 'Categoria', 'Vendita / unità', 'Acquisto / unità', 'Giacenza', 'Soglia minima', 'Scadenza']],
-      body: data.products.map((item) => [item.code, item.name, item.category, money.format(item.sale_price), money.format(item.purchase_price), `${item.stock} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'}`, String(item.low_stock_threshold), item.expiry_enabled && item.expiry_date ? receiptDate.format(new Date(`${item.expiry_date}T00:00:00`)) : '—']),
+      head: [['Codice', 'Articolo', 'Categoria', 'Vendita / unità', 'Acquisto / unità', 'Profitto', 'Giacenza', 'Soglia minima', 'Scadenza']],
+      body: data.products.map((item) => [item.code, item.name, item.category, money.format(item.sale_price), money.format(item.purchase_price), money.format(item.sale_price - item.purchase_price), `${item.stock} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'}`, String(item.low_stock_threshold), item.expiry_enabled && item.expiry_date ? receiptDate.format(new Date(`${item.expiry_date}T00:00:00`)) : '—']),
       theme: 'striped',
       styles: { fontSize: 8, cellPadding: 3, textColor: [49, 60, 53], lineColor: [224, 230, 224] },
       headStyles: { fillColor: [56, 104, 78], textColor: [255, 255, 255], fontStyle: 'bold' },
@@ -1197,11 +1257,13 @@ export default function App() {
       doc.setFillColor(56, 104, 78);
       doc.roundedRect(14, summaryY, 269, 14, 2, 2, 'F');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
+      doc.setFontSize(6.8);
       doc.setTextColor(255, 255, 255);
-      doc.text(`Qtà articoli: ${data.products.length}`, 20, summaryY + 9);
-      doc.text(`Sotto soglia: ${lowStockCount}`, 99, summaryY + 9);
-      doc.text(`Valore acquisto giacenze: ${money.format(stockValue)}`, 170, summaryY + 9);
+      doc.text(`Articoli: ${data.products.length}`, 18, summaryY + 9);
+      doc.text(`Sotto soglia: ${lowStockCount}`, 68, summaryY + 9);
+      doc.text(`Valore acquisto giacenze: ${money.format(stockValue)}`, 116, summaryY + 9);
+      doc.text(`Valore vendita giacenze: ${money.format(stockSaleValue)}`, 174, summaryY + 9);
+      doc.text(`Netto giacenze: ${money.format(stockSaleValue - stockValue)}`, 232, summaryY + 9);
       doc.save(`report-magazzino-${todayKey}.pdf`);
     } catch (error) {
       notify(errorText(error));
@@ -1215,10 +1277,56 @@ export default function App() {
         return;
       }
       const doc = new jsPDF();
-      for (const [index, employee] of data.employees.entries()) {
-        await createEmployeePdf(employee, doc, index > 0);
+      doc.setFillColor(43, 82, 61);
+      doc.rect(0, 0, 210, 297, 'F');
+      if (data.settings.shop_logo) doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', 75, 51, 60, 60);
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(24);
+      doc.text(data.settings.shop_name, 105, data.settings.shop_logo ? 133 : 92, { align: 'center' });
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(17);
+      doc.text('Lista dipendenti', 105, data.settings.shop_logo ? 151 : 110, { align: 'center' });
+      doc.setFontSize(11);
+      doc.text(`Report esportato il ${receiptDate.format(new Date())}`, 105, data.settings.shop_logo ? 164 : 123, { align: 'center' });
+      doc.setFontSize(10);
+      doc.text(`${data.employees.length} dipendenti`, 105, data.settings.shop_logo ? 177 : 136, { align: 'center' });
+      for (const employee of data.employees) {
+        await createEmployeePdf(employee, doc, true);
       }
       doc.save(`lista-dipendenti-${todayKey}.pdf`);
+    } catch (error) {
+      notify(errorText(error));
+    }
+  };
+  const exportEmployeeContracts = async () => {
+    if (!data) return;
+    try {
+      if (!data.employees.length) {
+        notify('Non ci sono contratti da scaricare.');
+        return;
+      }
+      const zip = new JSZip();
+      const folder = zip.folder('Contratti dipendenti');
+      if (!folder) throw new Error('Impossibile creare la cartella dei contratti.');
+      for (const employee of data.employees) {
+        if (!employee.contract_pdf_data.startsWith('data:application/pdf;base64,')) {
+          throw new Error(`Il contratto PDF di ${employee.first_name} ${employee.last_name} non è disponibile.`);
+        }
+        const contract = await fetch(employee.contract_pdf_data).then((response) => response.arrayBuffer());
+        const fullName = `${employee.first_name} ${employee.last_name}`;
+        const duplicateName = data.employees.some((item) =>
+          item.id !== employee.id && `${item.first_name} ${item.last_name}`.toLocaleLowerCase('it') === fullName.toLocaleLowerCase('it')
+        );
+        folder.file(`${safeFilePart(fullName)}${duplicateName ? `-${employee.id}` : ''}.pdf`, contract);
+      }
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `contratti-dipendenti-${todayKey}.zip`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
       notify(errorText(error));
     }
@@ -1524,6 +1632,12 @@ export default function App() {
     setEmployeeDraft(newEmployeeDraft(data.employees));
     navigateTo('employee-create');
   };
+  const editEmployee = (employee: Employee) => {
+    const { id, created_at, ...details } = employee;
+    setEmployeeDraft({ ...details, id, initial_password: '' });
+    setEmployeeDetails(null);
+    navigateTo('employee-create');
+  };
   const printReceipt = () => {
     if (data?.settings.receipt_printer) {
       void window.gestionale.printReceipt().catch((error: unknown) => notify(errorText(error)));
@@ -1589,7 +1703,7 @@ export default function App() {
     }
   };
 
-  if (locked) return <div className="lock-screen"><div className="lock-panel"><div className="brand-mark"><Store size={23} /></div><p className="eyebrow">ACCESSO AL GESTIONALE</p><h1>{data?.settings.shop_name ?? 'Il tuo supermercato'}</h1><p className="muted">Inserisci il PIN per continuare</p><form onSubmit={unlock}><Field label="PIN di sicurezza" type="password" value={pin} onChange={(e) => setPin(e.target.value)} autoFocus /><button className="button button-primary full-width"><LockKeyhole size={16} /> Accedi</button></form></div>{notice && <div className="toast">{notice}</div>}</div>;
+  if (locked) return <div className="lock-screen"><div className="lock-panel"><div className="brand-mark"><Store size={23} /></div><p className="eyebrow">ACCESSO AL GESTIONALE</p><h1>{data?.settings.shop_name ?? 'Il tuo supermercato'}</h1>{pinFallback ? <><p className="muted">Inserisci il PIN di sicurezza</p><form onSubmit={unlock}><Field label="PIN di sicurezza" type="password" value={pin} onChange={(event) => setPin(event.target.value)} autoFocus /><button className="button button-primary full-width"><LockKeyhole size={16} /> Accedi</button></form><button className="text-button" type="button" onClick={() => { setPinFallback(false); setPin(''); }}>Accedi con barcode</button></> : <><p className="muted">Scansiona il barcode del dipendente per accedere</p><form onSubmit={(event) => { event.preventDefault(); void unlockWithBarcode(loginBarcode); }}><Field label="Barcode dipendente" value={loginBarcode} onChange={(event) => { const value = event.target.value.trim(); setLoginBarcode(value); if (value.length === 11) void unlockWithBarcode(value); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void unlockWithBarcode(loginBarcode); } }} autoFocus /><button className="button button-primary full-width"><Barcode size={16} /> Verifica barcode</button></form>{hasPin && <button className="text-button" type="button" onClick={() => setPinFallback(true)}>Usa il PIN</button>}</>}</div>{notice && <div className="toast">{notice}</div>}</div>;
   if (!data) return <div className="loading-screen"><span className="loader" />Caricamento archivio…</div>;
 
   return <div className="app-shell">
@@ -1688,7 +1802,7 @@ export default function App() {
       </section></div>}
 
       {section === 'employees' && <div className="page-content employee-page">
-        <div className="page-toolbar employee-toolbar"><SearchInput value={employeeSearch} onChange={setEmployeeSearch} placeholder="Cerca dipendente, ruolo o sede…" /><div className="toolbar-actions"><button className="button button-outline" onClick={() => void exportEmployeeList()}><ArrowDownToLine size={16} /> Esporta Lista PDF</button></div></div>
+        <div className="page-toolbar employee-toolbar"><SearchInput value={employeeSearch} onChange={setEmployeeSearch} placeholder="Cerca dipendente, ruolo o sede…" /><div className="toolbar-actions"><button className="button button-outline" onClick={() => void exportEmployeeContracts()}><ArrowDownToLine size={16} /> Scarica contratti</button><button className="button button-outline" onClick={() => void exportEmployeeList()}><ArrowDownToLine size={16} /> Scarica report</button></div></div>
         <Table headings={['Foto dipendente', 'Nome', 'Ruolo', 'Turno', 'Sede']}><>{employeeList.map((employee) => <tr className="employee-table-row" key={employee.id} onClick={() => setEmployeeDetails(employee)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setEmployeeDetails(employee); } }} tabIndex={0} aria-label={`Apri informazioni di ${employee.first_name} ${employee.last_name}`}><td><img className="employee-list-photo" src={employee.photo_data} alt={`Foto di ${employee.first_name} ${employee.last_name}`} /></td><td className="cell-primary">{employee.first_name} {employee.last_name}</td><td>{employee.role}</td><td>{employee.shift}</td><td>{employee.operational_site}</td></tr>)}</>{!employeeList.length && <tr><td colSpan={5} className="empty-cell">{data.employees.length ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente registrato.'}</td></tr>}</Table>
       </div>}
       {section === 'employee-create' && employeeDraft && <div className="page-content settings-page"><section className="settings-panel employee-create-panel"><EmployeeForm initial={employeeDraft} save={saveEmployee} cancel={() => { setEmployeeDraft(null); navigateTo('employees'); }} notify={notify} /></section></div>}
@@ -1702,10 +1816,11 @@ export default function App() {
           <form className="expense-form" onSubmit={(event) => void saveExpense(event)}>
             <Field label="Descrizione" value={expenseDescription} onChange={(event) => setExpenseDescription(event.target.value)} required />
             <SelectField label="Categoria" value={expenseCategory} onChange={(value) => { setExpenseCategory(value); if (value !== 'Affitto') setExpenseReceiptData(''); }} options={expenseCategories} />
+            {expenseCategory === 'Altro' && <Field label="Nome della categoria" value={expenseOtherCategory} onChange={(event) => setExpenseOtherCategory(event.target.value)} required />}
             <Field label="Importo (€)" type="number" min="0.01" step="0.01" value={expenseAmount} onChange={(event) => setExpenseAmount(event.target.value)} required />
             <Field label="Data" type="date" value={expenseDate} onChange={(event) => setExpenseDate(event.target.value)} required />
             {expenseCategory === 'Affitto' && <label className="field expense-receipt-field"><span>Ricevuta pagamento affitto</span><input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(event) => { void attachExpenseReceipt(event.target.files?.[0]); event.currentTarget.value = ''; }} required={!expenseReceiptData} />{expenseReceiptData && <small>Ricevuta allegata</small>}</label>}
-            <div className="expense-actions"><button className="button button-primary"><Plus size={16} /> Registra spesa</button><button className="button button-outline" type="button" onClick={(event) => { event.currentTarget.form?.reset(); setExpenseDescription(''); setExpenseCategory(expenseCategories[0]); setExpenseAmount(''); setExpenseDate(localDateKey()); setExpenseReceiptData(''); }}>Annulla</button></div>
+            <div className="expense-actions"><button className="button button-outline" type="button" onClick={(event) => { event.currentTarget.form?.reset(); setExpenseDescription(''); setExpenseCategory(expenseCategories[0]); setExpenseOtherCategory(''); setExpenseAmount(''); setExpenseDate(localDateKey()); setExpenseReceiptData(''); }}>Annulla</button><button className="button button-primary"><Plus size={16} /> Registra spesa</button></div>
           </form>
         </section>
         <div className="expense-list-toolbar"><SearchInput value={expenseSearch} onChange={setExpenseSearch} placeholder="Cerca descrizione o categoria…" /></div>
@@ -1772,10 +1887,9 @@ export default function App() {
 
       {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">{settingsTab === null ? <nav className="settings-nav">{[{ name: 'Nome negozio', icon: Store }, { name: 'Sicurezza', icon: ShieldCheck }, { name: 'Archivio dati', icon: Archive }, { name: 'Dispositivi', icon: Barcode }, { name: "Tema dell'app", icon: Palette }, { name: 'Operativo', icon: Check }].map(({ name, icon: Icon }) => <button key={name} onClick={() => { setSettingsTab(name); setDeviceTab(null); }}><Icon size={17} />{name}</button>)}</nav> : <section className="settings-panel"><button className="settings-back" onClick={() => { if (settingsTab === 'Dispositivi' && deviceTab) setDeviceTab(null); else { setSettingsTab(null); setDeviceTab(null); } }}><ArrowLeft size={15} />{settingsTab === 'Dispositivi' && deviceTab ? 'Dispositivi' : 'Impostazioni'}</button>
         {settingsTab === 'Nome negozio' && <><div className="settings-title"><h2>Info negozio</h2><p>Nome e logo del negozio per il menu e la barra superiore.</p></div><form className="settings-form" onSubmit={saveStoreName}><Field label="Nome attività" value={shopName} onChange={(e) => setShopName(e.target.value)} required /><div className="receipt-preview"><Store size={17} /><span>{shopName || 'Nome negozio'}</span><small>Anteprima intestazione scontrino</small></div><div className="shop-logo-setting"><span className="field-label">Logo del negozio</span>{data.settings.shop_logo && <img src={data.settings.shop_logo} alt="Logo attuale" />}<button className="button button-outline" type="button" onClick={() => void chooseShopLogo()}><Store size={15} /> {data.settings.shop_logo ? 'Sostituisci logo' : 'Scegli logo'}</button></div><button className="button button-primary"><Check size={16} /> Salva nome</button></form></>}
-        {settingsTab === 'Sicurezza' && <><div className="settings-title"><h2>Accesso e sicurezza</h2><p>Proteggi l’apertura del gestionale con un PIN.</p></div><div className="security-status"><div className="security-icon"><ShieldCheck size={20} /></div><div><strong>{hasPin ? 'PIN attivo' : 'Nessun PIN configurato'}</strong><span>{hasPin ? 'Il PIN viene richiesto all’avvio.' : 'Scegli un codice da 4 a 8 cifre.'}</span></div></div><form className="settings-form" onSubmit={async (event) => { event.preventDefault(); try { await window.gestionale.setPin(newPin); setHasPin(true); setNewPin(''); notify('PIN aggiornato'); } catch (error) { notify(errorText(error)); } }}><Field label={hasPin ? 'Nuovo PIN (4–8 cifre)' : 'PIN (4–8 cifre)'} type="password" inputMode="numeric" minLength={4} maxLength={8} pattern="[0-9]{4,8}" value={newPin} onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))} required /><button className="button button-primary"><LockKeyhole size={16} />{hasPin ? 'Aggiorna PIN' : 'Attiva PIN'}</button></form></>}
+        {settingsTab === 'Sicurezza' && <><div className="settings-title"><h2>Accesso e sicurezza</h2><p>All’avvio viene richiesto il barcode di un dipendente; puoi mantenere il PIN come alternativa.</p></div><div className="security-status"><div className="security-icon"><ShieldCheck size={20} /></div><div><strong>{hasPin ? 'PIN alternativo attivo' : 'Nessun PIN alternativo configurato'}</strong><span>{hasPin ? 'Puoi usare il PIN dalla schermata di accesso.' : 'Configura un PIN da 4 a 8 cifre come alternativa al barcode.'}</span></div></div><form className="settings-form" onSubmit={async (event) => { event.preventDefault(); try { await window.gestionale.setPin(newPin); setHasPin(true); setNewPin(''); notify('PIN aggiornato'); } catch (error) { notify(errorText(error)); } }}><Field label={hasPin ? 'Nuovo PIN (4–8 cifre)' : 'PIN (4–8 cifre)'} type="password" inputMode="numeric" minLength={4} maxLength={8} pattern="[0-9]{4,8}" value={newPin} onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))} required /><button className="button button-primary"><LockKeyhole size={16} />{hasPin ? 'Aggiorna PIN' : 'Attiva PIN'}</button></form></>}
         {settingsTab === 'Archivio dati' && <><div className="settings-title"><h2>Archivio locale</h2><p>Database SQLite e copie giornaliere dei dati.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Archivio locale attivo</div><div className="database-card"><div className="security-icon"><Archive size={20} /></div><div><strong>Database SQLite</strong><span className="database-path">{data.settings.database_file}</span></div><span className="stock-badge">Attivo</span></div><div className="settings-form"><label className="field"><span>Cartella esportazioni giornaliere</span><div className="folder-input"><input value={archiveFolder} readOnly /><button className="button button-outline" type="button" onClick={() => void chooseFolder()}>Scegli cartella</button></div></label><p className="help-copy">Ogni giorno a mezzanotte vengono aggiornati file TXT e PDF nelle cartelle Magazzino, Cassa, Vendite e Statistiche.</p></div></>}
         {settingsTab === 'Dispositivi' && (deviceTab === null ? <><div className="settings-title"><h2>Dispositivi</h2><p>Seleziona un dispositivo per configurarlo.</p></div><nav className="settings-nav device-menu"><button onClick={() => setDeviceTab('Lettore barcode')}><Barcode size={17} />Lettore di codici a barre</button><button onClick={() => setDeviceTab('Stampante scontrini')}><Printer size={17} />Stampante scontrini</button></nav></> : deviceTab === 'Lettore barcode' ? <><div className="settings-title"><h2>Lettore di codici a barre</h2><p>Configura il lettore collegato al computer.</p></div><div className="device-setting"><div className="device-heading"><div className="security-icon"><Barcode size={20} /></div><div><strong>Lettore di codici a barre</strong><span>{data.settings.barcode_scanner_detected ? 'Rilevato: è stata acquisita almeno una scansione su questo computer.' : 'In attesa della prima lettura del lettore USB/HID.'}</span></div><button className={`toggle-button${data.settings.barcode_scanner_enabled ? ' enabled' : ''}`} type="button" role="switch" aria-checked={data.settings.barcode_scanner_enabled} onClick={() => void toggleBarcodeScanner()}>{data.settings.barcode_scanner_enabled ? 'Attivo' : 'Disattivo'}</button></div><p className="help-copy">I lettori USB che si comportano come tastiera vengono riconosciuti automaticamente quando inviano un codice. La preferenza resta salvata tra gli avvii.</p></div></> : <><div className="settings-title"><h2>Stampante scontrini</h2><p>Collega una stampante rilevata dal sistema.</p></div><div className="device-setting"><div className="device-printer-row"><SelectField label="Stampante collegata" value={data.settings.receipt_printer} onChange={(value) => void saveReceiptPrinter(value)} options={['', ...printers.map((printer) => printer.name)]} labels={['Seleziona stampante', ...printers.map((printer) => printer.displayName || printer.name)]} /><button className="button button-outline" type="button" onClick={() => void window.gestionale.getPrinters().then(setPrinters).catch((error: unknown) => notify(errorText(error)))}><Printer size={15} /> Rileva stampanti</button></div>{!printers.length && <p className="help-copy">Nessuna stampante rilevata. Verifica che sia collegata e installata nel sistema.</p>}{data.settings.receipt_printer && !printers.some((printer) => printer.name === data.settings.receipt_printer) && <p className="help-copy">La stampante salvata non è attualmente disponibile: selezionane una nuova.</p>}</div></>)}
-        {settingsTab === "Tema dell'app" && <><div className="settings-title"><h2>Tema dell'app</h2><p>Scegli i colori dell’interfaccia. La selezione viene salvata su questo dispositivo.</p></div><div className="theme-options" role="group" aria-label="Temi dell'app">{appThemes.map((theme) => <button key={theme.id} className={`theme-option${appTheme === theme.id ? ' selected' : ''}`} type="button" aria-pressed={appTheme === theme.id} onClick={() => setAppTheme(theme.id)}><span className="theme-swatch" style={{ backgroundColor: theme.color }} /><span>{theme.label}</span>{appTheme === theme.id && <Check size={15} />}</button>)}</div></>}
         {settingsTab === "Tema dell'app" && <><div className="settings-title"><h2>Tema dell'app</h2><p>Scegli i colori dell’interfaccia. La selezione viene salvata su questo dispositivo.</p></div><div className="theme-options" role="group" aria-label="Temi dell'app">{appThemes.map((theme) => <button key={theme.id} className={`theme-option${appTheme === theme.id ? ' selected' : ''}`} type="button" aria-pressed={appTheme === theme.id} onClick={() => setAppTheme(theme.id)}><span className="theme-swatch" style={{ backgroundColor: theme.color }} /><span>{theme.label}</span>{appTheme === theme.id && <Check size={15} />}</button>)}</div><div className="settings-title homepage-image-title"><h2>Immagine homepage</h2><p>Scegli un’immagine salvata nel gestionale per la pagina iniziale.</p></div><div className="shop-logo-setting">{data.settings.home_image && <img src={data.settings.home_image} alt="Immagine homepage attuale" />}<button className="button button-outline" type="button" onClick={() => void chooseHomepageImage()}><House size={15} />{data.settings.home_image ? 'Sostituisci immagine' : 'Scegli immagine'}</button></div></>}
         {settingsTab === 'Operativo' && <><div className="settings-title"><h2>Stato operativo</h2><p>Stato corrente del gestionale.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Operativo</div></>}
       </section>}</div></div>}
@@ -1789,7 +1903,7 @@ export default function App() {
         <div className="employee-detail-fields">{[['Età', employeeDetails.age], ['Sesso', employeeDetails.gender], ['Indirizzo', employeeDetails.home_address], ['Email', employeeDetails.email], ['Telefono', employeeDetails.phone], ['Ruolo', employeeDetails.role], ['Turno', employeeDetails.shift], ['Sede operativa', employeeDetails.operational_site], ['Stipendio', money.format(employeeDetails.salary)], ['Metodo di pagamento', employeeDetails.payment_method], ['IBAN', employeeDetails.payment_method === 'Bonifico' ? employeeDetails.iban : '—'], ['Codice riconoscimento', employeeDetails.recognition_code], ['Contratto', employeeDetails.contract_pdf_data ? 'PDF allegato' : 'Non presente']].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}<section className="employee-detail-barcode"><h3>Barcode</h3><BarcodeImage value={employeeDetails.recognition_code} /><strong>{employeeDetails.recognition_code}</strong></section></div>
         <section className="employee-detail-docs"><h3>Foto documenti</h3><div>{employeeDocumentImages(employeeDetails.documents_data).map((image, index) => <img src={image} alt={`Documento ${index + 1}`} key={`${index}-${image.slice(0, 30)}`} />)}</div></section>
       </div>
-      <div className="drawer-footer employee-profile-actions"><button className="button button-outline" onClick={() => void exportEmployeePdf(employeeDetails)}><ArrowDownToLine size={15} /> Scarica</button><button className="button button-outline" onClick={() => void printEmployeePdf(employeeDetails)}><Printer size={15} /> Stampa</button><button className="button button-primary" onClick={() => setEmployeeDetails(null)}>Chiudi</button></div>
+      <div className="drawer-footer employee-profile-actions"><button className="button button-outline" onClick={() => void exportEmployeePdf(employeeDetails)}><ArrowDownToLine size={15} /> Scarica</button><button className="button button-outline" onClick={() => void printEmployeePdf(employeeDetails)}><Printer size={15} /> Stampa</button><button className="button button-outline" onClick={() => editEmployee(employeeDetails)}><Pencil size={15} /> Modifica dipendente</button><button className="button button-primary" onClick={() => setEmployeeDetails(null)}>Chiudi</button></div>
     </Modal>}
     {voucherViewBatch && <Modal title={`Codici buono · Gruppo ${voucherViewBatch.id}`} close={() => setVoucherViewBatch(null)} wide><div className="voucher-preview-heading"><strong>{voucherViewBatch.discount_percentage}% di sconto</strong><span>{voucherViewBatch.starts_at} — {voucherViewBatch.ends_at}</span></div><Table headings={['Codice', 'Barcode', 'Sconto', 'Inizio', 'Scadenza']}><>{voucherViewBatch.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td><BarcodeImage value={code} /></td><td>{voucherViewBatch.discount_percentage}%</td><td>{voucherViewBatch.starts_at}</td><td>{voucherViewBatch.ends_at}</td></tr>)}</></Table></Modal>}
     {pendingUnknownCode && <Modal title="Articolo non presente" wide close={() => { setPendingUnknownCode(''); setScannerSearch(''); }}><div className="unknown-code-message"><CircleAlert size={26} /><p>Il codice a barre <strong>{pendingUnknownCode}</strong> non è presente tra gli articoli.</p><span>Puoi aggiungerlo come nuovo articolo: il codice acquisito sarà già inserito nel modulo.</span><div className="form-actions"><button className="button button-quiet" onClick={() => { setPendingUnknownCode(''); setScannerSearch(''); }}>Annulla</button><button className="button button-primary" onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct, code: pendingUnknownCode }); setPendingUnknownCode(''); }}><Plus size={16} /> Aggiungi articolo</button></div></div></Modal>}

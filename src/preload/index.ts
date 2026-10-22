@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('gestionale', {
   },
   hasPin: () => ipcRenderer.invoke('pin:has'),
   verifyPin: (pin: string) => ipcRenderer.invoke('pin:verify', pin),
+  verifyEmployeeBarcode: (barcode: string) => ipcRenderer.invoke('employee:authorize', barcode),
   setPin: (pin: string) => ipcRenderer.invoke('pin:set', pin),
   saveProduct: (product: ProductInput) => ipcRenderer.invoke('product:save', product),
   updateStock: (productId: number, stock: number) => ipcRenderer.invoke('product:stock', productId, stock),
