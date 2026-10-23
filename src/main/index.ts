@@ -110,6 +110,20 @@ function employeeForLogin(value: unknown): AuthenticatedEmployee | null {
     WHERE recognition_code = ? AND barcode = ?`).get(value.trim(), value.trim()) as AuthenticatedEmployee | undefined ?? null;
 }
 
+function recordEmployeeActivity(barcode: string, section: string, action: string, detail = ''): void {
+  const employee = employeeForLogin(barcode);
+  if (!employee) throw new Error('Dipendente non riconosciuto per la registrazione dell’attività.');
+  database.prepare(`INSERT INTO employee_activity (employee_id, employee_name, section, action, detail, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)`).run(
+    employee.id,
+    `${employee.first_name} ${employee.last_name}`.trim(),
+    section,
+    action,
+    detail,
+    new Date().toISOString(),
+  );
+}
+
 function normalizedEmployeeRole(role: string): string {
   return role.trim().toLocaleLowerCase('it-IT').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
@@ -140,6 +154,7 @@ function state() {
     employees: database.prepare(`SELECT id, first_name, last_name, age, gender, home_address, email, phone, operational_site,
       role, shift, salary, payment_method, iban, recognition_code, barcode, photo_data, documents_data, contract_pdf_data, created_at
       FROM employees ORDER BY last_name, first_name`).all() as Employee[],
+    employeeActivities: database.prepare('SELECT * FROM employee_activity ORDER BY created_at DESC, id DESC').all(),
     payrollPayments: database.prepare(`SELECT payments.*, employees.first_name, employees.last_name
       FROM payroll_payments payments JOIN employees ON employees.id = payments.employee_id
       ORDER BY payments.pay_month DESC, employees.last_name, employees.first_name`).all() as PayrollPayment[],
@@ -192,6 +207,10 @@ function initDatabase(): void {
       movement_type TEXT NOT NULL CHECK(movement_type IN ('Carico', 'Scarico')),
       quantity REAL NOT NULL, created_at TEXT NOT NULL, person TEXT NOT NULL DEFAULT '',
       destination TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS employee_activity (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL, employee_name TEXT NOT NULL,
+      section TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS expenses (
       id INTEGER PRIMARY KEY AUTOINCREMENT, description TEXT NOT NULL, category TEXT NOT NULL,
@@ -554,6 +573,15 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   });
   ipcMain.handle('employee:authorize', (_event, barcode: string) => isEmployeeBarcode(barcode));
   ipcMain.handle('employee:login', (_event, barcode: string) => employeeForLogin(barcode));
+  ipcMain.handle('employee:activity', (_event, input: { employee_barcode: string; section: string; action: string; detail?: string }) => {
+    if (!input || typeof input.employee_barcode !== 'string'
+      || typeof input.section !== 'string' || !input.section.trim() || input.section.length > 80
+      || typeof input.action !== 'string' || !input.action.trim() || input.action.length > 120
+      || (input.detail !== undefined && (typeof input.detail !== 'string' || input.detail.length > 500))) {
+      throw new Error('I dati dell’attività del dipendente non sono validi.');
+    }
+    recordEmployeeActivity(input.employee_barcode, input.section.trim(), input.action.trim(), input.detail?.trim() ?? '');
+  });
   ipcMain.handle('pin:set', (_event, pin: string) => {
     if (!/^\d{4,8}$/.test(pin)) throw new Error('Il PIN deve contenere da 4 a 8 cifre.');
     const salt = randomBytes(16).toString('hex');
@@ -659,7 +687,15 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       const result = database.prepare('INSERT INTO sales (receipt_no, created_at, payment_method, discount, gross_total, total) VALUES (?, ?, ?, ?, ?, ?)')
         .run(receiptNo, new Date().toISOString(), sale.payment_method, discount, grossTotal, amountPaid);
       replaceItems(Number(result.lastInsertRowid), items);
-      items.forEach((item) => recordStockMovement(item.product_id, item.name, 'Scarico', item.quantity, `Vendita #${receiptNo}`));
+      const employee = sale.employee_barcode ? employeeForLogin(sale.employee_barcode) : null;
+      items.forEach((item) => recordStockMovement(
+        item.product_id,
+        item.name,
+        'Scarico',
+        item.quantity,
+        `Vendita #${receiptNo}`,
+        employee ? `${employee.first_name} ${employee.last_name}`.trim() : '',
+      ));
       if (voucher) {
         database.prepare('DELETE FROM vouchers WHERE id = ?').run(voucher.id);
         database.prepare('DELETE FROM voucher_batches WHERE id = ? AND NOT EXISTS (SELECT 1 FROM vouchers WHERE batch_id = ?)').run(voucher.batch_id, voucher.batch_id);
@@ -679,6 +715,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         throw new Error('Barcode dipendente non riconosciuto. Scansiona il codice di riconoscimento di un dipendente.');
       }
       const previousQuantities = new Map<number, { quantity: number; name: string }>();
+      const employee = employeeForLogin(sale.employee_barcode);
       saleItems(sale.id).forEach((item) => {
         const current = previousQuantities.get(item.product_id);
         previousQuantities.set(item.product_id, { quantity: (current?.quantity ?? 0) + item.quantity, name: item.name });
@@ -695,7 +732,14 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         const next = nextQuantities.get(productId);
         const difference = (next?.quantity ?? 0) - (previous?.quantity ?? 0);
         if (difference) {
-          recordStockMovement(productId, next?.name ?? previous?.name ?? 'Articolo', difference > 0 ? 'Scarico' : 'Carico', Math.abs(difference), `Modifica vendita #${receipt?.receipt_no ?? sale.id}`);
+          recordStockMovement(
+            productId,
+            next?.name ?? previous?.name ?? 'Articolo',
+            difference > 0 ? 'Scarico' : 'Carico',
+            Math.abs(difference),
+            `Modifica vendita #${receipt?.receipt_no ?? sale.id}`,
+            employee ? `${employee.first_name} ${employee.last_name}`.trim() : '',
+          );
         }
       });
       const grossTotal = sale.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
@@ -710,9 +754,17 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       }
       const receipt = database.prepare('SELECT receipt_no FROM sales WHERE id = ?').get(id) as { receipt_no: string } | undefined;
       if (!receipt) throw new Error('Scontrino non trovato.');
+      const employee = employeeForLogin(employeeBarcode);
       saleItems(id).forEach((item) => {
         database.prepare('UPDATE products SET stock=stock+? WHERE id=?').run(item.quantity, item.product_id);
-        recordStockMovement(item.product_id, item.name, 'Carico', item.quantity, `Vendita #${receipt?.receipt_no ?? id} eliminata`);
+        recordStockMovement(
+          item.product_id,
+          item.name,
+          'Carico',
+          item.quantity,
+          `Vendita #${receipt?.receipt_no ?? id} eliminata`,
+          employee ? `${employee.first_name} ${employee.last_name}`.trim() : '',
+        );
       });
       database.prepare('DELETE FROM sales WHERE id=?').run(id);
     })();

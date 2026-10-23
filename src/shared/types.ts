@@ -1,4 +1,4 @@
-export type Section = 'home' | 'inventory' | 'expired-products' | 'inventory-history' | 'stock-movement' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'expenses' | 'financial-balance' | 'employees' | 'employee-create' | 'payroll' | 'settings';
+export type Section = 'home' | 'inventory' | 'expired-products' | 'inventory-history' | 'stock-movement' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'expenses' | 'financial-balance' | 'employees' | 'employee-create' | 'payroll' | 'employee-tracker' | 'settings';
 export type ProductUnit = 'KG' | 'LITRO' | 'PEZZO';
 export type Printer = { name: string; displayName: string };
 
@@ -49,6 +49,16 @@ export interface StockMovement {
   person: string;
   destination: string;
   note: string;
+}
+
+export interface EmployeeActivity {
+  id: number;
+  employee_id: number;
+  employee_name: string;
+  section: string;
+  action: string;
+  detail: string;
+  created_at: string;
 }
 
 export interface Expense {
@@ -127,7 +137,7 @@ export type PayrollPaymentInput = { employee_id: number; pay_month: string; paym
 export type CustomerInput = { first_name: string; last_name: string; phone: string; email: string; address: string };
 export type VoucherBatchInput = Pick<VoucherBatch, 'discount_percentage' | 'starts_at' | 'ends_at' | 'codes'> & { id?: number };
 export type PromotionInput = Omit<Promotion, 'id'> & { id?: number };
-export type CheckoutInput = { items: SaleItem[]; payment_method: string; voucher_code?: string; manual_promotion_id?: number; automatic_promotion_id?: number | null };
+export type CheckoutInput = { items: SaleItem[]; payment_method: string; employee_barcode?: string; voucher_code?: string; manual_promotion_id?: number; automatic_promotion_id?: number | null };
 export type VoucherValidation = { valid: true; discount_percentage: number } | { valid: false; message: string };
 
 export interface AppState {
@@ -136,6 +146,7 @@ export interface AppState {
   promotions: Promotion[];
   voucherBatches: VoucherBatch[];
   employees: Employee[];
+  employeeActivities: EmployeeActivity[];
   payrollPayments: PayrollPayment[];
   settings: { shop_name: string; shop_logo?: string; home_image?: string; archive_folder: string; database_file: string; receipt_printer: string; barcode_scanner_enabled: boolean; barcode_scanner_detected: boolean };
   stockMovements: StockMovement[];
@@ -176,6 +187,7 @@ declare global {
     deleteVoucherBatch: (id: number) => Promise<void>;
     saveEmployee: (employee: EmployeeInput) => Promise<void>;
     deleteEmployee: (employeeId: number, requesterBarcode: string) => Promise<void>;
+    recordEmployeeActivity: (input: { employee_barcode: string; section: string; action: string; detail?: string }) => Promise<void>;
     deleteProduct: (productId: number) => Promise<void>;
     disposeExpiredProduct: (productId: number) => Promise<void>;
     paySalary: (input: PayrollPaymentInput) => Promise<void>;

@@ -43,9 +43,9 @@ const sectionNames: Partial<Record<Section, string>> = {
   'inventory-history': 'Storico Magazzino', 'stock-movement': 'Carica e scarica merce',
   'sale-management': 'Modifica o Elimina', promotions: 'Offerta', 'vouchers-create': 'Crea buoni sconto',
   'vouchers-list': 'Lista buoni sconto',
-  expenses: 'Spese', statistics: 'Analisi vendite', 'financial-balance': 'Contabilità',
+  expenses: 'Spese', statistics: 'Analisi vendite', 'financial-balance': 'Bilancio gestionale',
   'expired-products': 'Gestisci articoli scaduti',
-  employees: 'Lista Dipendenti', 'employee-create': 'Crea Dipendente', payroll: 'Paga Stipendi',
+  employees: 'Lista Dipendenti', 'employee-create': 'Crea Dipendente', payroll: 'Paga Stipendi', 'employee-tracker': 'Tracker Dipendenti',
 };
 function normalizedRole(role: string): string {
   return role.trim().toLocaleLowerCase('it-IT').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -55,14 +55,19 @@ function canAccessSection(role: string, section: Section): boolean {
     case 'proprietario':
       return true;
     case 'cassiere':
-      return section === 'cash' || section === 'inventory';
+      return section === 'cash' || section === 'sale-management' || section === 'settings';
     case 'direttore':
-      return section !== 'cash' && section !== 'statistics';
+      return !['cash', 'sale-management', 'employees', 'employee-create', 'payroll', 'employee-tracker', 'promotions', 'vouchers-create', 'vouchers-list'].includes(section);
     case 'contabilita':
-      return section === 'home' || section === 'sales' || section === 'financial-balance';
+      return ['home', 'sales', 'statistics', 'financial-balance', 'employees', 'employee-create', 'payroll', 'employee-tracker', 'promotions', 'vouchers-create', 'vouchers-list', 'settings'].includes(section);
     default:
       return false;
   }
+}
+function defaultSectionForRole(role: string): Section {
+  if (normalizedRole(role) === 'proprietario') return 'cash';
+  return (['home', 'cash', 'settings', 'inventory'] as Section[])
+    .find((section) => canAccessSection(role, section)) ?? 'cash';
 }
 function isCashierRole(role: string): boolean {
   return normalizedRole(role) === 'cassiere';
@@ -327,6 +332,10 @@ export default function App() {
   const [inventoryHistoryFrom, setInventoryHistoryFrom] = useState('');
   const [inventoryHistoryTo, setInventoryHistoryTo] = useState('');
   const [inventoryHistorySearch, setInventoryHistorySearch] = useState('');
+  const [activityPeriod, setActivityPeriod] = useState('Tutti');
+  const [activityFrom, setActivityFrom] = useState('');
+  const [activityTo, setActivityTo] = useState('');
+  const [activityEmployeeId, setActivityEmployeeId] = useState('Tutti');
   const [statisticsPeriod, setStatisticsPeriod] = useState('Tutti');
   const [unsoldListOpen, setUnsoldListOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
@@ -374,7 +383,7 @@ export default function App() {
   const [employeeDraft, setEmployeeDraft] = useState<EmployeeInput | null>(null);
   const [employeeDetails, setEmployeeDetails] = useState<Employee | null>(null);
   const [reportExportOpen, setReportExportOpen] = useState(false);
-  const [reportExportType, setReportExportType] = useState<'sales-pdf' | 'sales-csv' | 'balance'>('sales-pdf');
+  const [reportExportType, setReportExportType] = useState<'sales-pdf' | 'sales-xlsx' | 'balance'>('sales-pdf');
   const [payrollMonth, setPayrollMonth] = useState(localDateKey().slice(0, 7));
   const [payrollDate, setPayrollDate] = useState(localDateKey());
   const [expenseSearch, setExpenseSearch] = useState('');
@@ -421,16 +430,28 @@ export default function App() {
   const notify = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 3600); };
   const activeRole = currentUser?.role ?? (data && data.employees.length === 0 ? 'Proprietario' : 'cassiere');
   const canAccess = (target: Section) => canAccessSection(activeRole, target);
+  const trackActivity = (sectionName: string, action: string, detail = '', barcode = currentUser?.barcode) => {
+    if (!barcode) return;
+    void window.gestionale.recordEmployeeActivity({
+      employee_barcode: barcode,
+      section: sectionName,
+      action,
+      detail,
+    }).catch((error: unknown) => notify(`Impossibile registrare l’attività: ${errorText(error)}`));
+  };
   const navigateTo = (target: Section) => {
     if (!locked && data && !canAccess(target)) {
       notify('Non hai i permessi per accedere a questa sezione.');
       return;
     }
+    if (target !== section) trackActivity(sectionNames[target] ?? nav.find((item) => item.section === target)?.label ?? target, 'Apertura sezione');
     setSection(target);
     setOpenSidebarMenu(null);
+    if (target === 'employee-tracker') void refresh();
   };
   const saveEmployee = async (employee: EmployeeInput) => {
     await window.gestionale.saveEmployee(employee);
+    trackActivity('Dipendenti', employee.id ? 'Dipendente modificato' : 'Dipendente creato', `${employee.first_name} ${employee.last_name}`.trim());
     await refresh();
     if (currentUser && employee.id !== undefined && currentUser.id === employee.id) {
       setCurrentUser({ ...currentUser, first_name: employee.first_name, last_name: employee.last_name, role: employee.role.trim() });
@@ -445,6 +466,7 @@ export default function App() {
     if (!window.confirm(`Eliminare ${employee.first_name} ${employee.last_name}? Verranno eliminate anche le registrazioni dei suoi stipendi.`)) return;
     try {
       await window.gestionale.deleteEmployee(employee.id, currentUser?.barcode ?? '');
+      trackActivity('Dipendenti', 'Dipendente eliminato', `${employee.first_name} ${employee.last_name}`.trim());
       const next = await refresh();
       setEmployeeDetails(null);
       setEmployeeDraft(null);
@@ -473,6 +495,7 @@ export default function App() {
         site: 'Negozio',
         receipt_data: expenseReceiptData,
       });
+      trackActivity('Spese', 'Spesa registrata', `${expenseDescription.trim()} · ${money.format(Number(expenseAmount))}`);
       await refresh();
       setExpenseDescription('');
       setExpenseCategory(expenseCategories[0]);
@@ -501,6 +524,7 @@ export default function App() {
     if (!window.confirm(`Eliminare la spesa "${expense.description}"?`)) return;
     try {
       await window.gestionale.deleteExpense(expense.id);
+      trackActivity('Spese', 'Spesa eliminata', expense.description);
       await refresh();
       notify('Spesa eliminata.');
     } catch (error) {
@@ -511,6 +535,7 @@ export default function App() {
     if (!window.confirm(`Eliminare l'articolo "${product.name}"?`)) return;
     try {
       await window.gestionale.deleteProduct(product.id);
+      trackActivity('Magazzino', 'Articolo eliminato', product.name);
       await refresh();
       setSelectedProduct(null);
       setProductForm(null);
@@ -523,6 +548,7 @@ export default function App() {
     if (!window.confirm(`Confermi lo smaltimento di ${product.name}? La giacenza verrà scaricata.`)) return;
     try {
       await window.gestionale.disposeExpiredProduct(product.id);
+      trackActivity('Magazzino', 'Articolo scaduto smaltito', product.name);
       await refresh();
       notify(`${product.name} smaltito.`);
     } catch (error) {
@@ -539,41 +565,47 @@ export default function App() {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.text(`${data?.settings.shop_name ?? ''} · ${receiptDate.format(new Date())}`, 14, 25);
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(7);
-    doc.text('Foto dipendente', 14, 29);
-    doc.text('Foto documenti', 60, 29);
-    doc.addImage(photo, 'PNG', 14, 32, 38, 38);
+    doc.text('Foto dipendente', 14, 31);
+    doc.text('Foto documenti', 60, 31);
+    doc.addImage(photo, 'PNG', 14, 34, 38, 38);
+    const documentColumns = 4;
+    const documentWidth = 30;
+    const documentHeight = 20;
+    const documentGap = 3;
     documents.forEach((image, index) => {
-      const column = index % 5;
-      const row = Math.floor(index / 5);
-      doc.addImage(image, 'PNG', 60 + column * 26, 32 + row * 19, 23, 16, undefined, 'FAST');
+      const column = index % documentColumns;
+      const row = Math.floor(index / documentColumns);
+      doc.addImage(image, 'PNG', 60 + column * (documentWidth + documentGap), 34 + row * (documentHeight + documentGap), documentWidth, documentHeight, undefined, 'FAST');
     });
-    const details: [string, string][] = [
-      ['Nome e cognome', `${employee.first_name} ${employee.last_name}`],
-      ['Età', String(employee.age)],
-      ['Sesso', employee.gender],
-      ['Indirizzo', employee.home_address],
-      ['Email', employee.email],
-      ['Telefono', employee.phone],
-      ['Sede operativa', employee.operational_site],
-      ['Ruolo', employee.role],
-      ['Turno', employee.shift],
+    const details: Array<[string, string, string?, string?]> = [
+      ['Nome', employee.first_name, 'Cognome', employee.last_name],
+      ['Età', String(employee.age), 'Sesso', employee.gender],
+      ['Indirizzo di casa', employee.home_address],
+      ['Indirizzo email', employee.email, 'Numero cellulare', employee.phone],
+      ['Ruolo', employee.role, 'Turno', employee.shift],
+      ['Metodo di pagamento', employee.payment_method, 'IBAN', employee.payment_method === 'Bonifico' ? employee.iban : '—'],
       ['Stipendio', money.format(employee.salary)],
-      ['Metodo di pagamento', employee.payment_method],
-      ['IBAN', employee.payment_method === 'Bonifico' ? employee.iban : '—'],
-      ['Codice riconoscimento', employee.recognition_code],
-      ['Barcode', employee.recognition_code],
-      ['Contratto', employee.contract_pdf_data ? 'PDF allegato' : 'Non presente'],
-      ['Data di registrazione', dateTime.format(new Date(employee.created_at))],
     ];
-    let y = 108;
-    details.forEach(([label, value]) => {
-      const wrappedValue = doc.splitTextToSize(value || '—', 126);
+    let y = Math.max(83, 34 + Math.ceil(documents.length / documentColumns) * (documentHeight + documentGap) + 9);
+    details.forEach(([firstLabel, firstValue, secondLabel, secondValue]) => {
+      const fullWidth = !secondLabel;
+      const columnWidth = fullWidth ? 182 : 86;
+      const secondX = 110;
+      const firstLines = doc.splitTextToSize(firstValue || '—', columnWidth);
+      const secondLines = secondLabel ? doc.splitTextToSize(secondValue || '—', columnWidth) : [];
       doc.setFont('helvetica', 'bold');
-      doc.text(`${label}:`, 14, y);
+      doc.setFontSize(7);
+      doc.setTextColor(111, 123, 114);
+      doc.text(firstLabel, 14, y);
+      if (secondLabel) doc.text(secondLabel, secondX, y);
       doc.setFont('helvetica', 'normal');
-      doc.text(wrappedValue, 58, y);
-      y += Math.max(7, wrappedValue.length * 5);
+      doc.setFontSize(10);
+      doc.setTextColor(41, 53, 46);
+      doc.text(firstLines, 14, y + 5);
+      if (secondLabel) doc.text(secondLines, secondX, y + 5);
+      y += Math.max(16, 7 + Math.max(firstLines.length, secondLines.length) * 4.5);
     });
     return doc;
   };
@@ -657,6 +689,7 @@ export default function App() {
   const payEmployee = async (employee: Employee) => {
     try {
       await window.gestionale.paySalary({ employee_id: employee.id, pay_month: payrollMonth, payment_date: payrollDate });
+      trackActivity('Dipendenti', 'Stipendio pagato', `${employee.first_name} ${employee.last_name} · ${payrollMonth}`);
       const next = await refresh();
       const payment = next.payrollPayments.find((item) => item.employee_id === employee.id && item.pay_month === payrollMonth);
       if (payment) savePdf(createSalaryPdf(employee, payment.payment_date, payment.pay_month, payment.amount), `Stipendio-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}-${payment.payment_date}.pdf`);
@@ -675,6 +708,7 @@ export default function App() {
     }
     try {
       await window.gestionale.payAllSalaries({ pay_month: payrollMonth, payment_date: payrollDate });
+      trackActivity('Dipendenti', 'Stipendi pagati', payrollMonth);
       const next = await refresh();
       const justPaidIds = new Set(dueEmployees.map((employee) => employee.id));
       const payments = next.payrollPayments.filter((payment) => payment.pay_month === payrollMonth && justPaidIds.has(payment.employee_id));
@@ -705,8 +739,7 @@ export default function App() {
   }), []);
   useEffect(() => {
     if (locked || !data || canAccessSection(activeRole, section)) return;
-    const fallback: Section = canAccessSection(activeRole, 'home') ? 'home' : 'inventory';
-    setSection(fallback);
+    setSection(defaultSectionForRole(activeRole));
     setOpenSidebarMenu(null);
   }, [activeRole, data, locked, section]);
   useEffect(() => {
@@ -768,7 +801,7 @@ export default function App() {
     else if (isCashierRole(activeRole)) notify(`Il codice a barre ${normalized} non è presente tra gli articoli. Contatta un responsabile.`);
     else setPendingUnknownCode(normalized);
   };
-  const saveProduct = async (item: ProductInput) => { try { await window.gestionale.saveProduct(item); await refresh(); setSelectedProduct(null); setProductEditingId(null); notify('Articolo salvato'); } catch (error) { notify(errorText(error)); throw error; } };
+  const saveProduct = async (item: ProductInput) => { try { await window.gestionale.saveProduct(item); trackActivity('Magazzino', 'Articolo salvato', item.name); await refresh(); setSelectedProduct(null); setProductEditingId(null); notify('Articolo salvato'); } catch (error) { notify(errorText(error)); throw error; } };
   const saveStock = async (event: FormEvent) => {
     event.preventDefault();
     if (!stockProduct) return;
@@ -777,6 +810,7 @@ export default function App() {
     if (!stockMovementEmployeeBarcode) { notify('Scansiona il barcode del personale prima di registrare il carico.'); return; }
     try {
       await window.gestionale.moveStock({ productId: stockProduct.id, type: 'Carico', quantity, employee_barcode: stockMovementEmployeeBarcode, note: 'Carico da dettaglio articolo' });
+      trackActivity('Magazzino', 'Carico merce', `${stockProduct.name} · ${quantityFormat.format(quantity)}`, stockMovementEmployeeBarcode);
       await refresh();
       setStockProduct(null);
       setStockMovementEmployeeBarcode('');
@@ -844,6 +878,8 @@ export default function App() {
       }
       setCurrentUser(employee);
       setLocked(false);
+      trackActivity('Accesso', 'Accesso al gestionale', '', employee.barcode);
+      setSection(defaultSectionForRole(employee.role));
       setLoginBarcode('');
       loginBarcodeAttempt.current = '';
       await refresh();
@@ -892,6 +928,7 @@ export default function App() {
     if (!voucherPreview) return;
     try {
       await window.gestionale.saveVoucherBatch(voucherPreview);
+      trackActivity('Offerta', 'Gruppo buoni creato', `${voucherPreview.codes.length} buoni · ${voucherPreview.discount_percentage}%`);
       await refresh();
       cancelVoucherPreview();
       setSection('vouchers-list');
@@ -916,6 +953,7 @@ export default function App() {
         ends_at: voucherEndsAt,
         codes: batch.codes,
       });
+      trackActivity('Offerta', 'Gruppo buoni modificato', `Gruppo ${batch.id}`);
       await refresh();
       cancelVoucherPreview();
       setSection('vouchers-list');
@@ -928,6 +966,7 @@ export default function App() {
     if (!window.confirm(`Eliminare il gruppo ${batch.id} e tutti i suoi buoni non utilizzati?`)) return;
     try {
       await window.gestionale.deleteVoucherBatch(batch.id);
+      trackActivity('Offerta', 'Gruppo buoni eliminato', `Gruppo ${batch.id}`);
       await refresh();
       notify('Gruppo di buoni sconto eliminato.');
     } catch (error) {
@@ -1164,6 +1203,7 @@ export default function App() {
         items,
         employee_barcode: saleEmployeeBarcode.trim(),
       });
+      trackActivity('Modifica o Elimina', 'Vendita modificata', `Scontrino ${saleDialog.receipt_no}`, saleEmployeeBarcode.trim());
       const next = await refresh();
       const updatedSale = next.sales.find((sale) => sale.id === saleId);
       setSaleDialog(null);
@@ -1178,6 +1218,7 @@ export default function App() {
   const deleteSale = async (sale: Sale, employeeBarcode: string) => {
     try {
       await window.gestionale.deleteSale(sale.id, employeeBarcode);
+      trackActivity('Modifica o Elimina', 'Vendita eliminata', `Scontrino ${sale.receipt_no}`, employeeBarcode);
       await refresh();
       setSaleDialog(null);
       setSaleEmployeeBarcode('');
@@ -1204,10 +1245,12 @@ export default function App() {
       const sale = await window.gestionale.checkout({
         items: cart,
         payment_method: paymentMethod,
+        employee_barcode: currentUser?.barcode || undefined,
         voucher_code: voucherCode || undefined,
         manual_promotion_id: promotionDiscounts.manualPromotion?.id,
         automatic_promotion_id: automaticPromotionId,
       });
+      trackActivity('Cassa', 'Vendita completata', `Scontrino ${sale.receipt_no} · ${money.format(sale.total)}`);
       setCart([]);
       setVoucherCode('');
       setVoucherMessage('');
@@ -1244,6 +1287,7 @@ export default function App() {
     if (promotionMinimum !== 'none' && (!Number.isFinite(selectedMinimum) || (selectedMinimum ?? 0) <= 0)) { notify('Inserisci un requisito minimo maggiore di zero.'); return; }
     try {
       await window.gestionale.savePromotion({ ...promotion, minimum_spend: promotionMinimum === 'spend' ? promotion.minimum_spend : 0, minimum_kilograms: promotionMinimum === 'kilograms' ? promotion.minimum_kilograms : 0, minimum_pieces: promotionMinimum === 'pieces' ? promotion.minimum_pieces : 0, minimum_liters: promotionMinimum === 'liters' ? promotion.minimum_liters : 0 });
+      trackActivity('Offerta', promotion.id === undefined ? 'Promozione creata' : 'Promozione modificata', promotion.name);
       await refresh();
       const wasEditing = promotion.id !== undefined;
       resetPromotionForm();
@@ -1263,6 +1307,7 @@ export default function App() {
     if (!window.confirm(`Eliminare l'offerta "${offer.name}"?`)) return;
     try {
       await window.gestionale.deletePromotion(offer.id);
+      trackActivity('Offerta', 'Promozione eliminata', offer.name);
       await refresh();
       if (promotion.id === offer.id) resetPromotionForm();
       notify('Offerta eliminata');
@@ -1398,23 +1443,7 @@ export default function App() {
         return;
       }
       const doc = new jsPDF();
-      doc.setFillColor(43, 82, 61);
-      doc.rect(0, 0, 210, 297, 'F');
-      if (data.settings.shop_logo) doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', 75, 51, 60, 60);
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(24);
-      doc.text(data.settings.shop_name, 105, data.settings.shop_logo ? 133 : 92, { align: 'center' });
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(17);
-      doc.text('Lista dipendenti', 105, data.settings.shop_logo ? 151 : 110, { align: 'center' });
-      doc.setFontSize(11);
-      doc.text(`Report esportato il ${receiptDate.format(new Date())}`, 105, data.settings.shop_logo ? 164 : 123, { align: 'center' });
-      doc.setFontSize(10);
-      doc.text(`${data.employees.length} dipendenti`, 105, data.settings.shop_logo ? 177 : 136, { align: 'center' });
-      for (const employee of data.employees) {
-        await createEmployeePdf(employee, doc, true);
-      }
+      for (const [index, employee] of data.employees.entries()) await createEmployeePdf(employee, doc, index > 0);
       doc.save(`lista-dipendenti-${todayKey}.pdf`);
     } catch (error) {
       notify(errorText(error));
@@ -1452,30 +1481,69 @@ export default function App() {
       notify(errorText(error));
     }
   };
-  const exportSalesCsv = (respectTimeFilters: boolean) => {
+  const exportSalesXlsx = async (respectTimeFilters: boolean) => {
     if (!data) return;
-    const reportSales = data.sales.filter((sale) => !respectTimeFilters || matchesSalesPeriod(sale.created_at));
-    const quote = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
-    const csvNumber = new Intl.NumberFormat('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const csvQuantity = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 3 });
-    const rows = [
-      ['Numero scontrino', 'Data e ora', 'Metodo di pagamento', 'Articoli', 'Quantità totale', 'Totale lordo', 'Sconto', 'Totale netto'],
-      ...reportSales.map((sale) => [
+    try {
+      const sales = data.sales.filter((sale) => !respectTimeFilters || matchesSalesPeriod(sale.created_at));
+      const headers = ['Numero scontrino', 'Data e ora', 'Metodo di pagamento', 'Articoli', 'Quantità totale', 'Totale lordo', 'Sconto', 'Totale netto'];
+      const xmlText = (value: string) => value
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+        .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+      const columnNames = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+      const rows = sales.map((sale) => [
         sale.receipt_no,
         dateTime.format(new Date(sale.created_at)),
         sale.payment_method,
-        sale.items.map((item) => `${item.name} (${csvQuantity.format(item.quantity)} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'})`).join(', '),
-        csvQuantity.format(sale.items.reduce((sum, item) => sum + item.quantity, 0)),
-        csvNumber.format(sale.gross_total),
-        csvNumber.format(sale.discount),
-        csvNumber.format(sale.total),
-      ]),
-    ];
-    const csv = `\uFEFFsep=;\r\n${rows.map((row) => row.map(quote).join(';')).join('\r\n')}`;
+        sale.items.map((item) => `${item.name} (${quantityFormat.format(item.quantity)} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'})`).join(', '),
+        sale.items.reduce((sum, item) => sum + item.quantity, 0),
+        sale.gross_total,
+        sale.discount,
+        sale.total,
+      ]);
+      const makeCell = (columnIndex: number, rowIndex: number, value: string | number, style?: number) => {
+        const ref = `${columnNames[columnIndex]}${rowIndex}`;
+        const styleAttribute = style === undefined ? '' : ` s="${style}"`;
+        if (typeof value === 'number') return `<c r="${ref}"${styleAttribute}><v>${Number.isFinite(value) ? value : 0}</v></c>`;
+        return `<c r="${ref}"${styleAttribute} t="inlineStr"><is><t xml:space="preserve">${xmlText(value)}</t></is></c>`;
+      };
+      const headerRow = `<row r="1" ht="30" customHeight="1">${headers.map((header, index) => makeCell(index, 1, header, 1)).join('')}</row>`;
+      const bodyRows = rows.map((row, rowIndex) => `<row r="${rowIndex + 2}">${row.map((value, columnIndex) =>
+        makeCell(columnIndex, rowIndex + 2, value, columnIndex === 4 ? 3 : columnIndex >= 5 ? 2 : undefined)
+      ).join('')}</row>`).join('');
+      const zip = new JSZip();
+      zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`);
+      zip.folder('_rels')?.file('.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`);
+      zip.folder('xl')?.file('workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Vendite" sheetId="1" r:id="rId1"/></sheets></workbook>`);
+      zip.folder('xl')?.folder('_rels')?.file('workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
+      zip.folder('xl')?.file('styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.000"/><numFmt numFmtId="165" formatCode="#,##0.00 &quot;€&quot;"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF38684E"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="1" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs></styleSheet>`);
+      zip.folder('xl')?.folder('worksheets')?.file('sheet1.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:H${rows.length + 1}"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="19" customWidth="1"/><col min="2" max="2" width="22" customWidth="1"/><col min="3" max="3" width="24" customWidth="1"/><col min="4" max="4" width="60" customWidth="1"/><col min="5" max="5" width="18" customWidth="1"/><col min="6" max="8" width="18" customWidth="1"/></cols><sheetData>${headerRow}${bodyRows}</sheetData></worksheet>`);
+      const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `vendite-${todayKey}.xlsx`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      notify(errorText(error));
+    }
+  };
+  const exportEmployeeActivityCsv = (respectFilters: boolean) => {
+    if (!data) return;
+    const rows = (respectFilters ? employeeActivityList : data.employeeActivities).map((entry) => [
+      dateTime.format(new Date(entry.created_at)),
+      entry.employee_name,
+      entry.section,
+      entry.action,
+      entry.detail,
+    ]);
+    const quote = (value: string) => `"${value.replaceAll('"', '""')}"`;
+    const csv = `\uFEFFsep=;\r\n${[['Data e ora', 'Dipendente', 'Sezione', 'Attività', 'Dettagli'], ...rows]
+      .map((row) => row.map(quote).join(';')).join('\r\n')}`;
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = `vendite-${todayKey}.csv`;
+    link.download = `tracker-dipendenti-${todayKey}.csv`;
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -1744,6 +1812,27 @@ export default function App() {
     matchesInventoryHistoryPeriod(movement.created_at)
     && [movement.product_name, movement.person, movement.note].some((value) => value.toLowerCase().includes(inventoryHistorySearch.toLowerCase()))
   ) ?? [];
+  const matchesActivityPeriod = (createdAt: string) => {
+    const activityDate = new Date(createdAt);
+    const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    if (activityPeriod === 'Da - A') {
+      const from = activityFrom ? new Date(`${activityFrom}T00:00:00`) : null;
+      const to = activityTo ? new Date(`${activityTo}T23:59:59.999`) : null;
+      return (!from || activityDate >= from) && (!to || activityDate <= to);
+    }
+    if (activityPeriod === 'Tutti') return true;
+    if (activityPeriod === 'Oggi') return activityDate >= todayStart && activityDate < new Date(todayStart.getTime() + 86400000);
+    if (activityPeriod === 'Ieri') return activityDate >= new Date(todayStart.getTime() - 86400000) && activityDate < todayStart;
+    const rangeStart = new Date(todayStart);
+    if (activityPeriod === 'Ultima settimana') rangeStart.setDate(rangeStart.getDate() - 6);
+    else if (activityPeriod === 'Ultimo mese') rangeStart.setMonth(rangeStart.getMonth() - 1);
+    return activityDate >= rangeStart;
+  };
+  const employeeActivityList = data?.employeeActivities.filter((entry) =>
+    (activityEmployeeId === 'Tutti' || entry.employee_id === Number(activityEmployeeId))
+    && matchesActivityPeriod(entry.created_at)
+  ) ?? [];
   const sectionLabel = sectionNames[section] ?? nav.find((item) => item.section === section)?.label ?? 'Impostazioni';
   const startEmployeeCreation = () => {
     if (!data) {
@@ -1838,22 +1927,28 @@ export default function App() {
           {openSidebarMenu === 'inventory' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'inventory' ? ' selected' : ''}`} onClick={() => navigateTo('inventory')}>Magazzino</button>{canAccess('inventory-history') && <button className={`sidebar-subitem${section === 'inventory-history' ? ' selected' : ''}`} onClick={() => navigateTo('inventory-history')}>Storico Magazzino</button>}</div>}
         </>}
         {nav.filter((item) => ['cash', 'sales'].includes(item.section) && canAccess(item.section)).map(({ section: target, label, icon: Icon }) => <button key={target} className={`nav-item${section === target ? ' active' : ''}`} onClick={() => navigateTo(target)}><Icon size={18} /><span>{label}</span>{target === 'cash' && <kbd>F2</kbd>}</button>)}
-        {canAccess('financial-balance') && <button className={`nav-item${section === 'financial-balance' ? ' active' : ''}`} onClick={() => navigateTo('financial-balance')}><Banknote size={18} /><span>Contabilità</span></button>}
-        {normalizedRole(activeRole) === 'direttore' && <button className={`nav-item${section === 'expenses' ? ' active' : ''}`} onClick={() => navigateTo('expenses')}><CreditCard size={18} /><span>Spese</span></button>}
         {canAccess('statistics') && <>
-          <button aria-expanded={openSidebarMenu === 'statistics'} className={`nav-item${['statistics', 'expenses'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'statistics' ? null : 'statistics')}><BarChart3 size={18} /><span>Statistiche</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'statistics' ? ' open' : ''}`} size={15} /></button>
-          {openSidebarMenu === 'statistics' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'statistics' ? ' selected' : ''}`} onClick={() => navigateTo('statistics')}>Statistiche</button><button className={`sidebar-subitem${section === 'expenses' ? ' selected' : ''}`} onClick={() => navigateTo('expenses')}>Spese</button></div>}
+          <button aria-expanded={openSidebarMenu === 'statistics'} className={`nav-item${['statistics', 'financial-balance', 'expenses'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'statistics' ? null : 'statistics')}><BarChart3 size={18} /><span>Statistiche</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'statistics' ? ' open' : ''}`} size={15} /></button>
+          {openSidebarMenu === 'statistics' && <div className="sidebar-submenu">
+            <button className={`sidebar-subitem${section === 'statistics' ? ' selected' : ''}`} onClick={() => navigateTo('statistics')}>Statistiche</button>
+            {canAccess('financial-balance') && <button className={`sidebar-subitem${section === 'financial-balance' ? ' selected' : ''}`} onClick={() => navigateTo('financial-balance')}>Bilancio gestionale</button>}
+            {canAccess('expenses') && <button className={`sidebar-subitem${section === 'expenses' ? ' selected' : ''}`} onClick={() => navigateTo('expenses')}>Spese</button>}
+          </div>}
         </>}
+        {(canAccess('sale-management') || canAccess('promotions') || canAccess('employees')) && <div className="nav-label nav-label-extra">GESTIONE EXTRA</div>}
         {canAccess('sale-management') && <>
-          <div className="nav-label nav-label-extra">GESTIONE EXTRA</div>
           <button className={`nav-item${section === 'sale-management' ? ' active' : ''}`} onClick={() => navigateTo('sale-management')}><ClipboardList size={18} /><span>Modifica o Elimina</span></button>
+        </>}
+        {canAccess('promotions') && <>
           <button aria-expanded={openSidebarMenu === 'offers'} className={`nav-item${['promotions', 'vouchers-create', 'vouchers-list'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'offers' ? null : 'offers')}><TrendingUp size={18} /><span>Offerta</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'offers' ? ' open' : ''}`} size={15} /></button>
           {openSidebarMenu === 'offers' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'promotions' ? ' selected' : ''}`} onClick={() => navigateTo('promotions')}>Promozioni</button><button className={`sidebar-subitem${section === 'vouchers-create' ? ' selected' : ''}`} onClick={() => { cancelVoucherPreview(); navigateTo('vouchers-create'); }}>Crea buoni sconto</button><button className={`sidebar-subitem${section === 'vouchers-list' ? ' selected' : ''}`} onClick={() => navigateTo('vouchers-list')}>Lista buoni sconto</button></div>}
-          <button aria-expanded={openSidebarMenu === 'employees'} className={`nav-item${['employees', 'employee-create', 'payroll'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'employees' ? null : 'employees')}><ClipboardList size={18} /><span>Dipendenti</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'employees' ? ' open' : ''}`} size={15} /></button>
-          {openSidebarMenu === 'employees' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => navigateTo('employees')}>Lista Dipendenti</button><button className={`sidebar-subitem${section === 'employee-create' ? ' selected' : ''}`} onClick={startEmployeeCreation}>Crea Dipendente</button><button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => navigateTo('payroll')}>Paga Stipendi</button></div>}
+        </>}
+        {canAccess('employees') && <>
+          <button aria-expanded={openSidebarMenu === 'employees'} className={`nav-item${['employees', 'employee-create', 'payroll', 'employee-tracker'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'employees' ? null : 'employees')}><ClipboardList size={18} /><span>Dipendenti</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'employees' ? ' open' : ''}`} size={15} /></button>
+          {openSidebarMenu === 'employees' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => navigateTo('employees')}>Lista Dipendenti</button><button className={`sidebar-subitem${section === 'employee-create' ? ' selected' : ''}`} onClick={startEmployeeCreation}>Crea Dipendente</button><button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => navigateTo('payroll')}>Paga Stipendi</button><button className={`sidebar-subitem${section === 'employee-tracker' ? ' selected' : ''}`} onClick={() => navigateTo('employee-tracker')}>Tracker Dipendenti</button></div>}
         </>}
       </nav>
-      <div className="sidebar-bottom">{canAccess('settings') && <button className={`nav-item settings-link${section === 'settings' ? ' active' : ''}`} onClick={() => { setSettingsTab(null); setDeviceTab(null); navigateTo('settings'); }}><Settings size={18} /><span>Impostazioni</span></button>}<div className="user-card"><div className="user-avatar">{currentUser?.first_name.slice(0, 1).toUpperCase() ?? data.settings.shop_name.slice(0, 1).toUpperCase()}</div><div><strong>{currentUser ? `${currentUser.first_name} ${currentUser.last_name}`.trim() : 'Gestore'}</strong><small>{currentUser?.role ?? 'Account locale'}</small></div>{data.employees.length > 0 && <button className="icon-button small" title="Blocca e cambia utente" aria-label="Blocca e cambia utente" onClick={() => { setSelectedProduct(null); setProductAuthorization(null); setStockProduct(null); setCurrentUser(null); setLocked(true); setLoginBarcode(''); setPin(''); }}><LockKeyhole size={15} /></button>}</div></div>
+      <div className="sidebar-bottom">{canAccess('settings') && <button className={`nav-item settings-link${section === 'settings' ? ' active' : ''}`} onClick={() => { setSettingsTab(null); setDeviceTab(null); navigateTo('settings'); }}><Settings size={18} /><span>Impostazioni</span></button>}<div className="user-card"><div className="user-avatar">{currentUser?.first_name.slice(0, 1).toUpperCase() ?? data.settings.shop_name.slice(0, 1).toUpperCase()}</div><div><strong>{currentUser ? `${currentUser.first_name} ${currentUser.last_name}`.trim() : 'Gestore'}</strong><small>{currentUser?.role ?? 'Account locale'}</small></div>{data.employees.length > 0 && <button className="icon-button small" title="Blocca e cambia utente" aria-label="Blocca e cambia utente" onClick={() => { trackActivity('Accesso', 'Uscita dal gestionale'); setSelectedProduct(null); setProductAuthorization(null); setStockProduct(null); setCurrentUser(null); setLocked(true); setLoginBarcode(''); setPin(''); }}><LockKeyhole size={15} /></button>}</div></div>
     </aside>
     <main className="main-content"><header className="topbar"><h1>{sectionLabel}</h1>{data.settings.shop_logo ? <img className="topbar-logo" src={data.settings.shop_logo} alt="Logo negozio" /> : <div className="topbar-logo-fallback"><Store size={19} /></div>}<div className="topbar-right"><div className="today-date">{navbarDate.format(currentTime)} · {navbarTime.format(currentTime)}</div></div></header>
 
@@ -1883,7 +1978,7 @@ export default function App() {
         <aside className="cart-panel"><div className="cart-heading"><div className="cart-heading-title"><h2>CARRELLO <span>{quantityFormat.format(cart.reduce((sum, item) => sum + item.quantity, 0))}</span></h2></div><button className="icon-button" title="Svuota carrello" aria-label="Svuota carrello" disabled={!cart.length} onClick={() => { setCart([]); setManualPromotionId(undefined); setAutomaticPromotionId(undefined); }}><Trash2 size={17} /></button></div><div className="cart-lines">{cart.map((item) => <div className="cart-line" key={item.product_id}><div className="cart-line-name"><strong>{item.name}</strong><small>{quantityFormat.format(item.quantity)} {item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}</small></div><div className="quantity-control"><button onClick={() => changeQuantity(item.product_id, -1)} aria-label="Rimuovi uno"><Minus size={13} /></button><span>{quantityFormat.format(item.quantity)}</span><button onClick={() => changeQuantity(item.product_id, 1)} aria-label="Aggiungi uno"><Plus size={13} /></button></div><strong className="line-total">{money.format(item.quantity * item.unit_price)}</strong></div>)}{!cart.length && <div className="cart-empty"><ShoppingBasket size={25} /><span>Seleziona gli articoli<br />per iniziare una vendita</span></div>}</div><div className="receipt-summary"><div><span>Subtotale</span><span>{money.format(subtotal)}</span></div><div className="total-row"><strong>TOTALE</strong><strong>{money.format(subtotal)}</strong></div></div><button className="button button-primary checkout-button" disabled={!cart.length} onClick={() => setCheckoutOpen(true)}>Procedi al pagamento <span>→</span></button></aside>
       </div></div>}
 
-      {section === 'sales' && <div className="page-content"><div className="sale-tools"><button className="button button-outline sale-camera-button" onClick={() => setCamera(true)}><Camera size={16} /> Cerca con fotocamera</button><SearchInput value={saleSearch} onChange={setSaleSearch} placeholder="Cerca numero scontrino…" numericOnly /><button className="button button-outline" onClick={() => { setReportExportType('sales-pdf'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-outline" onClick={() => { setReportExportType('sales-csv'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Esporta CSV</button></div><div className="sale-filters"><SelectField label="Periodo" value={salesPeriod} onChange={setSalesPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A']} />{salesPeriod === 'Da - A' && <><Field label="Da" type="date" value={salesFrom} onChange={(event) => setSalesFrom(event.target.value)} /><Field label="A" type="date" value={salesTo} onChange={(event) => setSalesTo(event.target.value)} /></>}<SelectField label="Categoria" value={salesCategory} onChange={setSalesCategory} options={['Tutte', ...categories]} /></div><SalesTable sales={salesList} onSelect={setReceipt} /></div>}
+      {section === 'sales' && <div className="page-content"><div className="sale-tools"><button className="button button-outline sale-camera-button" onClick={() => setCamera(true)}><Camera size={16} /> Cerca con fotocamera</button><SearchInput value={saleSearch} onChange={setSaleSearch} placeholder="Cerca numero scontrino…" numericOnly /><button className="button button-outline" onClick={() => { setReportExportType('sales-pdf'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-outline" onClick={() => { setReportExportType('sales-xlsx'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Esporta Excel</button></div><div className="sale-filters"><SelectField label="Periodo" value={salesPeriod} onChange={setSalesPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A']} />{salesPeriod === 'Da - A' && <><Field label="Da" type="date" value={salesFrom} onChange={(event) => setSalesFrom(event.target.value)} /><Field label="A" type="date" value={salesTo} onChange={(event) => setSalesTo(event.target.value)} /></>}<SelectField label="Categoria" value={salesCategory} onChange={setSalesCategory} options={['Tutte', ...categories]} /></div><SalesTable sales={salesList} onSelect={setReceipt} /></div>}
       {section === 'sale-management' && <div className="page-content sale-management-page">
         <div className="sale-management-search"><SearchInput value={saleManagementSearch} onChange={setSaleManagementSearch} placeholder="Inserisci o scansiona il numero dello scontrino…" numericOnly /></div>
         {saleMatch ? <section className="panel sale-found">
@@ -1933,6 +2028,23 @@ export default function App() {
       {section === 'employees' && <div className="page-content employee-page">
         <div className="page-toolbar employee-toolbar"><SearchInput value={employeeSearch} onChange={setEmployeeSearch} placeholder="Cerca dipendente, ruolo o sede…" /><div className="toolbar-actions"><button className="button button-outline" onClick={() => void exportEmployeeContracts()}><ArrowDownToLine size={16} /> Scarica contratti</button><button className="button button-outline" onClick={() => void exportEmployeeList()}><ArrowDownToLine size={16} /> Scarica report</button></div></div>
         <Table headings={['Foto dipendente', 'Nome', 'Ruolo', 'Turno', 'Sede']}><>{employeeList.map((employee) => <tr className="employee-table-row" key={employee.id} onClick={() => setEmployeeDetails(employee)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setEmployeeDetails(employee); } }} tabIndex={0} aria-label={`Apri informazioni di ${employee.first_name} ${employee.last_name}`}><td><img className="employee-list-photo" src={employee.photo_data} alt={`Foto di ${employee.first_name} ${employee.last_name}`} /></td><td className="cell-primary">{employee.first_name} {employee.last_name}</td><td>{employee.role}</td><td>{employee.shift}</td><td>{employee.operational_site}</td></tr>)}</>{!employeeList.length && <tr><td colSpan={5} className="empty-cell">{data.employees.length ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente registrato.'}</td></tr>}</Table>
+      </div>}
+      {section === 'employee-tracker' && <div className="page-content">
+        <div className="page-toolbar"><div><h2>Tracker Dipendenti</h2><p>Registro degli accessi alle sezioni e delle attività registrate dai dipendenti.</p></div></div>
+        <div id="employee-tracker-print">
+          <div className="inventory-history-actions no-print">
+            <SelectField label="Periodo" value={activityPeriod} onChange={setActivityPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Da - A']} />
+            {activityPeriod === 'Da - A' && <><Field label="Da" type="date" value={activityFrom} onChange={(event) => setActivityFrom(event.target.value)} /><Field label="A" type="date" value={activityTo} onChange={(event) => setActivityTo(event.target.value)} /></>}
+            <SelectField label="Dipendente" value={activityEmployeeId} onChange={setActivityEmployeeId} options={['Tutti', ...data.employees.map((employee) => String(employee.id))]} labels={['Tutti', ...data.employees.map((employee) => `${employee.first_name} ${employee.last_name}`)]} />
+            <button className="button button-outline" onClick={() => exportEmployeeActivityCsv(true)}><ArrowDownToLine size={16} /> Scarica lista</button>
+            <button className="button button-outline" onClick={() => exportEmployeeActivityCsv(false)}><ArrowDownToLine size={16} /> Scarica tutto</button>
+            <button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa lista</button>
+          </div>
+          <Table headings={['Data e ora', 'Dipendente', 'Sezione', 'Attività', 'Dettagli']}>
+            <>{employeeActivityList.map((entry) => <tr key={entry.id}><td>{dateTime.format(new Date(entry.created_at))}</td><td className="cell-primary">{entry.employee_name}</td><td>{entry.section}</td><td>{entry.action}</td><td>{entry.detail || '—'}</td></tr>)}</>
+            {!employeeActivityList.length && <tr><td colSpan={5} className="empty-cell">Nessuna attività registrata per i filtri selezionati.</td></tr>}
+          </Table>
+        </div>
       </div>}
       {section === 'employee-create' && employeeDraft && <div className="page-content settings-page"><section className="settings-panel employee-create-panel"><EmployeeForm initial={employeeDraft} save={saveEmployee} cancel={() => { setEmployeeDraft(null); navigateTo('employees'); }} notify={notify} canDelete={canAccess('employees')} onDelete={async () => { const employee = data.employees.find((item) => item.id === employeeDraft.id); if (employee) await deleteEmployee(employee); }} /></section></div>}
       {section === 'payroll' && <div className="page-content">
@@ -2014,7 +2126,7 @@ export default function App() {
         <section className="panel category-panel"><div className="panel-heading"><div><h3>Vendite per categoria</h3><p>Valore degli articoli venduti nel periodo selezionato</p></div></div><div className="category-chart"><ResponsiveContainer width="100%" height={230}><PieChart><Pie data={Object.entries(categoriesSales).map(([name, value]) => ({ name, value }))} dataKey="value" nameKey="name" innerRadius={57} outerRadius={88} paddingAngle={3}>{Object.keys(categoriesSales).map((name, i) => <Cell key={name} fill={colors[i % colors.length]} />)}</Pie><Tooltip formatter={(value) => money.format(Number(value))} /></PieChart></ResponsiveContainer><div className="chart-legend">{Object.entries(categoriesSales).length ? Object.entries(categoriesSales).map(([name, value], i) => <div key={name}><span style={{ backgroundColor: colors[i % colors.length] }} /><span>{name}</span><strong>{money.format(value)}</strong></div>) : <span className="muted">Le categorie appariranno dopo la prima vendita.</span>}</div></div></section>
       </div>}
 
-      {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">{settingsTab === null ? <nav className="settings-nav">{[{ name: 'Nome negozio', icon: Store }, { name: 'Sicurezza', icon: ShieldCheck }, { name: 'Archivio dati', icon: Archive }, { name: 'Dispositivi', icon: Barcode }, { name: "Tema dell'app", icon: Palette }, { name: 'Operativo', icon: Check }].map(({ name, icon: Icon }) => <button key={name} onClick={() => { setSettingsTab(name); setDeviceTab(null); }}><Icon size={17} />{name}</button>)}</nav> : <section className="settings-panel"><button className="settings-back" onClick={() => { if (settingsTab === 'Dispositivi' && deviceTab) setDeviceTab(null); else { setSettingsTab(null); setDeviceTab(null); } }}><ArrowLeft size={15} />{settingsTab === 'Dispositivi' && deviceTab ? 'Dispositivi' : 'Impostazioni'}</button>
+      {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">{settingsTab === null ? <nav className="settings-nav">{[{ name: 'Nome negozio', icon: Store }, { name: 'Sicurezza', icon: ShieldCheck }, { name: 'Archivio dati', icon: Archive }, { name: 'Dispositivi', icon: Barcode }, { name: "Tema dell'app", icon: Palette }, { name: 'Operativo', icon: Check }].filter(({ name }) => normalizedRole(activeRole) === 'proprietario' || !['Nome negozio', 'Sicurezza', 'Archivio dati'].includes(name)).map(({ name, icon: Icon }) => <button key={name} onClick={() => { setSettingsTab(name); setDeviceTab(null); }}><Icon size={17} />{name}</button>)}</nav> : <section className="settings-panel"><button className="settings-back" onClick={() => { if (settingsTab === 'Dispositivi' && deviceTab) setDeviceTab(null); else { setSettingsTab(null); setDeviceTab(null); } }}><ArrowLeft size={15} />{settingsTab === 'Dispositivi' && deviceTab ? 'Dispositivi' : 'Impostazioni'}</button>
         {settingsTab === 'Nome negozio' && <><div className="settings-title"><h2>Info negozio</h2><p>Nome e logo del negozio per il menu e la barra superiore.</p></div><form className="settings-form" onSubmit={saveStoreName}><Field label="Nome attività" value={shopName} onChange={(e) => setShopName(e.target.value)} required /><div className="receipt-preview"><Store size={17} /><span>{shopName || 'Nome negozio'}</span><small>Anteprima intestazione scontrino</small></div><div className="shop-logo-setting"><span className="field-label">Logo del negozio</span>{data.settings.shop_logo && <img src={data.settings.shop_logo} alt="Logo attuale" />}<button className="button button-outline" type="button" onClick={() => void chooseShopLogo()}><Store size={15} /> {data.settings.shop_logo ? 'Sostituisci logo' : 'Scegli logo'}</button></div><button className="button button-primary"><Check size={16} /> Salva nome</button></form></>}
         {settingsTab === 'Sicurezza' && <><div className="settings-title"><h2>Accesso e sicurezza</h2><p>All’avvio viene richiesto il barcode di un dipendente; puoi mantenere il PIN come alternativa.</p></div><div className="security-status"><div className="security-icon"><ShieldCheck size={20} /></div><div><strong>{hasPin ? 'PIN alternativo attivo' : 'Nessun PIN alternativo configurato'}</strong><span>{hasPin ? 'Puoi usare il PIN dalla schermata di accesso.' : 'Configura un PIN da 4 a 8 cifre come alternativa al barcode.'}</span></div></div><form className="settings-form" onSubmit={async (event) => { event.preventDefault(); try { await window.gestionale.setPin(newPin); setHasPin(true); setNewPin(''); notify('PIN aggiornato'); } catch (error) { notify(errorText(error)); } }}><Field label={hasPin ? 'Nuovo PIN (4–8 cifre)' : 'PIN (4–8 cifre)'} type="password" inputMode="numeric" minLength={4} maxLength={8} pattern="[0-9]{4,8}" value={newPin} onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))} required /><button className="button button-primary"><LockKeyhole size={16} />{hasPin ? 'Aggiorna PIN' : 'Attiva PIN'}</button></form></>}
         {settingsTab === 'Archivio dati' && <><div className="settings-title"><h2>Archivio locale</h2><p>Database SQLite e copie giornaliere dei dati.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Archivio locale attivo</div><div className="database-card"><div className="security-icon"><Archive size={20} /></div><div><strong>Database SQLite</strong><span className="database-path">{data.settings.database_file}</span></div><span className="stock-badge">Attivo</span></div><div className="settings-form"><label className="field"><span>Cartella esportazioni giornaliere</span><div className="folder-input"><input value={archiveFolder} readOnly /><button className="button button-outline" type="button" onClick={() => void chooseFolder()}>Scegli cartella</button></div></label><p className="help-copy">Ogni giorno a mezzanotte vengono aggiornati file TXT e PDF nelle cartelle Magazzino, Cassa, Vendite e Statistiche.</p></div></>}
@@ -2025,7 +2137,7 @@ export default function App() {
     </main>
 
     {unsoldListOpen && <Modal title="Articoli ancora in magazzino" close={() => setUnsoldListOpen(false)} wide><div id="unsold-list-print"><Table headings={['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']}><>{unsoldProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td>{product.category}</td><td>{product.stock} {product.unit ?? 'PEZZO'}</td><td>{money.format(product.sale_price)}</td></tr>)}</>{!unsoldProducts.length && <tr><td colSpan={4} className="empty-cell">Non risultano articoli rimanenti in magazzino.</td></tr>}</Table></div><div className="unsold-list-actions no-print"><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa</button><button className="button button-primary" onClick={() => void shareUnsoldList()}><Share2 size={16} /> Condividi</button></div></Modal>}
-    {reportExportOpen && <Modal title={reportExportType.startsWith('sales') ? 'Esporta report vendite' : 'Esporta report contabilità e finanza'} close={() => setReportExportOpen(false)}><div className="report-export-options"><p>Vuoi applicare al report il filtro temporale selezionato ({reportExportType.startsWith('sales') ? salesPeriod : balancePeriod}) o includere tutto il periodo disponibile?</p><button className="button button-primary" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(true); else if (reportExportType === 'sales-csv') exportSalesCsv(true); else downloadFinancialBalance(true); }}><Check size={15} /> Rispetta il filtro di tempo</button><button className="button button-outline" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(false); else if (reportExportType === 'sales-csv') exportSalesCsv(false); else downloadFinancialBalance(false); }}><ArrowDownToLine size={15} /> Esporta tutto</button></div></Modal>}
+    {reportExportOpen && <Modal title={reportExportType.startsWith('sales') ? 'Esporta report vendite' : 'Esporta report contabilità e finanza'} close={() => setReportExportOpen(false)}><div className="report-export-options"><p>Vuoi applicare al report il filtro temporale selezionato ({reportExportType.startsWith('sales') ? salesPeriod : balancePeriod}) o includere tutto il periodo disponibile?</p><button className="button button-primary" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(true); else if (reportExportType === 'sales-xlsx') void exportSalesXlsx(true); else downloadFinancialBalance(true); }}><Check size={15} /> Rispetta il filtro di tempo</button><button className="button button-outline" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(false); else if (reportExportType === 'sales-xlsx') void exportSalesXlsx(false); else downloadFinancialBalance(false); }}><ArrowDownToLine size={15} /> Esporta tutto</button></div></Modal>}
     {employeeDetails && <Modal title={`${employeeDetails.first_name} ${employeeDetails.last_name}`} close={() => setEmployeeDetails(null)} rightHalf>
       <div className="employee-detail-content">
         <div className="employee-detail-hero"><img src={employeeDetails.photo_data} alt={`Foto di ${employeeDetails.first_name} ${employeeDetails.last_name}`} /><div><strong>{employeeDetails.role}</strong><span>{employeeDetails.operational_site} · {employeeDetails.shift}</span></div></div>
