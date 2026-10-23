@@ -6,7 +6,7 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, un
 import { join } from 'node:path';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
-import type { CheckoutInput, CustomerInput, Employee, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, SaleItem, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
+import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, Employee, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, SaleItem, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
 
 let database: Database.Database;
 let mainWindow: BrowserWindow;
@@ -102,6 +102,16 @@ function isEmployeeBarcode(value: unknown): boolean {
   if (typeof value !== 'string' || !value.trim()) return false;
   return Boolean(database.prepare('SELECT 1 FROM employees WHERE recognition_code = ? AND barcode = ?')
     .get(value.trim(), value.trim()));
+}
+
+function employeeForLogin(value: unknown): AuthenticatedEmployee | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  return database.prepare(`SELECT id, first_name, last_name, role, barcode FROM employees
+    WHERE recognition_code = ? AND barcode = ?`).get(value.trim(), value.trim()) as AuthenticatedEmployee | undefined ?? null;
+}
+
+function normalizedEmployeeRole(role: string): string {
+  return role.trim().toLocaleLowerCase('it-IT').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
 function findValidVoucher(code: string, today = localDate(new Date())): { id: number; batch_id: number; discount_percentage: number; starts_at: string; ends_at: string } | undefined {
@@ -499,6 +509,10 @@ async function archiveMissingDays(): Promise<void> {
 }
 
 function createWindow(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.focus();
+    return;
+  }
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 920,
@@ -514,7 +528,21 @@ function createWindow(): void {
   else mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
 }
 
-app.whenReady().then(() => {
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    } else {
+      createWindow();
+    }
+  });
+}
+
+if (hasSingleInstanceLock) app.whenReady().then(() => {
   initDatabase();
   ipcMain.handle('state:get', () => state());
   ipcMain.handle('pin:has', () => Boolean(setting('pin_hash')));
@@ -525,6 +553,7 @@ app.whenReady().then(() => {
     return timingSafeEqual(scryptSync(pin, salt, 64), Buffer.from(hash, 'hex'));
   });
   ipcMain.handle('employee:authorize', (_event, barcode: string) => isEmployeeBarcode(barcode));
+  ipcMain.handle('employee:login', (_event, barcode: string) => employeeForLogin(barcode));
   ipcMain.handle('pin:set', (_event, pin: string) => {
     if (!/^\d{4,8}$/.test(pin)) throw new Error('Il PIN deve contenere da 4 a 8 cifre.');
     const salt = randomBytes(16).toString('hex');
@@ -849,6 +878,7 @@ app.whenReady().then(() => {
       throw new Error('Controlla i dati obbligatori, gli allegati e i codici del dipendente.');
     }
     const { id, initial_password: _initialPassword, ...employeeDetails } = candidate;
+    employeeDetails.role = employeeDetails.role.trim();
     let passwordHash: string | undefined;
     if (initialPassword) {
       const salt = randomBytes(16).toString('hex');
@@ -888,6 +918,19 @@ app.whenReady().then(() => {
       }
       throw error;
     }
+  });
+  ipcMain.handle('employee:delete', (_event, employeeId: number, requesterBarcode: string) => {
+    if (!Number.isInteger(employeeId) || employeeId < 1) throw new Error('Dipendente non valido.');
+    const requester = employeeForLogin(requesterBarcode);
+    if (!requester || !['proprietario', 'direttore'].includes(normalizedEmployeeRole(requester.role))) {
+      throw new Error('Solo un proprietario o un direttore può eliminare dipendenti.');
+    }
+    const employee = database.prepare('SELECT id FROM employees WHERE id = ?').get(employeeId);
+    if (!employee) throw new Error('Dipendente non trovato.');
+    database.transaction(() => {
+      database.prepare('DELETE FROM payroll_payments WHERE employee_id = ?').run(employeeId);
+      database.prepare('DELETE FROM employees WHERE id = ?').run(employeeId);
+    })();
   });
   ipcMain.handle('customer:save', (_event, customer: CustomerInput) => {
     if (!customer || [customer.first_name, customer.last_name, customer.phone, customer.email]

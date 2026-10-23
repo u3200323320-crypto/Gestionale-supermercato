@@ -111,6 +111,7 @@ export interface Employee {
   created_at: string;
 }
 
+export type AuthenticatedEmployee = Pick<Employee, 'id' | 'first_name' | 'last_name' | 'role' | 'barcode'>;
 export type EmployeeInput = Omit<Employee, 'id' | 'created_at'> & { id?: number; initial_password?: string };
 export interface PayrollPayment {
   id: number;
@@ -162,6 +163,7 @@ declare global {
     hasPin: () => Promise<boolean>;
     verifyPin: (pin: string) => Promise<boolean>;
     verifyEmployeeBarcode: (barcode: string) => Promise<boolean>;
+    loginEmployee: (barcode: string) => Promise<AuthenticatedEmployee | null>;
     setPin: (pin: string) => Promise<void>;
     saveProduct: (product: ProductInput) => Promise<void>;
     updateStock: (productId: number, stock: number) => Promise<void>;
@@ -173,6 +175,7 @@ declare global {
     saveVoucherBatch: (batch: VoucherBatchInput) => Promise<void>;
     deleteVoucherBatch: (id: number) => Promise<void>;
     saveEmployee: (employee: EmployeeInput) => Promise<void>;
+    deleteEmployee: (employeeId: number, requesterBarcode: string) => Promise<void>;
     deleteProduct: (productId: number) => Promise<void>;
     disposeExpiredProduct: (productId: number) => Promise<void>;
     paySalary: (input: PayrollPaymentInput) => Promise<void>;

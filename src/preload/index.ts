@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { CheckoutInput, EmployeeInput, Expense, PayrollPaymentInput, Printer, ProductInput, PromotionInput, SaleItem, VoucherBatchInput } from '../shared/types';
+import type { AuthenticatedEmployee, CheckoutInput, EmployeeInput, Expense, PayrollPaymentInput, Printer, ProductInput, PromotionInput, SaleItem, VoucherBatchInput } from '../shared/types';
 
 contextBridge.exposeInMainWorld('gestionale', {
   getState: () => ipcRenderer.invoke('state:get'),
@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('gestionale', {
   hasPin: () => ipcRenderer.invoke('pin:has'),
   verifyPin: (pin: string) => ipcRenderer.invoke('pin:verify', pin),
   verifyEmployeeBarcode: (barcode: string) => ipcRenderer.invoke('employee:authorize', barcode),
+  loginEmployee: (barcode: string): Promise<AuthenticatedEmployee | null> => ipcRenderer.invoke('employee:login', barcode),
   setPin: (pin: string) => ipcRenderer.invoke('pin:set', pin),
   saveProduct: (product: ProductInput) => ipcRenderer.invoke('product:save', product),
   updateStock: (productId: number, stock: number) => ipcRenderer.invoke('product:stock', productId, stock),
@@ -22,6 +23,7 @@ contextBridge.exposeInMainWorld('gestionale', {
   saveVoucherBatch: (batch: VoucherBatchInput) => ipcRenderer.invoke('voucher-batch:save', batch),
   deleteVoucherBatch: (id: number) => ipcRenderer.invoke('voucher-batch:delete', id),
   saveEmployee: (employee: EmployeeInput) => ipcRenderer.invoke('employee:save', employee),
+  deleteEmployee: (employeeId: number, requesterBarcode: string) => ipcRenderer.invoke('employee:delete', employeeId, requesterBarcode),
   deleteProduct: (productId: number) => ipcRenderer.invoke('product:delete', productId),
   disposeExpiredProduct: (productId: number) => ipcRenderer.invoke('product:dispose-expired', productId),
   paySalary: (input: PayrollPaymentInput) => ipcRenderer.invoke('payroll:pay', input),
