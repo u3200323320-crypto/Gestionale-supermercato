@@ -175,14 +175,14 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .select-wrap { position: relative; display: flex; height: 38px; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid #dfe4de; border-radius: 4px; background: white; color: #89928b; font-size: 10px; }
 .select-wrap select { min-width: 94px; appearance: none; border: 0; outline: 0; background: transparent; color: #445148; font-size: 10px; }
 .select-wrap svg { pointer-events: none; }
-.product-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 18px; }
 .product-tile { display: flex; min-height: 157px; flex-direction: column; align-items: flex-start; padding: 12px; border: 1px solid var(--line); border-radius: 5px; background: white; cursor: pointer; text-align: left; transition: border-color .16s, box-shadow .16s, transform .16s; }
 .product-tile:hover { transform: translateY(-2px); border-color: #e4c4a7; box-shadow: 0 6px 16px rgb(38 59 42 / 6%); }
 .tile-icon { display: grid; width: 31px; height: 31px; place-items: center; margin-bottom: 9px; border-radius: 4px; background: var(--green-soft); color: var(--green-dark); }
-.tile-category { color: #929a93; font-size: 9px; }
-.product-tile > strong { display: -webkit-box; overflow: hidden; min-height: 31px; margin-top: 4px; color: #3a463d; font-size: 11px; font-weight: 600; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.tile-price { margin-top: auto; padding-top: 8px; color: var(--green-dark); font-family: 'Manrope', sans-serif; font-size: 14px; font-weight: 700; }
-.tile-stock { margin-top: 4px; color: #959d96; font-size: 9px; }
+.tile-category { color: #737d75; font-size: 10px; }
+.product-tile > strong { display: -webkit-box; overflow: hidden; min-height: 38px; margin-top: 5px; color: #29352e; font-size: 15px; font-weight: 800; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.tile-price { margin-top: auto; padding-top: 9px; color: var(--green-dark); font-family: 'Manrope', sans-serif; font-size: 15px; font-weight: 700; }
+.tile-stock { margin-top: 5px; color: #737d75; font-size: 10px; }
 .text-low { color: #af764e; }
 .empty-state { display: flex; min-height: 200px; flex-direction: column; align-items: center; justify-content: center; gap: 9px; color: #949d96; text-align: center; }
 .empty-state strong { color: #536158; font-size: 12px; }
@@ -642,18 +642,19 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .sidebar nav .nav-label-extra { margin: 12px 9px 4px; }
 .employee-toolbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; }
 .employee-toolbar > .search-field { max-width: none; }
-.employee-card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.employee-card { display: grid; min-width: 0; min-height: 242px; grid-template-columns: minmax(0, 1fr); align-content: start; justify-items: center; gap: 9px; padding: 16px; border: 1px solid var(--green); border-radius: 6px; background: var(--green-soft); color: var(--ink); cursor: pointer; text-align: center; }
-.employee-card:hover { border-color: var(--green-dark); background: var(--green-block); }
+.employee-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 20px; max-width: 1180px; }
+.employee-card { display: grid; min-width: 0; min-height: 242px; grid-template-columns: minmax(0, 1fr); align-content: start; justify-items: stretch; gap: 10px; padding: 16px; border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--ink); cursor: pointer; text-align: left; }
+.employee-card:hover { border-color: #c8d2c9; background: #fbfcfb; }
 .employee-card .employee-list-photo { width: 86px; height: 86px; border: 3px solid white; border-radius: 50%; box-shadow: 0 1px 5px rgb(20 40 20 / 14%); }
+.employee-card .employee-list-photo { justify-self: center; }
 .employee-card > span { display: grid; max-width: 100%; gap: 2px; }
-.employee-card small { color: var(--green-dark); font-size: 9px; }
-.employee-card strong { overflow-wrap: anywhere; font-size: 11px; font-weight: 650; }
-.employee-role-manager { display: grid; grid-column: 1 / -1; gap: 9px; }
-.employee-role-list { display: flex; flex-wrap: wrap; gap: 6px; }
-.employee-role-list > span { display: flex; align-items: center; gap: 3px; padding: 2px 4px 2px 9px; border: 1px solid var(--line); border-radius: 4px; background: white; font-size: 10px; }
-.employee-role-add { display: flex; align-items: end; gap: 8px; }
-.employee-role-add .field { min-width: 150px; flex: 1; }
+.employee-card small { color: #737d75; font-size: 10px; }
+.employee-card strong { overflow-wrap: anywhere; font-size: 12px; font-weight: 650; }
+.product-category-manager { display: grid; grid-column: 1 / -1; gap: 10px; }
+.product-category-add { display: flex; align-items: end; gap: 8px; }
+.product-category-add .field { min-width: 150px; flex: 1; }
+.product-category-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.product-category-list > span { display: flex; align-items: center; gap: 3px; padding: 2px 4px 2px 9px; border: 1px solid var(--line); border-radius: 4px; background: white; font-size: 11px; }
 .inventory-control-auth { display: grid; max-width: 520px; gap: 14px; margin: 60px auto; padding: 24px; }
 .inventory-control-auth > .security-icon { width: 42px; height: 42px; }
 .inventory-control-auth h2 { font-size: 17px; }
@@ -663,8 +664,11 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .inventory-control-tools > .search-field { flex: 1; }
 .payment-promotion-always-visible > strong { display: block; margin-bottom: 8px; color: #536b58; font-size: 11px; }
 .employee-tracker-actions { flex-wrap: wrap; }
-#employee-tracker-print table { min-width: 100%; }
-#employee-tracker-print th { height: 48px; color: #000; font-size: 13px; font-weight: 700; }
+#employee-tracker-print table { min-width: 100%; font-size: 12px; }
+#employee-tracker-print th { height: 48px; color: #000; font-size: 14px; font-weight: 700; }
+#employee-tracker-print td { font-size: 12px; }
+.inventory-control-page table { font-size: 12px; }
+.inventory-control-page th { height: 48px; color: #000; font-size: 15px; font-weight: 800; }
 .employee-create-panel { max-width: none; }
 .employee-form { display: grid; gap: 17px; padding-top: 20px; }
 .employee-uploads { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
@@ -781,7 +785,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .balance-periods { display: grid; min-width: 0; flex: 1; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .balance-periods .status-filter { width: 100%; min-height: 37px; padding: 0 8px; white-space: normal; }
 
-html[lang='ar'] body, html[lang='ar'] body * { font-family: 'Noto Sans Arabic', 'Noto Naskh Arabic', Tahoma, sans-serif !important; font-weight: 400 !important; letter-spacing: 0; }
+html[lang='ar'] body, html[lang='ar'] body * { font-family: 'Noto Sans Arabic', 'Noto Naskh Arabic', Tahoma, sans-serif !important; letter-spacing: 0; }
 html[dir='rtl'] .sidebar { right: 0; left: auto; border-right: 0; border-left: 1px solid var(--line); }
 html[dir='rtl'] .main-content { margin-right: 235px; margin-left: 0; }
 html[dir='rtl'] .nav-item { text-align: right; }
@@ -801,7 +805,7 @@ html[dir='rtl'] .toast { right: auto; left: 24px; }
 @media (max-width: 850px) {
   html[dir='rtl'] .main-content { margin-right: 68px; }
   html[dir='rtl'] .sidebar .nav-item.active::before { right: -8px; }
-  .employee-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .employee-card-grid { grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); }
   .employee-toolbar { grid-template-columns: auto minmax(0, 1fr) auto; }
   .balance-toolbar { flex-wrap: wrap; }
   .balance-download, .balance-periods { width: 100%; }
@@ -810,7 +814,6 @@ html[dir='rtl'] .toast { right: auto; left: 24px; }
   .employee-card-grid { grid-template-columns: 1fr; }
   .inventory-control-tools { flex-wrap: wrap; }
   .inventory-control-tools > .search-field { flex-basis: 100%; }
-  .employee-role-add { align-items: stretch; flex-direction: column; }
   .analytics-grid { grid-template-columns: 1fr; }
   .accounting-metrics, .accounting-balance-metrics { grid-template-columns: 1fr 1fr; }
   .expense-form { grid-template-columns: 1fr; }

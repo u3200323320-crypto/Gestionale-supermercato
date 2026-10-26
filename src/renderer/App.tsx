@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { cloneElement, createContext, isValidElement, useContext, useEffect, useRef, useState } from 'react';
 import type { FormEvent, InputHTMLAttributes, ReactNode } from 'react';
 import { Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Camera, Check, ChevronDown, CircleAlert, ClipboardList, CreditCard, Eye, House, LockKeyhole, Minus, Package, Palette, Pencil, Plus, Printer, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Store, Trash2, TrendingUp, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -11,14 +11,14 @@ import { voucherCodePrefix } from '../shared/vouchers';
 import homeBanner from './home-banner.svg';
 import type { AppState, AuthenticatedEmployee, Employee, EmployeeInput, Expense, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, Sale, SaleItem, Section } from '../shared/types';
 
-const money = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
-const dateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' });
-const receiptDate = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short' });
-const receiptTime = new Intl.DateTimeFormat('it-IT', { timeStyle: 'short' });
-const navbarDate = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-const navbarTime = new Intl.DateTimeFormat('it-IT', { hour: '2-digit', minute: '2-digit' });
-const quantityFormat = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 3 });
-const receiptQuantity = quantityFormat;
+let money = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
+let dateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' });
+let receiptDate = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short' });
+let receiptTime = new Intl.DateTimeFormat('it-IT', { timeStyle: 'short' });
+let navbarDate = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+let navbarTime = new Intl.DateTimeFormat('it-IT', { hour: '2-digit', minute: '2-digit' });
+let quantityFormat = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 3 });
+let receiptQuantity = quantityFormat;
 const roundQuantity = (quantity: number) => Math.round((quantity + Number.EPSILON) * 1000) / 1000;
 const colors = ['var(--green)', '#c17e4f', '#658499', '#a9aa64', '#8a7461', '#609085'];
 const localDateKey = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -28,6 +28,170 @@ const promotionDurations = ['1 giorno', '3 giorni', '7 giorni', '1 mese', 'Sempr
 const expenseCategories = ['Affitto', 'Utenze', 'Forniture', 'Stipendi', 'Manutenzione', 'Trasporti', 'Altro'];
 const defaultEmployeeRoles = ['Proprietario', 'Direttore', 'Contabilità', 'cassiere'];
 type AppLanguage = 'it' | 'ar';
+const arabicUiTranslations: Record<string, string> = {
+  'ACCESSO AL GESTIONALE': 'تسجيل الدخول إلى النظام', 'Inserisci il PIN di sicurezza': 'أدخل رمز الأمان', 'PIN di sicurezza': 'رمز الأمان',
+  'Accedi': 'دخول', 'Accedi con barcode': 'الدخول باستخدام الرمز الشريطي', 'Scansiona il barcode del dipendente per accedere': 'امسح الرمز الشريطي للموظف لتسجيل الدخول',
+  'Barcode dipendente': 'الرمز الشريطي للموظف', 'Verifica barcode': 'تحقق من الرمز الشريطي', 'Homepage': 'الرئيسية', 'Magazzino': 'المخزن',
+  'Controllo': 'الفحص', 'Storico Magazzino': 'سجل المخزن', 'Carica e scarica merce': 'إدخال وإخراج البضائع', 'Cassa': 'نقطة البيع',
+  'Vendite': 'المبيعات', 'Statistiche': 'الإحصاءات', 'Bilancio gestionale': 'الميزانية الإدارية', 'Spese': 'المصروفات',
+  'Modifica o Elimina': 'تعديل أو حذف', 'Offerta': 'العروض', 'Promozioni': 'العروض الترويجية', 'Crea buoni sconto': 'إنشاء قسائم الخصم',
+  'Lista buoni sconto': 'قائمة قسائم الخصم', 'Dipendenti': 'الموظفون', 'Lista Dipendenti': 'قائمة الموظفين', 'Crea Dipendente': 'إنشاء موظف',
+  'Paga Stipendi': 'دفع الرواتب', 'Tracker Dipendenti': 'سجل أنشطة الموظفين', 'Impostazioni': 'الإعدادات', 'GESTIONE NEGOZIO': 'إدارة المتجر',
+  'OPERATIVITÀ': 'العمليات', 'GESTIONE EXTRA': 'إدارة إضافية', 'Articoli in magazzino': 'المنتجات في المخزن',
+  'articoli registrati': 'منتجات مسجلة', 'Scarica report': 'تنزيل التقرير', 'Aggiungi nuovo articolo': 'إضافة منتج جديد', 'Categoria': 'الفئة',
+  'Tutte': 'الكل', 'Disponibilità': 'التوفر', 'Tutto': 'الكل', 'Disponibile': 'متوفر', 'In esaurimento': 'قارب على النفاد',
+  'Esaurito': 'نفد', 'Cerca per nome o codice…': 'البحث بالاسم أو الرمز…', 'Avviso date di scadenza': 'تنبيه تواريخ انتهاء الصلاحية',
+  'Prodotti scaduti': 'منتجات منتهية الصلاحية', 'Gestisci articoli scaduti': 'إدارة المنتجات منتهية الصلاحية',
+  'Nuovo articolo': 'منتج جديد', 'Modifica articolo': 'تعديل المنتج', 'Nome articolo': 'اسم المنتج', 'Codice a barre': 'الرمز الشريطي',
+  'Unità di vendita': 'وحدة البيع', 'Prezzo di vendita': 'سعر البيع', 'Prezzo di acquisto': 'سعر الشراء', 'Giacenza': 'المخزون',
+  'Soglia minima avviso': 'حد التنبيه الأدنى', 'Gestione data di scadenza': 'إدارة تاريخ انتهاء الصلاحية', 'Data di scadenza': 'تاريخ انتهاء الصلاحية',
+  'Nuova categoria': 'فئة جديدة', 'Aggiungi': 'إضافة', 'Salva articolo': 'حفظ المنتج', 'Elimina articolo': 'حذف المنتج',
+  'Annulla': 'إلغاء', 'Salva modifiche': 'حفظ التغييرات', 'Cerca per nome o barcode…': 'البحث بالاسم أو الرمز الشريطي…',
+  'Cerca con fotocamera': 'البحث بالكاميرا', 'Esporta Excel': 'تصدير Excel', 'Periodo': 'الفترة', 'Dipendente': 'الموظف',
+  'Da': 'من', 'A': 'إلى', 'Stampa': 'طباعة', 'Stampa lista': 'طباعة القائمة', 'Scarica lista': 'تنزيل القائمة',
+  'Scarica lista Excel': 'تنزيل القائمة بصيغة Excel', 'Data e ora': 'التاريخ والوقت', 'Attività': 'النشاط', 'Sezione': 'القسم', 'Dettagli': 'التفاصيل',
+  'Nessuna attività registrata per i filtri selezionati.': 'لا توجد أنشطة مسجلة للفلاتر المحددة.', 'Nessun articolo trovato': 'لم يتم العثور على منتجات',
+  'Modifica la ricerca o aggiungi un articolo.': 'عدّل البحث أو أضف منتجًا.', 'Nome': 'الاسم', 'Cognome': 'اسم العائلة', 'Ruolo': 'الدور', 'Sede': 'الفرع',
+  'Cerca dipendente, ruolo o sede…': 'البحث عن موظف أو دور أو فرع…', 'Scarica contratti': 'تنزيل العقود', 'Nessun dipendente registrato.': 'لا يوجد موظفون مسجلون.',
+  'Nessun dipendente corrisponde alla ricerca.': 'لا يوجد موظفون مطابقون للبحث.', 'Foto del dipendente': 'صورة الموظف', 'Foto documenti': 'صور المستندات',
+  'Contratto in PDF': 'العقد بصيغة PDF', 'Seleziona immagine': 'اختيار صورة', 'Aggiungi immagini': 'إضافة صور', 'Età': 'العمر',
+  'Sesso': 'الجنس', 'Seleziona sesso': 'اختر الجنس', 'Donna': 'أنثى', 'Uomo': 'ذكر', 'Altro': 'أخرى', 'Indirizzo di casa': 'عنوان المنزل',
+  'Indirizzo email': 'البريد الإلكتروني', 'Password iniziale': 'كلمة المرور الأولية', 'Numero di telefono': 'رقم الهاتف', 'Sede Operativa': 'فرع العمل',
+  'Seleziona ruolo': 'اختر الدور', 'Turno': 'الوردية', 'Seleziona turno': 'اختر الوردية', 'Mattina': 'صباحًا', 'Pomeriggio': 'مساءً',
+  'Notte': 'ليلًا', 'Turno unico': 'وردية واحدة', 'Variabile': 'متغير', 'Metodo di pagamento': 'طريقة الدفع', 'Contanti': 'نقدًا', 'Bonifico': 'تحويل بنكي',
+  'IBAN': 'رقم الحساب المصرفي الدولي', 'Stipendio (€)': 'الراتب (€)', 'Codice riconoscimento': 'رمز التعريف', 'Barcode di riconoscimento': 'الرمز الشريطي للتعريف',
+  'Elimina dipendente': 'حذف الموظف', 'Crea dipendente': 'إنشاء موظف', 'Nome offerta': 'اسم العرض', 'Sconto': 'الخصم', 'Applicazione': 'التطبيق',
+  'Durata offerta': 'مدة العرض', 'Requisito minimo': 'الحد الأدنى المطلوب', 'Nessuno': 'لا يوجد', 'Spesa minima': 'الحد الأدنى للشراء',
+  'Crea promozione': 'إنشاء عرض ترويجي', 'Modifica': 'تعديل', 'Elimina': 'حذف', 'Vendite di oggi': 'مبيعات اليوم', 'Netto vendite': 'صافي المبيعات',
+  'Articoli venduti': 'المنتجات المباعة', 'scontrini emessi': 'إيصالات صادرة',
+  'Verifica dipendente': 'التحقق من الموظف', 'Scansiona o inserisci il barcode del dipendente per aprire il controllo magazzino.': 'امسح أو أدخل الرمز الشريطي للموظف لفتح فحص المخزن.',
+  'Numero scontrino': 'رقم الإيصال', 'Cerca numero scontrino…': 'البحث عن رقم الإيصال…', 'Quantità totale': 'الكمية الإجمالية', 'Totale lordo': 'الإجمالي قبل الخصم',
+  'Totale netto': 'الإجمالي بعد الخصم', 'Caricamento archivio…': 'جارٍ تحميل الأرشيف…', 'Articolo': 'المنتج', 'Codice': 'الرمز',
+  'Prezzo vendita': 'سعر البيع', 'Quantità': 'الكمية', 'Persona': 'الشخص', 'Nota': 'ملاحظة', 'Movimento': 'الحركة', 'Stato': 'الحالة', 'Azione': 'الإجراء',
+  'Stipendio': 'الراتب', 'Metodo': 'الطريقة', 'Paga': 'ادفع', 'Ricevuta': 'الإيصال', 'Da pagare': 'غير مدفوع', 'Registra una spesa': 'تسجيل مصروف',
+  'Inserisci descrizione, categoria, importo e data.': 'أدخل الوصف والفئة والمبلغ والتاريخ.', 'Descrizione': 'الوصف', 'Importo': 'المبلغ', 'Data': 'التاريخ',
+  'Registra spesa': 'تسجيل المصروف', 'Immagine homepage': 'صورة الصفحة الرئيسية', 'Accesso PIN': 'دخول برمز PIN', 'Account locale': 'حساب محلي',
+  'Pezzi': 'قطع', 'Affitto': 'إيجار', 'Utenze': 'خدمات', 'Forniture': 'مستلزمات', 'Stipendi': 'رواتب', 'Manutenzione': 'صيانة', 'Trasporti': 'نقل',
+  'Dispensa': 'مواد غذائية', 'Freschi': 'منتجات طازجة', 'Bevande': 'مشروبات', 'Surgelati': 'مجمدات', 'Igiene': 'نظافة', 'Frutta e verdura': 'فواكه وخضروات',
+  'Proprietario': 'المالك', 'Direttore': 'المدير', 'Contabilità': 'المحاسبة', 'cassiere': 'أمين الصندوق', 'Automatica': 'تلقائي', 'Manuale': 'يدوي',
+  'Analisi vendite': 'تحليل المبيعات', 'Gestione prodotti scaduti': 'إدارة المنتجات منتهية الصلاحية',
+  'Modifica vendita': 'تعديل البيع', 'Modifica vendita completata': 'تم تعديل البيع', 'Nuova password (opzionale)': 'كلمة مرور جديدة (اختياري)',
+  'Annulla modifica': 'إلغاء التعديل', 'Crea forma': 'إنشاء صيغة', 'Percentuale %': 'النسبة المئوية %', 'Applicata': 'تم التطبيق', 'Applica': 'تطبيق',
+  'Offerte manuali disponibili': 'العروض اليدوية المتاحة', 'Offerte automatiche applicate': 'العروض التلقائية المطبقة', 'Nessuna offerta automatica applicabile al carrello.': 'لا توجد عروض تلقائية تنطبق على السلة.',
+  'CARRELLO': 'السلة', 'Carrello': 'السلة', 'Aggiungi al carrello': 'إضافة إلى السلة', 'Svuota carrello': 'إفراغ السلة',
+  'Seleziona gli articoli': 'اختر المنتجات', 'per iniziare una vendita': 'لبدء عملية بيع', 'Procedi al pagamento': 'المتابعة إلى الدفع',
+  'Subtotale': 'المجموع الفرعي', 'TOTALE': 'الإجمالي', 'Totale': 'الإجمالي', 'Totale da pagare': 'الإجمالي المستحق',
+  'Prezzo prima dello sconto': 'السعر قبل الخصم', 'Buono sconto': 'قسيمة خصم', 'Verifica': 'تحقق', 'Conferma e stampa scontrino': 'تأكيد وطباعة الإيصال',
+  'Lo scontrino viene registrato nel database locale.': 'يتم تسجيل الإيصال في قاعدة البيانات المحلية.', 'Pagamento': 'الدفع', 'Carta': 'بطاقة',
+  'Bancomat': 'بطاقة خصم', 'Buono': 'قسيمة', 'Scontrino #': 'الإيصال رقم ', 'Numero scontrino:': 'رقم الإيصال:', 'Grazie per averci scelto!': 'شكرًا لاختياركم لنا!',
+  'Stampa scontrino': 'طباعة الإيصال', 'Nessuno scontrino trovato con questo numero.': 'لم يتم العثور على هذا الإيصال.',
+  'Esporta report vendite': 'تصدير تقرير المبيعات', 'Esporta report contabilità e finanza': 'تصدير تقرير المحاسبة والمالية', 'Esporta tutto': 'تصدير الكل',
+  'Rispetta il filtro di tempo': 'Applica il filtro temporale', 'Tutte le vendite →': 'كل المبيعات ←', 'Tutti': 'الكل', 'Oggi': 'اليوم', 'Ieri': 'أمس',
+  'Ultima settimana': 'الأسبوع الماضي', 'Ultimi 3 mesi': 'آخر 3 أشهر', 'Ultimi 6 mesi': 'آخر 6 أشهر', 'Ultimo anno': 'العام الماضي', 'Da - A': 'من - إلى',
+  'Vai al magazzino →': 'الانتقال إلى المخزن ←', 'Valore del magazzino': 'قيمة المخزون', 'Valorizzazione della giacenza attuale': 'قيمة المخزون الحالي',
+  'Prodotti più e meno venduti': 'المنتجات الأكثر والأقل مبيعًا', 'Vendite giornaliere': 'المبيعات اليومية', 'Vendite per categoria': 'المبيعات حسب الفئة',
+  'Calendario vendite': 'تقويم المبيعات', 'Andamento mensile': 'الاتجاه الشهري', 'Ricavi': 'الإيرادات', 'Costo merce': 'تكلفة البضائع',
+  'Spese operative': 'المصروفات التشغيلية', 'Ricavi, costo merce, spese operative e risultato': 'الإيرادات وتكلفة البضائع والمصروفات والنتيجة',
+  'Incasso per giorno': 'الإيراد اليومي', 'Incasso per mese nel periodo selezionato': 'الإيراد الشهري للفترة المحددة', 'Composizione del bilancio': 'مكونات الميزانية',
+  'Pagamenti per metodo': 'المدفوعات حسب الطريقة', 'Valore degli articoli venduti nel periodo selezionato': 'قيمة المنتجات المباعة خلال الفترة المحددة',
+  'Ultimi sette giorni nel periodo selezionato': 'آخر سبعة أيام من الفترة المحددة', 'Dettaglio mensile ·': 'التفاصيل الشهرية ·',
+  'Nessun prodotto registrato.': 'لا توجد منتجات مسجلة.', 'Nessun articolo in magazzino trovato.': 'لم يتم العثور على منتجات في المخزن.',
+  'Nessun articolo in scadenza nei prossimi 10 giorni': 'لا توجد منتجات تنتهي صلاحيتها خلال الأيام العشرة القادمة',
+  'Nessun prodotto scaduto': 'لا توجد منتجات منتهية الصلاحية', 'Non ci sono prodotti scaduti da gestire.': 'لا توجد منتجات منتهية الصلاحية لإدارتها.',
+  'Nessun movimento nel periodo selezionato.': 'لا توجد حركات خلال الفترة المحددة.', 'Nessuna vendita registrata.': 'لا توجد مبيعات مسجلة.',
+  'Nessun pagamento nel periodo selezionato.': 'لا توجد مدفوعات خلال الفترة المحددة.', 'Quantità venduta': 'الكمية المباعة', 'Quantità non venduta': 'الكمية غير المباعة',
+  'Disponibili': 'متوفر', 'Disponibilità:': 'التوفر:', 'Prezzo': 'السعر', 'Prodotto': 'المنتج', 'Gruppo': 'المجموعة', 'Riordinare': 'إعادة الطلب',
+  'Es. 0,750': 'مثال: 0.750', 'Peso in kg': 'الوزن بالكيلوغرام', 'Volume in litri': 'الحجم باللتر', 'PEZZO': 'قطعة', 'kg': 'كغ', 'lit.': 'لتر', 'pz': 'قطعة',
+  'Seleziona un dispositivo per configurarlo.': 'اختر جهازًا لإعداده.', 'Dispositivi': 'الأجهزة', 'Info negozio': 'معلومات المتجر', 'Tema dell’app': 'مظهر التطبيق',
+  'Tema dell\'app': 'مظهر التطبيق', 'Scegli i colori dell’interfaccia. La selezione viene salvata su questo dispositivo.': 'اختر ألوان الواجهة. سيتم حفظ الاختيار على هذا الجهاز.',
+  'Nome negozio': 'اسم المتجر', 'Nome e logo del negozio per il menu e la barra superiore.': 'اسم المتجر وشعاره للقائمة والشريط العلوي.',
+  'Scegli logo': 'اختيار الشعار', 'Sostituisci logo': 'استبدال الشعار', 'Logo del negozio': 'شعار المتجر', 'Scegli immagine': 'اختيار صورة',
+  'Sostituisci immagine': 'استبدال الصورة', 'Scegli un’immagine salvata nel gestionale per la pagina iniziale.': 'اختر صورة محفوظة في النظام للصفحة الرئيسية.',
+  'Accesso e sicurezza': 'الدخول والأمان', 'Attiva PIN': 'تفعيل رمز PIN', 'Aggiorna PIN': 'تحديث رمز PIN', 'Nuovo PIN (4–8 cifre)': 'رمز PIN جديد (4–8 أرقام)',
+  'Usa il PIN': 'استخدام رمز PIN', 'PIN alternativo attivo': 'رمز PIN البديل مفعل', 'Nessun PIN alternativo configurato': 'لم يتم إعداد رمز PIN بديل',
+  'Configura un PIN da 4 a 8 cifre come alternativa al barcode.': 'قم بإعداد رمز PIN من 4 إلى 8 أرقام كبديل للرمز الشريطي.',
+  'All’avvio viene richiesto il barcode di un dipendente; puoi mantenere il PIN come alternativa.': 'يُطلب عند التشغيل الرمز الشريطي للموظف؛ ويمكنك الاحتفاظ برمز PIN كبديل.',
+  'Operativo': 'يعمل', 'Stato operativo': 'حالة التشغيل', 'Stato corrente del gestionale.': 'الحالة الحالية للنظام.',
+  'Database SQLite': 'قاعدة بيانات SQLite', 'Archivio locale': 'الأرشيف المحلي', 'Archivio locale attivo': 'الأرشيف المحلي نشط',
+  'Database SQLite e copie giornaliere dei dati.': 'قاعدة بيانات SQLite ونسخ يومية من البيانات.', 'Scegli cartella': 'اختيار مجلد',
+  'Cartella esportazioni giornaliere': 'مجلد التصدير اليومي', 'Ogni giorno a mezzanotte vengono aggiornati file TXT e PDF nelle cartelle Magazzino, Cassa, Vendite e Statistiche.': 'يتم تحديث ملفات TXT وPDF يوميًا عند منتصف الليل في مجلدات المخزن ونقطة البيع والمبيعات والإحصاءات.',
+  'Stampante scontrini': 'طابعة الإيصالات', 'Seleziona stampante': 'اختيار الطابعة', 'Rileva stampanti': 'البحث عن الطابعات',
+  'Collega una stampante rilevata dal sistema.': 'وصّل طابعة تم اكتشافها بواسطة النظام.', 'Nessuna stampante rilevata. Verifica che sia collegata e installata nel sistema.': 'لم يتم اكتشاف طابعة. تحقق من توصيلها وتثبيتها في النظام.',
+  'La stampante salvata non è attualmente disponibile: selezionane una nuova.': 'الطابعة المحفوظة غير متاحة حاليًا؛ اختر طابعة أخرى.',
+  'Lettore di codici a barre': 'قارئ الرموز الشريطية', 'Configura il lettore collegato al computer.': 'إعداد القارئ المتصل بالحاسوب.',
+  'In attesa della prima lettura del lettore USB/HID.': 'بانتظار أول قراءة من قارئ USB/HID.', 'Rilevato: è stata acquisita almeno una scansione su questo computer.': 'تم الكشف: جرت قراءة واحدة على الأقل على هذا الحاسوب.',
+  'La scansione del badge verifica e apre automaticamente la vendita.': 'تتحقق قراءة البطاقة من الموظف وتفتح البيع تلقائيًا.',
+  'I lettori USB che si comportano come tastiera vengono riconosciuti automaticamente quando inviano un codice. La preferenza resta salvata tra gli avvii.': 'يتم التعرف تلقائيًا على قارئات USB التي تعمل كلوحة مفاتيح عند إرسال رمز. ويُحفظ هذا الإعداد بين مرات التشغيل.',
+  'Mese': 'الشهر', 'Mese di competenza': 'شهر الاستحقاق', 'Data di pagamento': 'تاريخ الدفع', 'Paga tutti gli stipendi': 'دفع جميع الرواتب',
+  'Scarica ricevute del mese': 'تنزيل إيصالات الشهر', 'Pagato il': 'تم الدفع في',
+  'Ricevuta pagamento affitto': 'إيصال دفع الإيجار', 'Ricevuta allegata': 'تم إرفاق الإيصال',
+  'Menu principale': 'القائمة الرئيسية', 'Torna al magazzino': 'العودة إلى المخزن', 'Dettaglio articolo': 'تفاصيل المنتج', 'DETTAGLIO ARTICOLO': 'تفاصيل المنتج',
+  'Giacenza attuale:': 'المخزون الحالي:', 'Condividi': 'مشاركة', 'Vedi lista': 'عرض القائمة', 'Scarica': 'تنزيل', 'Salva nome': 'حفظ الاسم',
+  'Inizio': 'البداية', 'Scadenza': 'انتهاء الصلاحية', 'Sempre': 'دائمًا', 'Attivo': 'مفعل', 'Disattivo': 'معطل', 'On': 'تشغيل', 'Off': 'إيقاف',
+  'Rimuovi articolo dalla vendita': 'إزالة المنتج من البيع', 'Nuova quantità': 'كمية جديدة',
+  'Conferma giacenza': 'تأكيد المخزون', 'Autorizza modifica articolo': 'السماح بتعديل المنتج', 'Autorizza nuova quantità': 'السماح بالكمية الجديدة',
+  'Articoli': 'المنتجات', 'Posizione': 'الموقع',
+  'Conferma e salva': 'تأكيد وحفظ', 'Nuovo totale': 'الإجمالي الجديد', 'Sconto in euro': 'الخصم باليورو', 'Pagamento:': 'الدفع:', 'Risparmio:': 'التوفير:',
+  'Ok': 'حسنًا', 'F2': 'F2', 'ITALIANO': 'الإيطالية', 'Chiudi': 'إغلاق', 'Cancella ricerca': 'مسح البحث', 'Non applicata (massimo 1)': 'غير مطبقة (بحد أقصى 1)',
+  'Non risultano articoli rimanenti in magazzino.': 'لا توجد منتجات متبقية في المخزن.', 'Le categorie appariranno dopo la prima vendita.': 'ستظهر الفئات بعد أول عملية بيع.',
+  'Puoi aggiungerlo come nuovo articolo: il codice acquisito sarà già inserito nel modulo.': 'يمكنك إضافته كمنتج جديد؛ سيتم إدخال الرمز الممسوح مسبقًا في النموذج.',
+  'Puoi usare il PIN dalla schermata di accesso.': 'يمكنك استخدام رمز PIN من شاشة تسجيل الدخول.', 'Il codice a barre': 'الرمز الشريطي',
+  'Scansiona o inserisci il barcode di riconoscimento del dipendente per': 'امسح أو أدخل الرمز الشريطي للتعريف بالموظف من أجل',
+  'Scansiona il barcode di un dipendente per continuare con «': 'امسح الرمز الشريطي للموظف للمتابعة مع «',
+  'Nessuna spesa registrata.': 'لا توجد مصروفات مسجلة.', 'Nessuna spesa corrisponde alla ricerca.': 'لا توجد مصروفات تطابق البحث.',
+  'Nessuna stampante rilevata.': 'لم يتم اكتشاف طابعة.', 'Risultato': 'النتيجة', 'Soglia': 'الحد الأدنى', 'Stampa codici': 'طباعة الرموز', 'Genera codici': 'إنشاء الرموز',
+  'Articoli ancora in magazzino': 'المنتجات المتبقية في المخزن',
+  'Aggiungi articoli': 'إضافة منتجات', 'Conferma l’aggiunta': 'تأكيد الإضافة', 'Conferma l\'aggiunta': 'تأكيد الإضافة', 'Modifica dipendente': 'تعديل الموظف',
+  'GESTIONALE': 'نظام الإدارة', 'MODIFICA VENDITA': 'تعديل البيع', '% di sconto': '٪ خصم',
+  'Aggiungi articolo': 'إضافة منتج', 'Anteprima intestazione scontrino': 'معاينة عنوان الإيصال', 'Barcode': 'الرمز الشريطي',
+  'Buoni sconto gruppo': 'مجموعة قسائم الخصم', 'Buono sconto (': 'قسيمة خصم (', 'Butta articolo': 'إتلاف المنتج', 'Elimina vendita': 'حذف عملية البيع',
+  'Contratto PDF allegato': 'تم إرفاق العقد بصيغة PDF', 'PNG, JPG o WEBP · massimo 5 MB ciascuna': 'PNG أو JPG أو WEBP · بحد أقصى 5 ميغابايت لكل صورة',
+  'Scarica bilancio': 'تنزيل الميزانية', 'Totale incassato nel periodo': 'إجمالي الإيرادات خلال الفترة',
+  'Verifica gli articoli scaduti e registra lo smaltimento.': 'تحقق من المنتجات منتهية الصلاحية وسجّل التخلص منها.',
+  'Vuoi applicare al report il filtro temporale selezionato (': 'هل تريد تطبيق عامل التصفية الزمني المحدد على التقرير (',
+  'disponibili': 'متوفر', 'non è presente tra gli articoli.': 'غير موجود ضمن المنتجات.', 'questo scontrino.': 'هذا الإيصال.',
+};
+const AppLanguageContext = createContext<AppLanguage>('it');
+const AppDynamicNamesContext = createContext<Set<string>>(new Set());
+const localizedText = (value: string, language: AppLanguage, dynamicNames = new Set<string>()) => {
+  if (language !== 'ar') return value;
+  if (dynamicNames.has(value.trim())) return value;
+  const exact = arabicUiTranslations[value.trim()];
+  if (exact) return value.replace(value.trim(), exact);
+  return Object.entries(arabicUiTranslations)
+    .filter(([source]) => source.length > 2)
+    .sort(([first], [second]) => second.length - first.length)
+    .reduce((text, [source, translated]) => text.replace(
+      new RegExp(`(^|[^\\p{L}\\p{N}])(${source.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')})(?=$|[^\\p{L}\\p{N}])`, 'giu'),
+      (_match, prefix: string, match: string) => `${prefix}${dynamicNames.has(match) ? match : translated}`,
+    ), value);
+};
+
+function LocalizedNodes({ children }: { children: ReactNode }) {
+  const language = useContext(AppLanguageContext);
+  const dynamicNames = useContext(AppDynamicNamesContext);
+  const translate = (node: ReactNode, preserve = false, parentClass = ''): ReactNode => {
+    if (typeof node === 'string') {
+      if (preserve || language !== 'ar' || dynamicNames.has(node.trim())) return node;
+      const trimmed = node.trim();
+      const translated = localizedText(trimmed, language, dynamicNames);
+      return node.replace(trimmed, translated);
+    }
+    if (Array.isArray(node)) return node.map((child) => translate(child, preserve, parentClass));
+    if (!isValidElement<{ children?: ReactNode; className?: string; value?: string }>(node)) return node;
+    const className = node.props.className ?? '';
+    const elementType = typeof node.type === 'string' ? node.type : '';
+    const preserveContent = preserve || className.split(/\s+/).includes('cell-primary')
+      || (elementType === 'strong' && ['employee-card', 'product-tile', 'cash-product', 'cart-line-name', 'employee-detail-hero', 'user-card'].some((name) => parentClass.split(/\s+/).includes(name)));
+    if (node.props.children === undefined) return node;
+    if (elementType === 'option') {
+      const optionValue = node.props.value ?? (typeof node.props.children === 'string' ? node.props.children : undefined);
+      return cloneElement(node, { value: optionValue }, translate(node.props.children, preserveContent, className || parentClass));
+    }
+    return cloneElement(node, undefined, translate(node.props.children, preserveContent, className || parentClass));
+  };
+  return <>{translate(children)}</>;
+}
 const appThemes = [
   { id: 'green', label: 'Verde', color: '#72bf6a' },
   { id: 'blue', label: 'Blu', color: '#42A4F6' },
@@ -183,11 +347,13 @@ function promotionEndDate(start: string, duration: string): string {
 }
 
 function Field({ label, fieldClassName, ...props }: InputHTMLAttributes<HTMLInputElement> & { label: string; fieldClassName?: string }) {
-  return <label className={`field${fieldClassName ? ` ${fieldClassName}` : ''}`}><span>{label}</span><input {...props} /></label>;
+  const language = useContext(AppLanguageContext);
+  return <label className={`field${fieldClassName ? ` ${fieldClassName}` : ''}`}><span>{localizedText(label, language)}</span><input {...props} /></label>;
 }
 
 function Modal({ title, close, children, wide = false, rightHalf = false, narrowPanel = false }: { title: string; close: () => void; children: ReactNode; wide?: boolean; rightHalf?: boolean; narrowPanel?: boolean }) {
-  return <div className={`modal-backdrop${rightHalf ? ' modal-right-half' : ''}`} onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><section className={`modal${wide ? ' modal-wide' : ''}${rightHalf ? ' modal-payment-panel' : ''}${narrowPanel ? ' modal-payment-narrow' : ''}`} role="dialog" aria-modal="true"><header className="modal-header"><div><p className="eyebrow">GESTIONALE</p><h2>{title}</h2></div><button className="icon-button" onClick={close} aria-label="Chiudi"><X size={18} /></button></header>{children}</section></div>;
+  const language = useContext(AppLanguageContext);
+  return <div className={`modal-backdrop${rightHalf ? ' modal-right-half' : ''}`} onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><section className={`modal${wide ? ' modal-wide' : ''}${rightHalf ? ' modal-payment-panel' : ''}${narrowPanel ? ' modal-payment-narrow' : ''}`} role="dialog" aria-modal="true"><header className="modal-header"><div><p className="eyebrow">GESTIONALE</p><h2>{localizedText(title, language)}</h2></div><button className="icon-button" onClick={close} aria-label={localizedText('Chiudi', language)}><X size={18} /></button></header><LocalizedNodes>{children}</LocalizedNodes></section></div>;
 }
 
 function BarcodeImage({ value }: { value: string }) {
@@ -201,15 +367,6 @@ function BarcodeImage({ value }: { value: string }) {
 function EmployeeForm({ initial, save, cancel, notify, canDelete = false, onDelete }: { initial: EmployeeInput; save: (employee: EmployeeInput) => Promise<void>; cancel: () => void; notify: (message: string) => void; canDelete?: boolean; onDelete?: () => Promise<void> }) {
   const [employee, setEmployee] = useState(initial);
   const [saving, setSaving] = useState(false);
-  const [roles, setRoles] = useState<string[]>(() => {
-    try {
-      const savedRoles: unknown = JSON.parse(window.localStorage.getItem('employee-roles') ?? 'null');
-      return Array.isArray(savedRoles) && savedRoles.every((role) => typeof role === 'string') ? savedRoles : defaultEmployeeRoles;
-    } catch {
-      return defaultEmployeeRoles;
-    }
-  });
-  const [newRole, setNewRole] = useState('');
   const editing = Boolean(initial.id);
   const documentImages = employeeDocumentImages(employee.documents_data);
   const setAttachment = async (field: 'photo_data' | 'contract_pdf_data', file: File | undefined) => {
@@ -252,21 +409,6 @@ function EmployeeForm({ initial, save, cancel, notify, canDelete = false, onDele
       documents_data: JSON.stringify(employeeDocumentImages(current.documents_data).filter((_, imageIndex) => imageIndex !== index)),
     }));
   };
-  const addRole = () => {
-    const role = newRole.trim();
-    if (!role || roles.some((item) => item.toLocaleLowerCase('it') === role.toLocaleLowerCase('it'))) return;
-    const nextRoles = [...roles, role];
-    setRoles(nextRoles);
-    window.localStorage.setItem('employee-roles', JSON.stringify(nextRoles));
-    setEmployee((current) => ({ ...current, role }));
-    setNewRole('');
-  };
-  const removeRole = (role: string) => {
-    const nextRoles = roles.filter((item) => item !== role);
-    setRoles(nextRoles);
-    window.localStorage.setItem('employee-roles', JSON.stringify(nextRoles));
-    if (employee.role === role) setEmployee((current) => ({ ...current, role: '' }));
-  };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!editing && (!employee.photo_data || !documentImages.length || !employee.contract_pdf_data)) {
@@ -282,7 +424,7 @@ function EmployeeForm({ initial, save, cancel, notify, canDelete = false, onDele
       setSaving(false);
     }
   };
-  return <form className="employee-form" onSubmit={submit}>
+  return <LocalizedNodes><form className="employee-form" onSubmit={submit}>
     <div className="employee-uploads">
       <label className="employee-upload">
         <span>Foto del dipendente</span>
@@ -308,8 +450,7 @@ function EmployeeForm({ initial, save, cancel, notify, canDelete = false, onDele
       <Field label={editing ? 'Nuova password (opzionale)' : 'Password iniziale'} type="password" autoComplete="new-password" minLength={8} value={employee.initial_password ?? ''} onChange={(event) => setEmployee({ ...employee, initial_password: event.target.value })} required={!editing} />
       <Field label="Numero di telefono" type="tel" value={employee.phone} onChange={(event) => setEmployee({ ...employee, phone: event.target.value })} required />
       <Field label="Sede Operativa" value={employee.operational_site} onChange={(event) => setEmployee({ ...employee, operational_site: event.target.value })} required />
-      <label className="field"><span>Ruolo</span><select value={employee.role} onChange={(event) => setEmployee((current) => ({ ...current, role: event.target.value }))} required><option value="">Seleziona ruolo</option>{[...new Set([...roles, employee.role].filter(Boolean))].map((role) => <option key={role}>{role}</option>)}</select></label>
-      <div className="employee-role-manager"><div className="employee-role-list">{roles.map((role) => <span key={role}>{role}<button type="button" className="icon-button small" aria-label={`Elimina ruolo ${role}`} onClick={() => removeRole(role)}><X size={13} /></button></span>)}</div><div className="employee-role-add"><Field label="Nuovo ruolo" value={newRole} onChange={(event) => setNewRole(event.target.value)} /><button className="button button-outline" type="button" onClick={addRole} disabled={!newRole.trim()}><Plus size={14} /> Aggiungi ruolo</button></div></div>
+      <label className="field"><span>Ruolo</span><select value={employee.role} onChange={(event) => setEmployee((current) => ({ ...current, role: event.target.value }))} required><option value="">Seleziona ruolo</option>{[...new Set([...defaultEmployeeRoles, employee.role].filter(Boolean))].map((role) => <option key={role}>{role}</option>)}</select></label>
       <label className="field"><span>Turno</span><select value={employee.shift} onChange={(event) => setEmployee({ ...employee, shift: event.target.value })} required><option value="">Seleziona turno</option><option>Mattina</option><option>Pomeriggio</option><option>Notte</option><option>Turno unico</option><option>Variabile</option></select></label>
       <label className="field"><span>Metodo di pagamento</span><select value={employee.payment_method} onChange={(event) => setEmployee({ ...employee, payment_method: event.target.value as EmployeeInput['payment_method'], iban: event.target.value === 'Bonifico' ? employee.iban : '' })} required><option>Contanti</option><option>Bonifico</option></select></label>
       <Field label="IBAN" value={employee.iban} onChange={(event) => setEmployee({ ...employee, iban: event.target.value.toUpperCase() })} disabled={employee.payment_method !== 'Bonifico'} required={employee.payment_method === 'Bonifico'} />
@@ -318,13 +459,25 @@ function EmployeeForm({ initial, save, cancel, notify, canDelete = false, onDele
       <label className="field employee-barcode-field"><span>Barcode di riconoscimento</span>      <div className="employee-barcode"><BarcodeImage value={employee.recognition_code} /><small>{employee.recognition_code}</small></div></label>
     </div>
     <div className={`form-actions${editing && canDelete ? ' has-delete' : ''}`}>{editing && canDelete && onDelete && <button className="button button-danger" type="button" onClick={() => void onDelete()}>Elimina dipendente</button>}<button className="button button-quiet" type="button" onClick={cancel}>Annulla</button><button className="button button-primary" disabled={saving}><Check size={16} /> {editing ? 'Salva modifiche' : 'Crea dipendente'}</button></div>
-  </form>;
+  </form></LocalizedNodes>;
 }
 
-function ProductForm({ initial, save, close, categories, onDelete }: { initial: ProductInput; save: (product: ProductInput) => Promise<void>; close: () => void; categories: string[]; onDelete?: () => Promise<void> }) {
+function ProductForm({ initial, save, close, categories, addCategory, deleteCategory, onDelete }: { initial: ProductInput; save: (product: ProductInput) => Promise<void>; close: () => void; categories: string[]; addCategory: (category: string) => void; deleteCategory: (category: string) => Promise<string>; onDelete?: () => Promise<void> }) {
   const [product, setProduct] = useState({ ...initial, expiry_enabled: initial.expiry_enabled ?? false, expiry_date: initial.expiry_date ?? '' });
   const [saving, setSaving] = useState(false);
+  const [newCategory, setNewCategory] = useState('');
   const change = (key: keyof ProductInput, value: string) => setProduct((current) => ({ ...current, [key]: ['sale_price', 'purchase_price', 'stock', 'low_stock_threshold'].includes(key) ? Number(value) : value }));
+  const createCategory = () => {
+    const nextCategory = newCategory.trim();
+    if (!nextCategory || categories.some((item) => item.toLocaleLowerCase('it') === nextCategory.toLocaleLowerCase('it'))) return;
+    addCategory(nextCategory);
+    setProduct((current) => ({ ...current, category: nextCategory }));
+    setNewCategory('');
+  };
+  const removeCategory = async (name: string) => {
+    const fallback = await deleteCategory(name);
+    if (product.category === name) setProduct((current) => ({ ...current, category: fallback }));
+  };
   const submit = async (event: FormEvent) => { event.preventDefault(); setSaving(true); try { await save(product); close(); } finally { setSaving(false); } };
   return <Modal title={initial.name ? 'Modifica articolo' : 'Nuovo articolo'} close={close} rightHalf={!initial.name}><form className="form-grid product-form" onSubmit={submit}>
     <Field label="Nome articolo" value={product.name} onChange={(e) => change('name', e.target.value)} required autoFocus />
@@ -342,6 +495,7 @@ function ProductForm({ initial, save, close, categories, onDelete }: { initial: 
       {product.expiry_enabled && <Field label="Data di scadenza" type="date" value={product.expiry_date ?? ''} onChange={(e) => setProduct((current) => ({ ...current, expiry_date: e.target.value }))} required />}
     </div>
     <label className="field product-category-field"><span>Categoria</span><select value={product.category} onChange={(event) => change('category', event.target.value)} required>{[...new Set([...categories, product.category].filter(Boolean))].map((item) => <option key={item}>{item}</option>)}</select></label>
+    <div className="product-category-manager"><div className="product-category-add"><Field label="Nuova categoria" value={newCategory} onChange={(event) => setNewCategory(event.target.value)} /><button className="button button-outline" type="button" onClick={createCategory} disabled={!newCategory.trim()}><Plus size={14} /> Aggiungi</button></div><div className="product-category-list">{categories.map((item) => <span key={item}>{item}<button type="button" className="icon-button small" aria-label={`Elimina categoria ${item}`} title={`Elimina categoria ${item}`} onClick={() => void removeCategory(item)}><Trash2 size={13} /></button></span>)}</div></div>
     <div className={`form-actions${onDelete ? ' has-delete' : ''}`}>{onDelete && <button className="button button-danger product-delete-button" type="button" onClick={() => void onDelete()}>Elimina articolo</button>}<button className="button button-quiet" type="button" onClick={close}>Annulla</button><button className="button button-primary" disabled={saving}><Check size={16} /> Salva articolo</button></div>
   </form></Modal>;
 }
@@ -373,6 +527,14 @@ export default function App() {
     return appThemes.find((theme) => theme.id === savedTheme)?.id ?? 'green';
   });
   const [language, setLanguage] = useState<AppLanguage>(() => window.localStorage.getItem('app-language') === 'ar' ? 'ar' : 'it');
+  const [savedCategories, setSavedCategories] = useState<string[]>(() => {
+    try {
+      const stored: unknown = JSON.parse(window.localStorage.getItem('product-categories') ?? 'null');
+      return Array.isArray(stored) && stored.every((item) => typeof item === 'string') ? stored : ['Dispensa'];
+    } catch {
+      return ['Dispensa'];
+    }
+  });
   const [voucherPrintBatch, setVoucherPrintBatch] = useState<AppState['voucherBatches'][number] | null>(null);
   const [voucherViewBatch, setVoucherViewBatch] = useState<AppState['voucherBatches'][number] | null>(null);
   const [voucherPercentage, setVoucherPercentage] = useState('10');
@@ -786,6 +948,16 @@ export default function App() {
     document.documentElement.lang = language;
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
     window.localStorage.setItem('app-language', language);
+    const locale = language === 'ar' ? 'ar' : 'it-IT';
+    money = new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' });
+    dateTime = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' });
+    receiptDate = new Intl.DateTimeFormat(locale, { dateStyle: 'short' });
+    receiptTime = new Intl.DateTimeFormat(locale, { timeStyle: 'short' });
+    navbarDate = new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    navbarTime = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
+    quantityFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 3 });
+    receiptQuantity = quantityFormat;
+    setCurrentTime(new Date());
   }, [language]);
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date()), 30_000);
@@ -815,7 +987,33 @@ export default function App() {
     return () => window.removeEventListener('afterprint', clearPrintBatch);
   }, [voucherPrintBatch]);
 
-  const categories = [...new Set(data?.products.map((item) => item.category) ?? [])];
+  const categories = [...new Set([...savedCategories, ...(data?.products.map((item) => item.category) ?? [])].filter(Boolean))];
+  const addProductCategory = (category: string) => {
+    const nextCategories = [...new Set([...categories, category])];
+    setSavedCategories(nextCategories);
+    window.localStorage.setItem('product-categories', JSON.stringify(nextCategories));
+  };
+  const deleteProductCategory = async (category: string) => {
+    const remainingCategories = categories.filter((item) => item !== category);
+    const fallback = remainingCategories[0] ?? 'Altro';
+    try {
+      for (const product of data?.products.filter((item) => item.category === category) ?? []) {
+        await window.gestionale.saveProduct({
+          code: product.code, name: product.name, unit: product.unit, category: fallback,
+          sale_price: product.sale_price, purchase_price: product.purchase_price, stock: product.stock,
+          low_stock_threshold: product.low_stock_threshold, expiry_enabled: product.expiry_enabled, expiry_date: product.expiry_date,
+        });
+      }
+      const nextCategories = remainingCategories.length ? remainingCategories : [fallback];
+      setSavedCategories(nextCategories);
+      window.localStorage.setItem('product-categories', JSON.stringify(nextCategories));
+      await refresh();
+      return fallback;
+    } catch (error) {
+      notify(errorText(error));
+      throw error;
+    }
+  };
   const availableSaleProducts = data?.products.filter((product) => product.stock > 0) ?? [];
   const todayKey = localDateKey();
   const promotionDiscounts = calculatePromotionDiscounts(data?.promotions ?? [], data?.products ?? [], cart, todayKey, manualPromotionId, automaticPromotionId);
@@ -1564,7 +1762,7 @@ export default function App() {
     if (!data) return;
     try {
       const sales = data.sales.filter((sale) => !respectTimeFilters || matchesSalesPeriod(sale.created_at));
-      const headers = ['Numero scontrino', 'Data e ora', 'Metodo di pagamento', 'Articoli', 'Quantità totale', 'Totale lordo', 'Sconto', 'Totale netto'];
+      const headers = ['N° scontrino', 'Data e ora', 'Met. di pagamento', 'Articoli', 'Quantità totale', 'Totale lordo', 'Sconto', 'Totale netto'];
       const xmlText = (value: string) => value
         .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
         .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
@@ -1594,7 +1792,7 @@ export default function App() {
       zip.folder('_rels')?.file('.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`);
       zip.folder('xl')?.file('workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Vendite" sheetId="1" r:id="rId1"/></sheets></workbook>`);
       zip.folder('xl')?.folder('_rels')?.file('workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
-      zip.folder('xl')?.file('styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.000"/><numFmt numFmtId="165" formatCode="#,##0.00 &quot;€&quot;"/></numFmts><fonts count="3"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font><font><b/><sz val="14"/><color rgb="FF000000"/><name val="Aptos"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF38684E"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs></styleSheet>`);
+      zip.folder('xl')?.file('styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.000"/><numFmt numFmtId="165" formatCode="#,##0.00 &quot;€&quot;"/></numFmts><fonts count="3"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font><font><b/><sz val="14"/><color rgb="FF000000"/><name val="Aptos"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF38684E"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs></styleSheet>`);
       zip.folder('xl')?.folder('worksheets')?.file('sheet1.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:H${rows.length + 1}"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="19" customWidth="1"/><col min="2" max="2" width="22" customWidth="1"/><col min="3" max="3" width="24" customWidth="1"/><col min="4" max="4" width="60" customWidth="1"/><col min="5" max="5" width="18" customWidth="1"/><col min="6" max="8" width="18" customWidth="1"/></cols><sheetData>${headerRow}${bodyRows}</sheetData></worksheet>`);
       const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
@@ -2022,9 +2220,15 @@ export default function App() {
   };
 
   if (locked) return <div className="lock-screen"><div className="lock-panel"><div className="language-choice" role="group" aria-label="Lingua"><button type="button" className={language === 'it' ? 'selected' : ''} aria-pressed={language === 'it'} onClick={() => setLanguage('it')}>ITALIANO</button><button type="button" className={language === 'ar' ? 'selected' : ''} aria-pressed={language === 'ar'} onClick={() => setLanguage('ar')}>العربية</button></div><div className="brand-mark"><Store size={23} /></div><p className="eyebrow">{language === 'ar' ? 'تسجيل الدخول' : 'ACCESSO AL GESTIONALE'}</p><h1>{data?.settings.shop_name ?? (language === 'ar' ? 'متجرك' : 'Il tuo supermercato')}</h1>{pinFallback ? <><p className="muted">{language === 'ar' ? 'أدخل رمز الأمان' : 'Inserisci il PIN di sicurezza'}</p><form onSubmit={unlock}><Field label={language === 'ar' ? 'رمز الأمان' : 'PIN di sicurezza'} type="password" value={pin} onChange={(event) => setPin(event.target.value)} autoFocus /><button className="button button-primary full-width"><LockKeyhole size={16} /> {language === 'ar' ? 'دخول' : 'Accedi'}</button></form><button className="text-button" type="button" onClick={() => { setPinFallback(false); setPin(''); }}>{language === 'ar' ? 'الدخول بالباركود' : 'Accedi con barcode'}</button></> : <><p className="muted">{language === 'ar' ? 'امسح الرمز الشريطي للموظف للدخول' : 'Scansiona il barcode del dipendente per accedere'}</p><form onSubmit={(event) => { event.preventDefault(); void unlockWithBarcode(loginBarcode); }}><Field label={language === 'ar' ? 'باركود الموظف' : 'Barcode dipendente'} value={loginBarcode} onChange={(event) => setLoginBarcode(event.target.value.trim())} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void unlockWithBarcode(loginBarcode); } }} autoFocus /><button className="button button-primary full-width"><Barcode size={16} /> {language === 'ar' ? 'تحقق من الرمز' : 'Verifica barcode'}</button></form>{hasPin && <button className="text-button" type="button" onClick={() => setPinFallback(true)}>{language === 'ar' ? 'استخدم رمز الأمان' : 'Usa il PIN'}</button>}</>}</div>{notice && <div className="toast">{notice}</div>}</div>;
-  if (!data) return <div className="loading-screen"><span className="loader" />Caricamento archivio…</div>;
+  if (!data) return <div className="loading-screen"><span className="loader" />{language === 'ar' ? 'جارٍ تحميل الأرشيف…' : 'Caricamento archivio…'}</div>;
 
-  return <div className="app-shell">
+  const dynamicNames = new Set([
+    data.settings.shop_name,
+    ...data.products.map((product) => product.name),
+    ...data.employees.flatMap((employee) => [employee.first_name, employee.last_name, `${employee.first_name} ${employee.last_name}`.trim()]),
+    ...data.sales.flatMap((sale) => sale.items.map((item) => item.name)),
+  ].filter(Boolean));
+  return <AppLanguageContext.Provider value={language}><AppDynamicNamesContext.Provider value={dynamicNames}><LocalizedNodes><div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className={`brand-mark${data.settings.shop_logo ? ' has-logo' : ''}`}>{data.settings.shop_logo ? <img src={data.settings.shop_logo} alt="Logo negozio" /> : <Store size={20} />}</div><div><strong>{data.settings.shop_name}</strong><small>GESTIONE NEGOZIO</small></div></div>
       <div className="nav-label">OPERATIVITÀ</div>
@@ -2032,7 +2236,7 @@ export default function App() {
         {canAccess('home') && <button className={`nav-item${section === 'home' ? ' active' : ''}`} onClick={() => navigateTo('home')}><House size={18} /><span>Homepage</span></button>}
         {canAccess('inventory') && <>
           <button aria-expanded={openSidebarMenu === 'inventory'} className={`nav-item${section === 'inventory' || section === 'inventory-control' || section === 'expired-products' || section === 'inventory-history' || section === 'stock-movement' ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'inventory' ? null : 'inventory')}><Package size={18} /><span>{language === 'ar' ? 'المخزن' : 'Magazzino'}</span>{!isCashierRole(activeRole) && <ChevronDown className={`nav-chevron${openSidebarMenu === 'inventory' ? ' open' : ''}`} size={15} />}</button>
-          {openSidebarMenu === 'inventory' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'inventory' ? ' selected' : ''}`} onClick={() => navigateTo('inventory')}>{language === 'ar' ? 'المخزن' : 'Magazzino'}</button><button className={`sidebar-subitem${section === 'inventory-control' ? ' selected' : ''}`} onClick={() => navigateTo('inventory-control')}>{language === 'ar' ? 'فحص المخزن' : 'Controllo'}</button>{canAccess('inventory-history') && <button className={`sidebar-subitem${section === 'inventory-history' ? ' selected' : ''}`} onClick={() => navigateTo('inventory-history')}>{language === 'ar' ? 'سجل المخزن' : 'Storico Magazzino'}</button>}</div>}
+          {openSidebarMenu === 'inventory' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'inventory' ? ' selected' : ''}`} onClick={() => navigateTo('inventory')}>{language === 'ar' ? 'المخزن' : 'Magazzino'}</button>{canAccess('inventory-history') && <button className={`sidebar-subitem${section === 'inventory-history' ? ' selected' : ''}`} onClick={() => navigateTo('inventory-history')}>{language === 'ar' ? 'سجل المخزن' : 'Storico Magazzino'}</button>}<button className={`sidebar-subitem${section === 'inventory-control' ? ' selected' : ''}`} onClick={() => navigateTo('inventory-control')}>{language === 'ar' ? 'فحص المخزن' : 'Controllo'}</button></div>}
         </>}
         {nav.filter((item) => ['cash', 'sales'].includes(item.section) && canAccess(item.section)).map(({ section: target, label, icon: Icon }) => <button key={target} className={`nav-item${section === target ? ' active' : ''}`} onClick={() => navigateTo(target)}><Icon size={18} /><span>{label}</span>{target === 'cash' && <kbd>F2</kbd>}</button>)}
         {canAccess('statistics') && <>
@@ -2150,7 +2354,7 @@ export default function App() {
           <div className="inventory-history-actions no-print">
             <SelectField label="Periodo" value={activityPeriod} onChange={setActivityPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Da - A']} />
             {activityPeriod === 'Da - A' && <><Field label="Da" type="date" value={activityFrom} onChange={(event) => setActivityFrom(event.target.value)} /><Field label="A" type="date" value={activityTo} onChange={(event) => setActivityTo(event.target.value)} /></>}
-            <SelectField label="Dipendente" value={activityEmployeeId} onChange={setActivityEmployeeId} options={['Tutti', ...data.employees.map((employee) => String(employee.id))]} labels={['Tutti', ...data.employees.map((employee) => `${employee.first_name} ${employee.last_name}`)]} />
+            <SelectField label="Dipendente" value={activityEmployeeId} onChange={setActivityEmployeeId} options={['Tutti', ...data.employees.map((employee) => String(employee.id))]} labels={['Tutti', ...data.employees.map((employee) => `${employee.first_name} ${employee.last_name}`)]} preserveLabels />
             <button className="button button-outline" onClick={() => void exportEmployeeActivityXlsx()}><ArrowDownToLine size={16} /> Scarica lista Excel</button>
             <button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa lista</button>
           </div>
@@ -2263,7 +2467,7 @@ export default function App() {
     {pendingUnknownCode && <Modal title="Articolo non presente" wide close={() => { setPendingUnknownCode(''); setScannerSearch(''); }}><div className="unknown-code-message"><CircleAlert size={26} /><p>Il codice a barre <strong>{pendingUnknownCode}</strong> non è presente tra gli articoli.</p><span>Puoi aggiungerlo come nuovo articolo: il codice acquisito sarà già inserito nel modulo.</span><div className="form-actions"><button className="button button-quiet" onClick={() => { setPendingUnknownCode(''); setScannerSearch(''); }}>Annulla</button><button className="button button-primary" onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct, code: pendingUnknownCode }); setPendingUnknownCode(''); }}><Plus size={16} /> Aggiungi articolo</button></div></div></Modal>}
     {measuredProduct && <Modal title={measuredProduct.unit === 'KG' ? `Inserisci il peso · ${measuredProduct.name}` : `Inserisci il volume · ${measuredProduct.name}`} close={() => setMeasuredProduct(null)}><form className="form-grid measured-quantity-form" onSubmit={confirmMeasuredQuantity}><p className="measured-price">{money.format(measuredProduct.sale_price)} / {measuredProduct.unit === 'KG' ? 'kg' : 'lit.'}</p><Field label={measuredProduct.unit === 'KG' ? 'Peso in kg' : 'Volume in litri'} type="number" min="0.001" step="0.001" value={measuredQuantity} onChange={(event) => setMeasuredQuantity(event.target.value)} required autoFocus placeholder={measuredProduct.unit === 'KG' ? 'Es. 0,750' : 'Es. 1,500'} /><div className="measured-quantity-options">{(measuredProduct.unit === 'KG' ? [{ label: '50 g', quantity: 0.05 }, { label: '100 g', quantity: 0.1 }, { label: '250 g', quantity: 0.25 }, { label: '500 g', quantity: 0.5 }, { label: '1 kg', quantity: 1 }, { label: '2 kg', quantity: 2 }] : [{ label: '50 ml', quantity: 0.05 }, { label: '100 ml', quantity: 0.1 }, { label: '250 ml', quantity: 0.25 }, { label: '500 ml', quantity: 0.5 }, { label: '1 L', quantity: 1 }, { label: '2 L', quantity: 2 }]).map(({ label, quantity }) => <button className="button button-outline" key={label} type="button" onClick={() => addMeasuredQuantity(quantity)}>{label}</button>)}</div><div className="form-actions"><button className="button button-quiet full-width" type="button" onClick={() => setMeasuredProduct(null)}>Annulla</button><button className="button button-primary full-width"><Check size={16} /> Aggiungi al carrello</button></div></form></Modal>}
     {productAuthorization && <Modal title={productAuthorization.action === 'edit' ? 'Autorizza modifica articolo' : 'Autorizza nuova quantità'} close={() => { setProductAuthorization(null); setProductAuthorizationBarcode(''); }}><form className="form-grid" onSubmit={(event) => { event.preventDefault(); void authorizeProductAction(productAuthorizationBarcode); }}><p>Scansiona il barcode di un dipendente per continuare con «{productAuthorization.product.name}».</p><Field label="Barcode del dipendente" value={productAuthorizationBarcode} onChange={(event) => setProductAuthorizationBarcode(event.target.value)} autoFocus required /><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setProductAuthorization(null); setProductAuthorizationBarcode(''); }}>Annulla</button><button className="button button-primary"><Barcode size={16} /> Verifica barcode</button></div></form></Modal>}
-    {productForm && <ProductForm initial={productForm} save={saveProduct} close={() => { setProductForm(null); setProductEditingId(null); }} categories={categories} onDelete={productEditingId !== null ? async () => { const product = data.products.find((item) => item.id === productEditingId); if (product) await deleteProduct(product); } : undefined} />}
+    {productForm && <ProductForm initial={productForm} save={saveProduct} close={() => { setProductForm(null); setProductEditingId(null); }} categories={categories} addCategory={addProductCategory} deleteCategory={deleteProductCategory} onDelete={productEditingId !== null ? async () => { const product = data.products.find((item) => item.id === productEditingId); if (product) await deleteProduct(product); } : undefined} />}
     {stockProduct && <Modal title={`Aggiungi quantità · ${stockProduct.name}`} close={() => { setStockProduct(null); setStockMovementEmployeeBarcode(''); }}><form className="form-grid stock-form" onSubmit={(event) => void saveStock(event)}>
       <p className="stock-current">Giacenza attuale: <strong>{stockProduct.stock}</strong></p>
       <Field label="Nuova quantità" type="number" min="0.01" step="any" value={stockInput} onChange={(event) => setStockInput(event.target.value)} required placeholder="Quantità da aggiungere" />
@@ -2313,29 +2517,34 @@ export default function App() {
     {saleAddOpen && <div className="drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSaleAddOpen(false); }}><aside className="detail-drawer sale-add-drawer"><header className="drawer-header"><div><p className="eyebrow">MODIFICA VENDITA</p><h2>Aggiungi articoli</h2></div><button className="icon-button" onClick={() => setSaleAddOpen(false)} aria-label="Chiudi"><X size={18} /></button></header><div className="sale-add-content"><SearchInput value={saleProductSearch} onChange={setSaleProductSearch} placeholder="Cerca articolo o codice…" /><div className="sale-add-products">{availableSaleProducts.filter((product) => product.name.toLowerCase().includes(saleProductSearch.toLowerCase()) || product.code.includes(saleProductSearch)).map((product) => { const selected = saleCart.find((item) => item.product_id === product.id); return <button className={`sale-add-product${selected ? ' selected' : ''}`} key={product.id} onClick={() => addProductToSaleCart(product)}><span><strong>{product.name}</strong><small>{product.code} · {product.stock} {product.unit ?? 'PEZZO'} disponibili</small></span><span>{money.format(product.sale_price)} / {product.unit ?? 'PEZZO'}<b>{selected ? ` · ${selected.quantity}` : ''}</b></span></button>; })}</div><details className="sale-add-cart"><summary><strong>Carrello · {saleCart.length}</strong></summary>{saleCart.map((item) => <span key={item.product_id}>{item.name} · {item.quantity} {item.unit} <b>{money.format(item.quantity * item.unit_price)}</b></span>)}</details><button className="button button-primary full-width sale-add-confirm" disabled={!saleCart.length} onClick={addProductToSale}><ShoppingCart size={16} /> Conferma l'aggiunta</button></div></aside></div>}
     {camera && <CameraScanner close={() => setCamera(false)} scan={scanCameraCode} />}
     {notice && <div className="toast">{notice}</div>}
-  </div>;
+  </div></LocalizedNodes></AppDynamicNamesContext.Provider></AppLanguageContext.Provider>;
 }
 
 function Metric({ icon: Icon, label, value, detail, compact = false, action }: { icon: typeof House; label: string; value: string; detail: string; compact?: boolean; action?: ReactNode }) {
-  return <section className={`metric-card${compact ? ' compact' : ''}`}>{action}<div className="metric-icon"><Icon size={18} /></div><span className="metric-label">{label}</span><strong>{value}</strong><small>{detail}</small></section>;
+  const language = useContext(AppLanguageContext);
+  return <section className={`metric-card${compact ? ' compact' : ''}`}>{action}<div className="metric-icon"><Icon size={18} /></div><span className="metric-label">{localizedText(label, language)}</span><strong>{value}</strong><small>{localizedText(detail, language)}</small></section>;
 }
 function SectionHeading({ icon: Icon, title, detail, action }: { icon: typeof House; title: string; detail: string; action: ReactNode }) {
-  return <div className="section-heading"><div className="section-title-icon"><Icon size={18} /></div><div><h3>{title}</h3><p>{detail}</p></div>{action}</div>;
+  const language = useContext(AppLanguageContext);
+  return <div className="section-heading"><div className="section-title-icon"><Icon size={18} /></div><div><h3>{localizedText(title, language)}</h3><p>{localizedText(detail, language)}</p></div>{action}</div>;
 }
 function Table({ headings, children }: { headings: string[]; children: ReactNode }) {
-  return <div className="table-wrap"><table><thead><tr>{headings.map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>{children}</tbody></table></div>;
+  const language = useContext(AppLanguageContext);
+  return <div className="table-wrap"><table><thead><tr>{headings.map((heading) => <th key={heading}>{localizedText(heading, language)}</th>)}</tr></thead><tbody><LocalizedNodes>{children}</LocalizedNodes></tbody></table></div>;
 }
 function SalesTable({ sales, onSelect }: { sales: Sale[]; onSelect?: (sale: Sale) => void }) {
   return <div className="table-wrap"><table><thead><tr><th>Numero scontrino</th><th>Data e ora</th><th>Articoli</th><th>Pagamento</th><th className="align-right">Totale</th></tr></thead><tbody>{sales.map((sale) => <tr key={sale.id} onClick={onSelect ? () => onSelect(sale) : undefined}><td className="receipt-number">#{sale.receipt_no}</td><td>{dateTime.format(new Date(sale.created_at))}</td><td>{sale.item_count}</td><td><span className="payment-tag">{sale.payment_method}</span></td><td className="align-right cell-primary">{money.format(sale.total)}</td></tr>)}{!sales.length && <tr><td colSpan={5} className="empty-cell">Nessuna vendita registrata.</td></tr>}</tbody></table></div>;
 }
 function SearchInput({ value, onChange, placeholder, numericOnly = false }: { value: string; onChange: (value: string) => void; placeholder: string; numericOnly?: boolean }) {
-  return <div className="search-field"><Search size={17} /><input placeholder={placeholder} value={value} inputMode={numericOnly ? 'numeric' : undefined} pattern={numericOnly ? '[0-9]*' : undefined} onChange={(event) => onChange(numericOnly ? event.target.value.replace(/\D/g, '') : event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault(); }} /><button type="button" className="search-clear" aria-label="Cancella ricerca" disabled={!value} onClick={() => onChange('')}><X size={15} /></button></div>;
+  const language = useContext(AppLanguageContext);
+  return <div className="search-field"><Search size={17} /><input placeholder={localizedText(placeholder, language)} value={value} inputMode={numericOnly ? 'numeric' : undefined} pattern={numericOnly ? '[0-9]*' : undefined} onChange={(event) => onChange(numericOnly ? event.target.value.replace(/\D/g, '') : event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault(); }} /><button type="button" className="search-clear" aria-label={localizedText('Cancella ricerca', language)} disabled={!value} onClick={() => onChange('')}><X size={15} /></button></div>;
 }
-function SelectField({ label, value, onChange, options, labels }: { label: string; value: string; onChange: (value: string) => void; options: string[]; labels?: string[] }) {
-  return <label className="field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option, index) => <option key={`${option}-${index}`} value={option}>{labels?.[index] ?? option}</option>)}</select></label>;
+function SelectField({ label, value, onChange, options, labels, preserveLabels = false }: { label: string; value: string; onChange: (value: string) => void; options: string[]; labels?: string[]; preserveLabels?: boolean }) {
+  const language = useContext(AppLanguageContext);
+  return <label className="field"><span>{localizedText(label, language)}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option, index) => { const display = labels?.[index] ?? option; return <option key={`${option}-${index}`} value={option}>{preserveLabels && labels?.[index] ? display : localizedText(display, language)}</option>; })}</select></label>;
 }
-function Detail({ label, value }: { label: string; value: string }) { return <div className="detail-row"><span>{label}</span><strong>{value}</strong></div>; }
-function Empty({ icon: Icon, title, detail }: { icon: typeof House; title: string; detail: string }) { return <div className="empty-state"><Icon size={28} /><strong>{title}</strong><span>{detail}</span></div>; }
+function Detail({ label, value }: { label: string; value: string }) { const language = useContext(AppLanguageContext); return <div className="detail-row"><span>{localizedText(label, language)}</span><strong>{value}</strong></div>; }
+function Empty({ icon: Icon, title, detail }: { icon: typeof House; title: string; detail: string }) { const language = useContext(AppLanguageContext); return <div className="empty-state"><Icon size={28} /><strong>{localizedText(title, language)}</strong><span>{localizedText(detail, language)}</span></div>; }
 
 function CameraScanner({ close, scan }: { close: () => void; scan: (code: string) => void }) {
   const video = useRef<HTMLVideoElement>(null);
