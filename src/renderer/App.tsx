@@ -153,6 +153,7 @@ const arabicUiTranslations: Record<string, string> = {
 };
 const AppLanguageContext = createContext<AppLanguage>('it');
 const AppDynamicNamesContext = createContext<Set<string>>(new Set());
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const localizedText = (value: string, language: AppLanguage, dynamicNames = new Set<string>()) => {
   if (language !== 'ar') return value;
   if (dynamicNames.has(value.trim())) return value;
@@ -162,7 +163,7 @@ const localizedText = (value: string, language: AppLanguage, dynamicNames = new 
     .filter(([source]) => source.length > 2)
     .sort(([first], [second]) => second.length - first.length)
     .reduce((text, [source, translated]) => text.replace(
-      new RegExp(`(^|[^\\p{L}\\p{N}])(${source.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')})(?=$|[^\\p{L}\\p{N}])`, 'giu'),
+      new RegExp(`(^|[^\\p{L}\\p{N}])(${escapeRegExp(source)})(?=$|[^\\p{L}\\p{N}])`, 'giu'),
       (_match, prefix: string, match: string) => `${prefix}${dynamicNames.has(match) ? match : translated}`,
     ), value);
 };
