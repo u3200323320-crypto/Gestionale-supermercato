@@ -6,13 +6,12 @@ import { jsPDF } from 'jspdf';
 import autoTable, { Table as AutoTableTable } from 'jspdf-autotable';
 import JSZip from 'jszip';
 import JsBarcode from 'jsbarcode';
-import arabicPdfFontUrl from './DejaVuSans.ttf?url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
 import homeBanner from './home-banner.svg';
 import type { AppState, AuthenticatedEmployee, Employee, EmployeeInput, Expense, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, Sale, SaleItem, Section } from '../shared/types';
 
-let money: { format: (value: number) => string } = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
+let money = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
 let dateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' });
 let receiptDate = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short' });
 let receiptTime = new Intl.DateTimeFormat('it-IT', { timeStyle: 'short' });
@@ -24,22 +23,6 @@ const roundQuantity = (quantity: number) => Math.round((quantity + Number.EPSILO
 const colors = ['var(--green)', '#c17e4f', '#658499', '#a9aa64', '#8a7461', '#609085'];
 const localDateKey = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const safeFilePart = (value: string) => value.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').trim() || 'Dipendente';
-let arabicPdfFontBase64: string | null = null;
-const addArabicPdfFont = async (doc: jsPDF) => {
-  if (!arabicPdfFontBase64) {
-    const bytes = new Uint8Array(await (await fetch(arabicPdfFontUrl)).arrayBuffer());
-    let binary = '';
-    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-    }
-    arabicPdfFontBase64 = btoa(binary);
-  }
-  doc.addFileToVFS('DejaVuSans.ttf', arabicPdfFontBase64);
-  doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'normal');
-  doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'bold');
-  doc.setFont('DejaVuSans', 'normal');
-  doc.setR2L(true);
-};
 const permanentPromotionEnd = '9999-12-31';
 const promotionDurations = ['1 giorno', '3 giorni', '7 giorni', '1 mese', 'Sempre', 'Personalizzata'];
 const expenseCategories = ['Affitto', 'Utenze', 'Forniture', 'Stipendi', 'Manutenzione', 'Trasporti', 'Altro'];
@@ -148,7 +131,7 @@ const arabicUiTranslations: Record<string, string> = {
   'Rimuovi articolo dalla vendita': 'إزالة المنتج من البيع', 'Nuova quantità': 'كمية جديدة',
   'Conferma giacenza': 'تأكيد المخزون', 'Autorizza modifica articolo': 'السماح بتعديل المنتج', 'Autorizza nuova quantità': 'السماح بالكمية الجديدة',
   'Articoli': 'المنتجات', 'Posizione': 'الموقع',
-  'Conferma e salva': 'تأكيد وحفظ', 'Nuovo totale': 'الإجمالي الجديد', 'Sconto in euro': 'الخصم بالجنيه المصري', 'Pagamento:': 'الدفع:', 'Risparmio:': 'التوفير:',
+  'Conferma e salva': 'تأكيد وحفظ', 'Nuovo totale': 'الإجمالي الجديد', 'Sconto in euro': 'الخصم باليورو', 'Pagamento:': 'الدفع:', 'Risparmio:': 'التوفير:',
   'Ok': 'حسنًا', 'F2': 'F2', 'ITALIANO': 'الإيطالية', 'Chiudi': 'إغلاق', 'Cancella ricerca': 'مسح البحث', 'Non applicata (massimo 1)': 'غير مطبقة (بحد أقصى 1)',
   'Non risultano articoli rimanenti in magazzino.': 'لا توجد منتجات متبقية في المخزن.', 'Le categorie appariranno dopo la prima vendita.': 'ستظهر الفئات بعد أول عملية بيع.',
   'Puoi aggiungerlo come nuovo articolo: il codice acquisito sarà già inserito nel modulo.': 'يمكنك إضافته كمنتج جديد؛ سيتم إدخال الرمز الممسوح مسبقًا في النموذج.',
@@ -167,24 +150,6 @@ const arabicUiTranslations: Record<string, string> = {
   'Verifica gli articoli scaduti e registra lo smaltimento.': 'تحقق من المنتجات منتهية الصلاحية وسجّل التخلص منها.',
   'Vuoi applicare al report il filtro temporale selezionato (': 'هل تريد تطبيق عامل التصفية الزمني المحدد على التقرير (',
   'disponibili': 'متوفر', 'non è presente tra gli articoli.': 'غير موجود ضمن المنتجات.', 'questo scontrino.': 'هذا الإيصال.',
-  'Ultimo mese': 'الشهر الماضي', 'Ultimo giorno': 'اليوم الماضي',
-  'Inserisci o scansiona il numero dello scontrino…': 'أدخل رقم الإيصال أو امسحه ضوئيًا…', 'Scansiona o inserisci il barcode di riconoscimento del dipendente per modificare': 'امسح أو أدخل الرمز الشريطي للموظف لتعديل',
-  'Scansiona o inserisci il barcode di riconoscimento del dipendente per eliminare': 'امسح أو أدخل الرمز الشريطي للموظف لحذف',
-  'Il cliente deve pagare ancora': 'لا يزال على العميل دفع', 'Devi rimborsare al cliente': 'يجب عليك رد المبلغ إلى العميل', 'Non è necessario effettuare un rimborso o un pagamento aggiuntivo.': 'لا حاجة إلى رد مبلغ أو دفع مبلغ إضافي.',
-  'Sicurezza': 'الأمان', 'Archivio dati': 'أرشيف البيانات', 'Cerca o scansiona un codice a barre…': 'ابحث عن رمز شريطي أو امسحه…',
-  'Profitto dopo sconti e costo merce': 'الربح بعد الخصومات وتكلفة البضائع', 'Pezzi registrati oggi': 'القطع المسجلة اليوم', 'Da riordinare': 'بحاجة إلى إعادة الطلب',
-  'articoli sotto soglia': 'منتجات دون الحد الأدنى', 'Transazioni più recenti': 'أحدث المعاملات',
-  'Articoli in scadenza entro 10 giorni': 'منتجات تنتهي صلاحيتها خلال 10 أيام', 'Carico': 'إضافة مخزون', 'Scarico': 'سحب من المخزون',
-  'Aggiungi quantità': 'إضافة كمية', 'Quantità da aggiungere': 'الكمية المراد إضافتها', 'Barcode del personale verificato': 'الرمز الشريطي للموظف الذي تم التحقق منه',
-  'Cerca articolo, persona o nota…': 'ابحث عن منتج أو شخص أو ملاحظة…', 'Cerca articolo o codice…': 'ابحث عن منتج أو رمز…', 'Scontrino': 'الإيصال', 'Prezzo acquisto': 'سعر الشراء',
-  'Lordo': 'الإجمالي قبل الخصم',
-  'Vendite:': 'المبيعات:', 'Report vendite': 'تقرير المبيعات', 'Esportato il': 'تم التصدير في', 'Periodo:': 'الفترة:', 'Tutto il periodo': 'كامل الفترة',
-  'Profitto': 'الربح',
-  ') o includere tutto il periodo disponibile?': ') أم تضمين الفترة المتاحة بالكامل؟', 'o includere tutto il periodo disponibile?': 'أم تضمين الفترة المتاحة بالكامل؟',
-  'Scansiona o inserisci il codice': 'امسح الرمز أو أدخله',
-  'Imposta la nuova quantità da aggiungere.': 'أدخل الكمية الجديدة المراد إضافتها.', 'La giacenza verrà aggiornata dopo la verifica del personale.': 'سيتم تحديث المخزون بعد التحقق من الموظف.',
-  'Vendita': 'عملية البيع', 'Stipendio (EGP)': 'الراتب (EGP)', 'Spesa minima (EGP)': 'الحد الأدنى للإنفاق (EGP)', 'Importo (EGP)': 'المبلغ (EGP)', 'Sconto (EGP)': 'الخصم (EGP)',
-  'Rimuovi uno': 'إزالة واحدة', 'Aggiungi uno': 'إضافة واحدة', 'Ultime vendite': 'أحدث المبيعات', 'modificare': 'تعديل', 'eliminare': 'حذف', 'scontrino': 'الإيصال',
 };
 const AppLanguageContext = createContext<AppLanguage>('it');
 const AppDynamicNamesContext = createContext<Set<string>>(new Set());
@@ -384,7 +349,7 @@ function promotionEndDate(start: string, duration: string): string {
 
 function Field({ label, fieldClassName, ...props }: InputHTMLAttributes<HTMLInputElement> & { label: string; fieldClassName?: string }) {
   const language = useContext(AppLanguageContext);
-  return <label className={`field${fieldClassName ? ` ${fieldClassName}` : ''}`}><span>{localizedText(label, language)}</span><input lang={props.type === 'date' && language === 'ar' ? 'ar' : undefined} {...props} placeholder={props.placeholder ? localizedText(props.placeholder, language) : undefined} /></label>;
+  return <label className={`field${fieldClassName ? ` ${fieldClassName}` : ''}`}><span>{localizedText(label, language)}</span><input {...props} /></label>;
 }
 
 function Modal({ title, close, children, wide = false, rightHalf = false, narrowPanel = false }: { title: string; close: () => void; children: ReactNode; wide?: boolean; rightHalf?: boolean; narrowPanel?: boolean }) {
@@ -401,7 +366,6 @@ function BarcodeImage({ value }: { value: string }) {
 }
 
 function EmployeeForm({ initial, save, cancel, notify, canDelete = false, onDelete }: { initial: EmployeeInput; save: (employee: EmployeeInput) => Promise<void>; cancel: () => void; notify: (message: string) => void; canDelete?: boolean; onDelete?: () => Promise<void> }) {
-  const language = useContext(AppLanguageContext);
   const [employee, setEmployee] = useState(initial);
   const [saving, setSaving] = useState(false);
   const editing = Boolean(initial.id);
@@ -491,7 +455,7 @@ function EmployeeForm({ initial, save, cancel, notify, canDelete = false, onDele
       <label className="field"><span>Turno</span><select value={employee.shift} onChange={(event) => setEmployee({ ...employee, shift: event.target.value })} required><option value="">Seleziona turno</option><option>Mattina</option><option>Pomeriggio</option><option>Notte</option><option>Turno unico</option><option>Variabile</option></select></label>
       <label className="field"><span>Metodo di pagamento</span><select value={employee.payment_method} onChange={(event) => setEmployee({ ...employee, payment_method: event.target.value as EmployeeInput['payment_method'], iban: event.target.value === 'Bonifico' ? employee.iban : '' })} required><option>Contanti</option><option>Bonifico</option></select></label>
       <Field label="IBAN" value={employee.iban} onChange={(event) => setEmployee({ ...employee, iban: event.target.value.toUpperCase() })} disabled={employee.payment_method !== 'Bonifico'} required={employee.payment_method === 'Bonifico'} />
-      <Field label={language === 'ar' ? 'Stipendio (EGP)' : 'Stipendio (€)'} type="number" min="0" step="1" value={employee.salary || ''} onChange={(event) => setEmployee((current) => ({ ...current, salary: Number(event.target.value) }))} required />
+      <Field label="Stipendio (€)" type="number" min="0" step="1" value={employee.salary || ''} onChange={(event) => setEmployee((current) => ({ ...current, salary: Number(event.target.value) }))} required />
       <Field label="Codice riconoscimento" value={employee.recognition_code} readOnly />
       <label className="field employee-barcode-field"><span>Barcode di riconoscimento</span>      <div className="employee-barcode"><BarcodeImage value={employee.recognition_code} /><small>{employee.recognition_code}</small></div></label>
     </div>
@@ -986,9 +950,7 @@ export default function App() {
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
     window.localStorage.setItem('app-language', language);
     const locale = language === 'ar' ? 'ar' : 'it-IT';
-    money = language === 'ar'
-      ? { format: (value: number) => `${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)} EGP` }
-      : new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' });
+    money = new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' });
     dateTime = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' });
     receiptDate = new Intl.DateTimeFormat(locale, { dateStyle: 'short' });
     receiptTime = new Intl.DateTimeFormat(locale, { timeStyle: 'short' });
@@ -1629,62 +1591,49 @@ export default function App() {
       const cost = reportSales.reduce((sum, sale) => sum + sale.items.reduce((subtotal, item) => subtotal + item.purchase_price * item.quantity, 0), 0);
       const reportPeriod = respectTimeFilters ? ` · Periodo: ${salesPeriod}` : ' · Tutto il periodo';
       const doc = new jsPDF({ orientation: 'portrait' });
-      const isArabic = language === 'ar';
-      if (isArabic) await addArabicPdfFont(doc);
       doc.setFillColor(43, 82, 61);
       doc.rect(0, 0, 210, 36, 'F');
       if (data.settings.shop_logo) {
         doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', 12, 5, 24, 24);
       }
       doc.setTextColor(255, 255, 255);
-      doc.setFont(isArabic ? 'DejaVuSans' : 'helvetica', 'bold');
+      doc.setFont('helvetica', 'bold');
       doc.setFontSize(16);
-      doc.text(data.settings.shop_name, isArabic ? 198 : data.settings.shop_logo ? 43 : 14, 15, { align: isArabic ? 'right' : 'left' });
-      if (!isArabic) doc.setFont('helvetica', 'normal');
+      doc.text(data.settings.shop_name, data.settings.shop_logo ? 43 : 14, 15);
+      doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
-      const localizedPeriod = respectTimeFilters
-        ? ` · ${localizedText('Periodo', language)}: ${localizedText(salesPeriod, language)}`
-        : ` · ${localizedText('Tutto il periodo', language)}`;
-      const reportTitle = isArabic
-        ? `${localizedText('Report vendite', language)} · ${localizedText('Esportato il', language)} ${receiptDate.format(new Date())}${localizedPeriod}`
-        : `Report vendite · Esportato il ${receiptDate.format(new Date())}${reportPeriod}`;
-      doc.text(reportTitle, isArabic ? 198 : data.settings.shop_logo ? 43 : 14, 26, { align: isArabic ? 'right' : 'left' });
+      doc.text(`Report vendite · Esportato il ${receiptDate.format(new Date())}${reportPeriod}`, data.settings.shop_logo ? 43 : 14, 26);
       doc.setFillColor(56, 104, 78);
       doc.roundedRect(8, 41, 194, 17, 2, 2, 'F');
       doc.setTextColor(255, 255, 255);
-      doc.setFont(isArabic ? 'DejaVuSans' : 'helvetica', 'bold');
+      doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
-      const summary = isArabic
-        ? [`${localizedText('Profitto', language)}: ${money.format(net - cost)}`, `${localizedText('Costo merce', language)}: ${money.format(cost)}`, `${localizedText('Lordo', language)}: ${money.format(gross)}`, `${localizedText('Vendite:', language)} ${reportSales.length}`]
-        : [`Vendite: ${reportSales.length}`, `Lordo: ${money.format(gross)}`, `Costo merce: ${money.format(cost)}`, `Profitto: ${money.format(net - cost)}`];
-      const summaryXs = isArabic ? [198, 150, 102, 54] : [12, 59, 106, 157];
-      summary.forEach((value, index) => doc.text(value, summaryXs[index], 51, { align: isArabic ? 'right' : 'left' }));
-      const reportHeaders = ['Scontrino', 'Data e ora', 'Articoli', 'Pagamento', 'Prezzo acquisto', 'Prezzo vendita', 'Profitto', 'Sconto', 'Totale']
-        .map((label) => localizedText(label, language));
-      const reportRows = reportSales.map((sale) => {
-        const purchasePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.purchase_price, 0);
-        const salePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-        const totalQuantity = sale.items.reduce((sum, item) => sum + item.quantity, 0);
-        return [sale.receipt_no, dateTime.format(new Date(sale.created_at)), quantityFormat.format(totalQuantity), localizedText(sale.payment_method, language), money.format(purchasePrice), money.format(salePrice), money.format(sale.total - purchasePrice), money.format(sale.discount), money.format(sale.total)];
-      });
+      doc.text(`Vendite: ${reportSales.length}`, 12, 51);
+      doc.text(`Lordo: ${money.format(gross)}`, 59, 51);
+      doc.text(`Costo merce: ${money.format(cost)}`, 106, 51);
+      doc.text(`Profitto: ${money.format(net - cost)}`, 157, 51);
       autoTable(doc, {
         startY: 64,
-        head: [isArabic ? [...reportHeaders].reverse() : reportHeaders],
-        body: isArabic ? reportRows.map((row) => [...row].reverse()) : reportRows,
+        head: [['Scontrino', 'Data e ora', 'Articoli', 'Pagamento', 'Prezzo acquisto', 'Prezzo vendita', 'Profitto', 'Sconto', 'Totale']],
+        body: reportSales.map((sale) => {
+          const purchasePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.purchase_price, 0);
+          const salePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+          const totalQuantity = sale.items.reduce((sum, item) => sum + item.quantity, 0);
+          return [sale.receipt_no, dateTime.format(new Date(sale.created_at)), quantityFormat.format(totalQuantity), sale.payment_method, money.format(purchasePrice), money.format(salePrice), money.format(sale.total - purchasePrice), money.format(sale.discount), money.format(sale.total)];
+        }),
         showHead: 'firstPage',
         theme: 'striped',
-        styles: { font: isArabic ? 'DejaVuSans' : 'helvetica', fontSize: 6.5, cellPadding: 2, overflow: 'linebreak', textColor: [49, 60, 53], lineColor: [224, 230, 224], halign: isArabic ? 'right' : 'left' },
-        headStyles: { fillColor: [56, 104, 78], textColor: [255, 255, 255], fontStyle: 'bold', halign: isArabic ? 'right' : 'left' },
+        styles: { fontSize: 6.5, cellPadding: 2, overflow: 'linebreak', textColor: [49, 60, 53], lineColor: [224, 230, 224] },
+        headStyles: { fillColor: [56, 104, 78], textColor: [255, 255, 255], fontStyle: 'bold' },
         alternateRowStyles: { fillColor: [244, 247, 244] },
         margin: { left: 8, right: 8, bottom: 14 },
         didDrawPage: () => {
           doc.setFontSize(8);
           doc.setTextColor(120, 130, 122);
-          if (isArabic) doc.setFont('DejaVuSans', 'normal');
-          doc.text(isArabic ? `${data.settings.shop_name} · الصفحة ${doc.getNumberOfPages()}` : `${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`, isArabic ? 202 : 8, 290, { align: isArabic ? 'right' : 'left' });
+          doc.text(`${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`, 8, 290);
         },
       });
-      doc.save(`${isArabic ? 'تقرير-المبيعات' : 'report-vendite'}-${respectTimeFilters ? localizedText(salesPeriod, language).toLowerCase().replaceAll(' ', '-') : isArabic ? 'كامل-الفترة' : 'tutto'}-${todayKey}.pdf`);
+      doc.save(`report-vendite-${respectTimeFilters ? salesPeriod.toLowerCase().replaceAll(' ', '-') : 'tutto'}-${todayKey}.pdf`);
     } catch (error) {
       notify(errorText(error));
     }
@@ -1814,9 +1763,7 @@ export default function App() {
     if (!data) return;
     try {
       const sales = data.sales.filter((sale) => !respectTimeFilters || matchesSalesPeriod(sale.created_at));
-      const headers = language === 'ar'
-        ? ['رقم الإيصال', 'التاريخ والوقت', 'طريقة الدفع', 'المنتجات', 'الكمية الإجمالية', 'الإجمالي قبل الخصم', 'الخصم', 'الإجمالي بعد الخصم']
-        : ['N° scontrino', 'Data e ora', 'Met. di pagamento', 'Articoli', 'Quantità totale', 'Totale lordo', 'Sconto', 'Totale netto'];
+      const headers = ['N° scontrino', 'Data e ora', 'Met. di pagamento', 'Articoli', 'Quantità totale', 'Totale lordo', 'Sconto', 'Totale netto'];
       const xmlText = (value: string) => value
         .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
         .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
@@ -1824,8 +1771,8 @@ export default function App() {
       const rows = sales.map((sale) => [
         sale.receipt_no,
         dateTime.format(new Date(sale.created_at)),
-        localizedText(sale.payment_method, language),
-        sale.items.map((item) => `${language === 'ar' ? item.code : item.name} (${quantityFormat.format(item.quantity)} ${language === 'ar' ? item.unit === 'KG' ? 'كغ' : item.unit === 'LITRO' ? 'لتر' : 'قطعة' : item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'})`).join(language === 'ar' ? '، ' : ', '),
+        sale.payment_method,
+        sale.items.map((item) => `${item.name} (${quantityFormat.format(item.quantity)} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'})`).join(', '),
         sale.items.reduce((sum, item) => sum + item.quantity, 0),
         sale.gross_total,
         sale.discount,
@@ -1839,23 +1786,20 @@ export default function App() {
       };
       const headerRow = `<row r="1" ht="30" customHeight="1">${headers.map((header, index) => makeCell(index, 1, header, 1)).join('')}</row>`;
       const bodyRows = rows.map((row, rowIndex) => `<row r="${rowIndex + 2}">${row.map((value, columnIndex) =>
-        makeCell(columnIndex, rowIndex + 2, value, columnIndex === 4 ? 3 : columnIndex >= 5 ? 2 : 4)
+        makeCell(columnIndex, rowIndex + 2, value, columnIndex === 4 ? 3 : columnIndex >= 5 ? 2 : undefined)
       ).join('')}</row>`).join('');
       const zip = new JSZip();
       zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`);
       zip.folder('_rels')?.file('.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`);
-      zip.folder('xl')?.file('workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${language === 'ar' ? 'المبيعات' : 'Vendite'}" sheetId="1" r:id="rId1"/></sheets></workbook>`);
+      zip.folder('xl')?.file('workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Vendite" sheetId="1" r:id="rId1"/></sheets></workbook>`);
       zip.folder('xl')?.folder('_rels')?.file('workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
-      const currencyCode = language === 'ar' ? '#,##0.00 &quot;EGP&quot;' : '#,##0.00 &quot;€&quot;';
-      const cellAlignment = language === 'ar' ? 'right' : 'left';
-      const readingOrder = language === 'ar' ? ' readingOrder="2"' : '';
-      zip.folder('xl')?.file('styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.000"/><numFmt numFmtId="165" formatCode="${currencyCode}"/></numFmts><fonts count="3"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font><font><b/><sz val="14"/><color rgb="FF000000"/><name val="Aptos"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF38684E"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="${cellAlignment}" vertical="center" wrapText="1"${readingOrder}/></xf><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="right" vertical="center"${readingOrder}/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="right" vertical="center"${readingOrder}/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="${cellAlignment}" vertical="center" wrapText="1"${readingOrder}/></xf></cellXfs></styleSheet>`);
-      zip.folder('xl')?.folder('worksheets')?.file('sheet1.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:H${rows.length + 1}"/><sheetViews><sheetView workbookViewId="0" rightToLeft="${language === 'ar' ? '1' : '0'}"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="19" customWidth="1"/><col min="2" max="2" width="22" customWidth="1"/><col min="3" max="3" width="24" customWidth="1"/><col min="4" max="4" width="60" customWidth="1"/><col min="5" max="5" width="18" customWidth="1"/><col min="6" max="8" width="18" customWidth="1"/></cols><sheetData>${headerRow}${bodyRows}</sheetData></worksheet>`);
+      zip.folder('xl')?.file('styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.000"/><numFmt numFmtId="165" formatCode="#,##0.00 &quot;€&quot;"/></numFmts><fonts count="3"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font><font><b/><sz val="14"/><color rgb="FF000000"/><name val="Aptos"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF38684E"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs></styleSheet>`);
+      zip.folder('xl')?.folder('worksheets')?.file('sheet1.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:H${rows.length + 1}"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="19" customWidth="1"/><col min="2" max="2" width="22" customWidth="1"/><col min="3" max="3" width="24" customWidth="1"/><col min="4" max="4" width="60" customWidth="1"/><col min="5" max="5" width="18" customWidth="1"/><col min="6" max="8" width="18" customWidth="1"/></cols><sheetData>${headerRow}${bodyRows}</sheetData></worksheet>`);
       const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${language === 'ar' ? 'تقرير-المبيعات' : 'vendite'}-${todayKey}.xlsx`;
+      link.download = `vendite-${todayKey}.xlsx`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
@@ -2386,7 +2330,7 @@ export default function App() {
           <fieldset className="promotion-minimum-options"><legend>Requisito minimo</legend>
             {([{ value: 'none', label: 'Nessuno' }, { value: 'spend', label: 'Spesa minima' }, { value: 'kilograms', label: 'KG minimi' }, { value: 'pieces', label: 'Pezzi minimi' }, { value: 'liters', label: 'Litri minimi' }] as const).map(({ value, label }) => <label key={value}><input type="radio" name="promotion-minimum" checked={promotionMinimum === value} onChange={() => setPromotionMinimum(value)} /><span>{label}</span></label>)}
           </fieldset>
-          {promotionMinimum === 'spend' && <Field label={language === 'ar' ? 'Spesa minima (EGP)' : 'Spesa minima (€)'} type="number" min="0.01" step="0.01" value={promotion.minimum_spend || ''} onChange={(e) => setPromotion({ ...promotion, minimum_spend: Number(e.target.value) })} required />}
+          {promotionMinimum === 'spend' && <Field label="Spesa minima (€)" type="number" min="0.01" step="0.01" value={promotion.minimum_spend || ''} onChange={(e) => setPromotion({ ...promotion, minimum_spend: Number(e.target.value) })} required />}
           {promotionMinimum === 'kilograms' && <Field label="KG minimi" type="number" min="0.1" step="0.1" value={promotion.minimum_kilograms || ''} onChange={(e) => setPromotion({ ...promotion, minimum_kilograms: Number(e.target.value) })} required />}
           {promotionMinimum === 'pieces' && <Field label="Pezzi minimi" type="number" min="1" step="1" value={promotion.minimum_pieces || ''} onChange={(e) => setPromotion({ ...promotion, minimum_pieces: Number(e.target.value) })} required />}
           {promotionMinimum === 'liters' && <Field label="Litri minimi" type="number" min="0.1" step="0.1" value={promotion.minimum_liters || ''} onChange={(e) => setPromotion({ ...promotion, minimum_liters: Number(e.target.value) })} required />}
@@ -2432,7 +2376,7 @@ export default function App() {
             <Field label="Descrizione" value={expenseDescription} onChange={(event) => setExpenseDescription(event.target.value)} required />
             <SelectField label="Categoria" value={expenseCategory} onChange={(value) => { setExpenseCategory(value); if (value !== 'Affitto') setExpenseReceiptData(''); }} options={expenseCategories} />
             {expenseCategory === 'Altro' && <Field label="Nome della categoria" value={expenseOtherCategory} onChange={(event) => setExpenseOtherCategory(event.target.value)} required />}
-            <Field label={language === 'ar' ? 'Importo (EGP)' : 'Importo (€)'} type="number" min="0.01" step="0.01" value={expenseAmount} onChange={(event) => setExpenseAmount(event.target.value)} required />
+            <Field label="Importo (€)" type="number" min="0.01" step="0.01" value={expenseAmount} onChange={(event) => setExpenseAmount(event.target.value)} required />
             <Field label="Data" type="date" value={expenseDate} onChange={(event) => setExpenseDate(event.target.value)} required />
             {expenseCategory === 'Affitto' && <label className="field expense-receipt-field"><span>Ricevuta pagamento affitto</span><input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(event) => { void attachExpenseReceipt(event.target.files?.[0]); event.currentTarget.value = ''; }} required={!expenseReceiptData} />{expenseReceiptData && <small>Ricevuta allegata</small>}</label>}
             <div className="expense-actions"><button className="button button-outline" type="button" onClick={(event) => { event.currentTarget.form?.reset(); setExpenseDescription(''); setExpenseCategory(expenseCategories[0]); setExpenseOtherCategory(''); setExpenseAmount(''); setExpenseDate(localDateKey()); setExpenseReceiptData(''); }}>Annulla</button><button className="button button-primary"><Plus size={16} /> Registra spesa</button></div>
@@ -2561,13 +2505,13 @@ export default function App() {
     {saleDialog && <Modal title={`Vendita #${saleDialog.receipt_no}`} close={() => { setSaleDialog(null); setSaleEmployeeBarcode(''); }} wide><div className="sale-edit">
       <div className="sale-edit-fields">
         <SelectField label="Metodo di pagamento" value={saleDialog.payment_method} onChange={(value) => setSaleDialog({ ...saleDialog, payment_method: value })} options={['Carta', 'Contanti', 'Bancomat', 'Buono']} />
-        <div className="sale-discount-fields"><Field label="Sconto (%)" type="number" min="0" max="100" step="0.01" value={saleDiscountPercentage} onChange={(e) => changeSaleDiscount(Number(e.target.value))} /><Field label={language === 'ar' ? 'Sconto (EGP)' : 'Sconto (€)'} type="number" value={saleDialog.discount.toFixed(2)} readOnly /></div>
+        <div className="sale-discount-fields"><Field label="Sconto (%)" type="number" min="0" max="100" step="0.01" value={saleDiscountPercentage} onChange={(e) => changeSaleDiscount(Number(e.target.value))} /><Field label="Sconto (€)" type="number" value={saleDialog.discount.toFixed(2)} readOnly /></div>
       </div>
       <div className="sale-edit-add">
         <button className="button button-primary full-width" type="button" onClick={() => { setSaleCart([]); setSaleProductSearch(''); setSaleAddOpen(true); }}><Plus size={15} /> Aggiungi articolo</button>
       </div>
       <div className="edit-item-list"><div className="edit-list-head"><span>Articolo</span><span>Quantità</span><span>Prezzo</span><span></span></div>{saleDialog.items.map((item, index) => <div className="edit-item" key={`${item.product_id}-${index}`}><span>{item.name}</span><input aria-label={`Quantità ${item.name}`} type="number" min="0" step={item.unit === 'PEZZO' || !item.unit ? '1' : '0.1'} value={item.quantity} onChange={(e) => changeSaleQuantity(index, Number(e.target.value))} /><span>{money.format(item.unit_price)} / {item.unit ?? 'PEZZO'}</span><button className="icon-button small" type="button" title="Rimuovi articolo dalla vendita" aria-label={`Rimuovi ${item.name} dalla vendita`} onClick={() => changeSaleQuantity(index, 0)}><Trash2 size={15} /></button></div>)}</div>
-      <div className="sale-edit-total"><span>{localizedText('Sconto in euro', language)}</span><strong>{money.format(saleDialog.discount)}</strong></div>
+      <div className="sale-edit-total"><span>Sconto in euro</span><strong>{money.format(saleDialog.discount)}</strong></div>
       <div className="sale-edit-total"><span>Nuovo totale</span><strong>{money.format(Math.max(0, saleDialog.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0) - saleDialog.discount))}</strong></div>
       <div className="sale-edit-actions"><button className="button button-primary" onClick={() => void updateSale()}><Check size={15} /> Salva modifiche</button></div>
     </div></Modal>}
@@ -2590,8 +2534,7 @@ function Table({ headings, children }: { headings: string[]; children: ReactNode
   return <div className="table-wrap"><table><thead><tr>{headings.map((heading) => <th key={heading}>{localizedText(heading, language)}</th>)}</tr></thead><tbody><LocalizedNodes>{children}</LocalizedNodes></tbody></table></div>;
 }
 function SalesTable({ sales, onSelect }: { sales: Sale[]; onSelect?: (sale: Sale) => void }) {
-  const language = useContext(AppLanguageContext);
-  return <div className="table-wrap"><table><thead><tr>{['Numero scontrino', 'Data e ora', 'Articoli', 'Pagamento', 'Totale'].map((heading) => <th key={heading}>{localizedText(heading, language)}</th>)}</tr></thead><tbody>{sales.map((sale) => <tr key={sale.id} onClick={onSelect ? () => onSelect(sale) : undefined}><td className="receipt-number">#{sale.receipt_no}</td><td>{dateTime.format(new Date(sale.created_at))}</td><td>{sale.item_count}</td><td><span className="payment-tag">{localizedText(sale.payment_method, language)}</span></td><td className="align-right cell-primary">{money.format(sale.total)}</td></tr>)}{!sales.length && <tr><td colSpan={5} className="empty-cell">{localizedText('Nessuna vendita registrata.', language)}</td></tr>}</tbody></table></div>;
+  return <div className="table-wrap"><table><thead><tr><th>Numero scontrino</th><th>Data e ora</th><th>Articoli</th><th>Pagamento</th><th className="align-right">Totale</th></tr></thead><tbody>{sales.map((sale) => <tr key={sale.id} onClick={onSelect ? () => onSelect(sale) : undefined}><td className="receipt-number">#{sale.receipt_no}</td><td>{dateTime.format(new Date(sale.created_at))}</td><td>{sale.item_count}</td><td><span className="payment-tag">{sale.payment_method}</span></td><td className="align-right cell-primary">{money.format(sale.total)}</td></tr>)}{!sales.length && <tr><td colSpan={5} className="empty-cell">Nessuna vendita registrata.</td></tr>}</tbody></table></div>;
 }
 function SearchInput({ value, onChange, placeholder, numericOnly = false }: { value: string; onChange: (value: string) => void; placeholder: string; numericOnly?: boolean }) {
   const language = useContext(AppLanguageContext);
