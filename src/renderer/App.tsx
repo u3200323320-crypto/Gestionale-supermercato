@@ -6,12 +6,14 @@ import { jsPDF } from 'jspdf';
 import autoTable, { Table as AutoTableTable } from 'jspdf-autotable';
 import JSZip from 'jszip';
 import JsBarcode from 'jsbarcode';
+import arabicPdfFontUrl from './DejaVuSans.ttf?url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
 import homeBanner from './home-banner.svg';
 import type { AppState, AuthenticatedEmployee, Employee, EmployeeInput, Expense, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, Sale, SaleItem, Section } from '../shared/types';
 
-let money = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
+let money: Pick<Intl.NumberFormat, 'format'> = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
+const arabicMoneyNumber = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 let dateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' });
 let receiptDate = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short' });
 let receiptTime = new Intl.DateTimeFormat('it-IT', { timeStyle: 'short' });
@@ -19,6 +21,7 @@ let navbarDate = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numer
 let navbarTime = new Intl.DateTimeFormat('it-IT', { hour: '2-digit', minute: '2-digit' });
 let quantityFormat = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 3 });
 let receiptQuantity = quantityFormat;
+let appLocale = 'it-IT';
 const roundQuantity = (quantity: number) => Math.round((quantity + Number.EPSILON) * 1000) / 1000;
 const colors = ['var(--green)', '#c17e4f', '#658499', '#a9aa64', '#8a7461', '#609085'];
 const localDateKey = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -59,7 +62,7 @@ const arabicUiTranslations: Record<string, string> = {
   'Indirizzo email': 'البريد الإلكتروني', 'Password iniziale': 'كلمة المرور الأولية', 'Numero di telefono': 'رقم الهاتف', 'Sede Operativa': 'فرع العمل',
   'Seleziona ruolo': 'اختر الدور', 'Turno': 'الوردية', 'Seleziona turno': 'اختر الوردية', 'Mattina': 'صباحًا', 'Pomeriggio': 'مساءً',
   'Notte': 'ليلًا', 'Turno unico': 'وردية واحدة', 'Variabile': 'متغير', 'Metodo di pagamento': 'طريقة الدفع', 'Contanti': 'نقدًا', 'Bonifico': 'تحويل بنكي',
-  'IBAN': 'رقم الحساب المصرفي الدولي', 'Stipendio (€)': 'الراتب (€)', 'Codice riconoscimento': 'رمز التعريف', 'Barcode di riconoscimento': 'الرمز الشريطي للتعريف',
+  'IBAN': 'رقم الحساب المصرفي الدولي',   'Stipendio (€)': 'الراتب (EGP)', 'Codice riconoscimento': 'رمز التعريف', 'Barcode di riconoscimento': 'الرمز الشريطي للتعريف',
   'Elimina dipendente': 'حذف الموظف', 'Crea dipendente': 'إنشاء موظف', 'Nome offerta': 'اسم العرض', 'Sconto': 'الخصم', 'Applicazione': 'التطبيق',
   'Durata offerta': 'مدة العرض', 'Requisito minimo': 'الحد الأدنى المطلوب', 'Nessuno': 'لا يوجد', 'Spesa minima': 'الحد الأدنى للشراء',
   'Crea promozione': 'إنشاء عرض ترويجي', 'Modifica': 'تعديل', 'Elimina': 'حذف', 'Vendite di oggi': 'مبيعات اليوم', 'Netto vendite': 'صافي المبيعات',
@@ -86,7 +89,7 @@ const arabicUiTranslations: Record<string, string> = {
   'Bancomat': 'بطاقة خصم', 'Buono': 'قسيمة', 'Scontrino #': 'الإيصال رقم ', 'Numero scontrino:': 'رقم الإيصال:', 'Grazie per averci scelto!': 'شكرًا لاختياركم لنا!',
   'Stampa scontrino': 'طباعة الإيصال', 'Nessuno scontrino trovato con questo numero.': 'لم يتم العثور على هذا الإيصال.',
   'Esporta report vendite': 'تصدير تقرير المبيعات', 'Esporta report contabilità e finanza': 'تصدير تقرير المحاسبة والمالية', 'Esporta tutto': 'تصدير الكل',
-  'Rispetta il filtro di tempo': 'Applica il filtro temporale', 'Tutte le vendite →': 'كل المبيعات ←', 'Tutti': 'الكل', 'Oggi': 'اليوم', 'Ieri': 'أمس',
+  'Rispetta il filtro di tempo': 'استخدم عامل تصفية الوقت', 'Tutte le vendite →': 'كل المبيعات ←', 'Tutti': 'الكل', 'Oggi': 'اليوم', 'Ieri': 'أمس',
   'Ultima settimana': 'الأسبوع الماضي', 'Ultimi 3 mesi': 'آخر 3 أشهر', 'Ultimi 6 mesi': 'آخر 6 أشهر', 'Ultimo anno': 'العام الماضي', 'Da - A': 'من - إلى',
   'Vai al magazzino →': 'الانتقال إلى المخزن ←', 'Valore del magazzino': 'قيمة المخزون', 'Valorizzazione della giacenza attuale': 'قيمة المخزون الحالي',
   'Prodotti più e meno venduti': 'المنتجات الأكثر والأقل مبيعًا', 'Vendite giornaliere': 'المبيعات اليومية', 'Vendite per categoria': 'المبيعات حسب الفئة',
@@ -131,7 +134,7 @@ const arabicUiTranslations: Record<string, string> = {
   'Rimuovi articolo dalla vendita': 'إزالة المنتج من البيع', 'Nuova quantità': 'كمية جديدة',
   'Conferma giacenza': 'تأكيد المخزون', 'Autorizza modifica articolo': 'السماح بتعديل المنتج', 'Autorizza nuova quantità': 'السماح بالكمية الجديدة',
   'Articoli': 'المنتجات', 'Posizione': 'الموقع',
-  'Conferma e salva': 'تأكيد وحفظ', 'Nuovo totale': 'الإجمالي الجديد', 'Sconto in euro': 'الخصم باليورو', 'Pagamento:': 'الدفع:', 'Risparmio:': 'التوفير:',
+  'Conferma e salva': 'تأكيد وحفظ', 'Nuovo totale': 'الإجمالي الجديد', 'Sconto in euro': 'الخصم (EGP)', 'Pagamento:': 'الدفع:', 'Risparmio:': 'التوفير:',
   'Ok': 'حسنًا', 'F2': 'F2', 'ITALIANO': 'الإيطالية', 'Chiudi': 'إغلاق', 'Cancella ricerca': 'مسح البحث', 'Non applicata (massimo 1)': 'غير مطبقة (بحد أقصى 1)',
   'Non risultano articoli rimanenti in magazzino.': 'لا توجد منتجات متبقية في المخزن.', 'Le categorie appariranno dopo la prima vendita.': 'ستظهر الفئات بعد أول عملية بيع.',
   'Puoi aggiungerlo come nuovo articolo: il codice acquisito sarà già inserito nel modulo.': 'يمكنك إضافته كمنتج جديد؛ سيتم إدخال الرمز الممسوح مسبقًا في النموذج.',
@@ -150,6 +153,34 @@ const arabicUiTranslations: Record<string, string> = {
   'Verifica gli articoli scaduti e registra lo smaltimento.': 'تحقق من المنتجات منتهية الصلاحية وسجّل التخلص منها.',
   'Vuoi applicare al report il filtro temporale selezionato (': 'هل تريد تطبيق عامل التصفية الزمني المحدد على التقرير (',
   'disponibili': 'متوفر', 'non è presente tra gli articoli.': 'غير موجود ضمن المنتجات.', 'questo scontrino.': 'هذا الإيصال.',
+  'o includere tutto il periodo disponibile?': 'أو تضمين الفترة المتاحة بالكامل؟',
+  'Non applicata': 'غير مطبق',
+  'Scansiona o inserisci il codice': 'امسح الرمز أو أدخله',
+  'Inserisci o scansiona il numero dello scontrino…': 'أدخل رقم الإيصال أو امسحه ضوئيًا…',
+  'Il cliente deve pagare ancora': 'لا يزال على العميل دفع', 'Devi rimborsare al cliente': 'يجب عليك رد المبلغ إلى العميل',
+  'Non è necessario effettuare un rimborso o un pagamento aggiuntivo.': 'لا حاجة إلى رد مبلغ أو دفع مبلغ إضافي.',
+  'Barcode del personale verificato': 'الرمز الشريطي للموظف الذي تم التحقق منه',
+  'Aggiungi quantità': 'إضافة كمية', 'Quantità da aggiungere': 'الكمية المراد إضافتها',
+  'Sicurezza': 'الأمان', 'Archivio dati': 'أرشيف البيانات',
+  'Profitto dopo sconti e costo merce': 'الربح بعد الخصومات وتكلفة البضائع',
+  'Pezzi registrati oggi': 'القطع المسجلة اليوم', 'Transazioni più recenti': 'أحدث المعاملات',
+  'Da riordinare': 'منتجات لإعادة الطلب', 'articoli sotto soglia': 'منتجات دون الحد الأدنى',
+  'Cerca articolo, persona o nota…': 'ابحث عن منتج أو شخص أو ملاحظة…',
+  'Carico': 'إضافة مخزون', 'Scarico': 'سحب من المخزون', 'Sconto (€)': 'الخصم (EGP)',
+  'Spesa minima (€)': 'الحد الأدنى للإنفاق (EGP)', 'Importo (€)': 'المبلغ (EGP)', 'Ultimo mese': 'الشهر الماضي',
+  'Report vendite': 'تقرير المبيعات', 'Esportato il': 'تم التصدير في', 'Applica al report': 'تطبيق على التقرير',
+  'Cerca o scansiona un codice a barre…': 'ابحث عن رمز شريطي أو امسحه ضوئيًا…',
+  'Scansiona con fotocamera': 'المسح بالكاميرا', 'Rimuovi uno': 'إزالة قطعة واحدة', 'Aggiungi uno': 'إضافة قطعة واحدة',
+  'Vendita': 'عملية بيع', 'Cerca articolo o codice…': 'ابحث عن منتج أو رمز…',
+  'modificare': 'تعديل', 'eliminare': 'حذف', 'dalla vendita': 'من البيع', 'Sconto (%)': 'الخصم (%)',
+  'Scontrino': 'الإيصال', 'scontrino': 'الإيصال', 'Ultime vendite': 'أحدث المبيعات',
+  'Filtra prodotti per disponibilità': 'تصفية المنتجات حسب التوفر',
+  'Percentuale di sconto (%)': 'نسبة الخصم (%)', 'Articoli da acquistare': 'المنتجات المطلوب شراؤها',
+  'Articoli in omaggio': 'المنتجات المجانية', 'Nome attività': 'اسم النشاط التجاري', 'Logo attuale': 'الشعار الحالي',
+  'Stampante collegata': 'الطابعة المتصلة', 'Temi dell\'app': 'سمات التطبيق',
+  'Immagine homepage attuale': 'صورة الصفحة الرئيسية الحالية', 'Articolo non presente': 'المنتج غير موجود',
+  'Barcode del dipendente': 'الرمز الشريطي للموظف', 'Prezzo acquisto': 'سعر الشراء',
+  'Soglia minima': 'الحد الأدنى', 'Margine unitario': 'هامش الوحدة', 'Qtà': 'الكمية',
 };
 const AppLanguageContext = createContext<AppLanguage>('it');
 const AppDynamicNamesContext = createContext<Set<string>>(new Set());
@@ -158,14 +189,14 @@ const localizedText = (value: string, language: AppLanguage, dynamicNames = new 
   if (language !== 'ar') return value;
   if (dynamicNames.has(value.trim())) return value;
   const exact = arabicUiTranslations[value.trim()];
-  if (exact) return value.replace(value.trim(), exact);
-  return Object.entries(arabicUiTranslations)
+  const translated = exact ? value.replace(value.trim(), exact) : Object.entries(arabicUiTranslations)
     .filter(([source]) => source.length > 2)
     .sort(([first], [second]) => second.length - first.length)
     .reduce((text, [source, translated]) => text.replace(
       new RegExp(`(^|[^\\p{L}\\p{N}])(${escapeRegExp(source)})(?=$|[^\\p{L}\\p{N}])`, 'giu'),
       (_match, prefix: string, match: string) => `${prefix}${dynamicNames.has(match) ? match : translated}`,
     ), value);
+  return translated.replaceAll('€', 'EGP');
 };
 
 function LocalizedNodes({ children }: { children: ReactNode }) {
@@ -179,17 +210,22 @@ function LocalizedNodes({ children }: { children: ReactNode }) {
       return node.replace(trimmed, translated);
     }
     if (Array.isArray(node)) return node.map((child) => translate(child, preserve, parentClass));
-    if (!isValidElement<{ children?: ReactNode; className?: string; value?: string }>(node)) return node;
+    if (!isValidElement<{ children?: ReactNode; className?: string; value?: string; placeholder?: string; title?: string; alt?: string; 'aria-label'?: string }>(node)) return node;
     const className = node.props.className ?? '';
     const elementType = typeof node.type === 'string' ? node.type : '';
+    const localizedAttributes: { placeholder?: string; title?: string; alt?: string; 'aria-label'?: string } = {};
+    for (const attribute of ['placeholder', 'title', 'alt', 'aria-label'] as const) {
+      const value = node.props[attribute];
+      if (value) localizedAttributes[attribute] = localizedText(value, language, dynamicNames);
+    }
     const preserveContent = preserve || className.split(/\s+/).includes('cell-primary')
       || (elementType === 'strong' && ['employee-card', 'product-tile', 'cash-product', 'cart-line-name', 'employee-detail-hero', 'user-card'].some((name) => parentClass.split(/\s+/).includes(name)));
-    if (node.props.children === undefined) return node;
+    if (node.props.children === undefined) return cloneElement(node, localizedAttributes);
     if (elementType === 'option') {
       const optionValue = node.props.value ?? (typeof node.props.children === 'string' ? node.props.children : undefined);
-      return cloneElement(node, { value: optionValue }, translate(node.props.children, preserveContent, className || parentClass));
+      return cloneElement(node, { ...localizedAttributes, value: optionValue }, translate(node.props.children, preserveContent, className || parentClass));
     }
-    return cloneElement(node, undefined, translate(node.props.children, preserveContent, className || parentClass));
+    return cloneElement(node, localizedAttributes, translate(node.props.children, preserveContent, className || parentClass));
   };
   return <>{translate(children)}</>;
 }
@@ -349,7 +385,7 @@ function promotionEndDate(start: string, duration: string): string {
 
 function Field({ label, fieldClassName, ...props }: InputHTMLAttributes<HTMLInputElement> & { label: string; fieldClassName?: string }) {
   const language = useContext(AppLanguageContext);
-  return <label className={`field${fieldClassName ? ` ${fieldClassName}` : ''}`}><span>{localizedText(label, language)}</span><input {...props} /></label>;
+  return <label className={`field${fieldClassName ? ` ${fieldClassName}` : ''}`}><span>{localizedText(label, language)}</span><input {...props} lang={language === 'ar' ? 'ar-EG' : 'it-IT'} dir={language === 'ar' ? 'rtl' : 'ltr'} placeholder={props.placeholder ? localizedText(props.placeholder, language) : undefined} /></label>;
 }
 
 function Modal({ title, close, children, wide = false, rightHalf = false, narrowPanel = false }: { title: string; close: () => void; children: ReactNode; wide?: boolean; rightHalf?: boolean; narrowPanel?: boolean }) {
@@ -866,7 +902,7 @@ export default function App() {
       return;
     }
     const monthDate = new Date(`${payrollMonth}-01T00:00:00`);
-    const monthName = monthDate.toLocaleDateString('it-IT', { month: 'long' });
+    const monthName = monthDate.toLocaleDateString(appLocale, { month: 'long' });
     const folderName = `Stipendi ${monthName.charAt(0).toLocaleUpperCase('it-IT') + monthName.slice(1)} ${monthDate.getFullYear()}`;
     const zip = new JSZip();
     const folder = zip.folder(folderName);
@@ -946,11 +982,14 @@ export default function App() {
     window.localStorage.setItem('app-theme', appTheme);
   }, [appTheme]);
   useEffect(() => {
-    document.documentElement.lang = language;
+    document.documentElement.lang = language === 'ar' ? 'ar-EG' : 'it-IT';
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
     window.localStorage.setItem('app-language', language);
-    const locale = language === 'ar' ? 'ar' : 'it-IT';
-    money = new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' });
+    const locale = language === 'ar' ? 'ar-EG' : 'it-IT';
+    appLocale = locale;
+    money = language === 'ar'
+      ? { format: (amount: number) => `${arabicMoneyNumber.format(amount)} EGP` }
+      : new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' });
     dateTime = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' });
     receiptDate = new Intl.DateTimeFormat(locale, { dateStyle: 'short' });
     receiptTime = new Intl.DateTimeFormat(locale, { timeStyle: 'short' });
@@ -1589,51 +1628,82 @@ export default function App() {
       const gross = reportSales.reduce((sum, sale) => sum + sale.gross_total, 0);
       const net = reportSales.reduce((sum, sale) => sum + sale.total, 0);
       const cost = reportSales.reduce((sum, sale) => sum + sale.items.reduce((subtotal, item) => subtotal + item.purchase_price * item.quantity, 0), 0);
-      const reportPeriod = respectTimeFilters ? ` · Periodo: ${salesPeriod}` : ' · Tutto il periodo';
+      const rtl = language === 'ar';
+      const reportPeriod = rtl
+        ? respectTimeFilters ? ` · الفترة: ${localizedText(salesPeriod, language)}` : ' · كامل الفترة'
+        : respectTimeFilters ? ` · Periodo: ${salesPeriod}` : ' · Tutto il periodo';
       const doc = new jsPDF({ orientation: 'portrait' });
+      if (rtl) {
+        const fontResponse = await fetch(arabicPdfFontUrl);
+        if (!fontResponse.ok) throw new Error('Impossibile caricare il font arabo per il report PDF.');
+        const fontBytes = new Uint8Array(await fontResponse.arrayBuffer());
+        let fontBinary = '';
+        for (let offset = 0; offset < fontBytes.length; offset += 0x8000) {
+          fontBinary += String.fromCharCode(...fontBytes.subarray(offset, offset + 0x8000));
+        }
+        doc.addFileToVFS('DejaVuSans.ttf', window.btoa(fontBinary));
+        doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'normal');
+        doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'bold');
+      }
+      doc.setR2L(rtl);
+      const textX = rtl ? 198 : data.settings.shop_logo ? 43 : 14;
       doc.setFillColor(43, 82, 61);
       doc.rect(0, 0, 210, 36, 'F');
       if (data.settings.shop_logo) {
-        doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', 12, 5, 24, 24);
+        doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', rtl ? 174 : 12, 5, 24, 24);
       }
       doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
+      doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'bold');
       doc.setFontSize(16);
-      doc.text(data.settings.shop_name, data.settings.shop_logo ? 43 : 14, 15);
-      doc.setFont('helvetica', 'normal');
+      doc.text(data.settings.shop_name, textX, 15, rtl ? { align: 'right' } : undefined);
+      doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'normal');
       doc.setFontSize(9);
-      doc.text(`Report vendite · Esportato il ${receiptDate.format(new Date())}${reportPeriod}`, data.settings.shop_logo ? 43 : 14, 26);
+      const reportTitle = rtl
+        ? `تقرير المبيعات · تم التصدير في ${receiptDate.format(new Date())}${reportPeriod}`
+        : `Report vendite · Esportato il ${receiptDate.format(new Date())}${reportPeriod}`;
+      doc.text(reportTitle, textX, 26, rtl ? { align: 'right' } : undefined);
       doc.setFillColor(56, 104, 78);
       doc.roundedRect(8, 41, 194, 17, 2, 2, 'F');
       doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.text(`Vendite: ${reportSales.length}`, 12, 51);
-      doc.text(`Lordo: ${money.format(gross)}`, 59, 51);
-      doc.text(`Costo merce: ${money.format(cost)}`, 106, 51);
-      doc.text(`Profitto: ${money.format(net - cost)}`, 157, 51);
+      doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'bold');
+      doc.setFontSize(rtl ? 7.5 : 9);
+      const summary = rtl
+        ? [`المبيعات: ${reportSales.length}`, `الإجمالي: ${money.format(gross)}`, `تكلفة البضائع: ${money.format(cost)}`, `الربح: ${money.format(net - cost)}`]
+        : [`Vendite: ${reportSales.length}`, `Lordo: ${money.format(gross)}`, `Costo merce: ${money.format(cost)}`, `Profitto: ${money.format(net - cost)}`];
+      summary.forEach((value, index) => {
+        const x = rtl ? 198 - index * 49 : 12 + index * 47;
+        doc.text(value, x, 51, rtl ? { align: 'right' } : undefined);
+      });
+      const reportHeaders = rtl
+        ? ['رقم الإيصال', 'التاريخ والوقت', 'المنتجات', 'الدفع', 'سعر الشراء', 'سعر البيع', 'الربح', 'الخصم', 'الإجمالي']
+        : ['Scontrino', 'Data e ora', 'Articoli', 'Pagamento', 'Prezzo acquisto', 'Prezzo vendita', 'Profitto', 'Sconto', 'Totale'];
       autoTable(doc, {
         startY: 64,
-        head: [['Scontrino', 'Data e ora', 'Articoli', 'Pagamento', 'Prezzo acquisto', 'Prezzo vendita', 'Profitto', 'Sconto', 'Totale']],
+        head: [rtl ? [...reportHeaders].reverse() : reportHeaders],
         body: reportSales.map((sale) => {
           const purchasePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.purchase_price, 0);
           const salePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
           const totalQuantity = sale.items.reduce((sum, item) => sum + item.quantity, 0);
-          return [sale.receipt_no, dateTime.format(new Date(sale.created_at)), quantityFormat.format(totalQuantity), sale.payment_method, money.format(purchasePrice), money.format(salePrice), money.format(sale.total - purchasePrice), money.format(sale.discount), money.format(sale.total)];
+          const row = [sale.receipt_no, dateTime.format(new Date(sale.created_at)), quantityFormat.format(totalQuantity), rtl ? localizedText(sale.payment_method, language) : sale.payment_method, money.format(purchasePrice), money.format(salePrice), money.format(sale.total - purchasePrice), money.format(sale.discount), money.format(sale.total)];
+          return rtl ? row.reverse() : row;
         }),
         showHead: 'firstPage',
         theme: 'striped',
-        styles: { fontSize: 6.5, cellPadding: 2, overflow: 'linebreak', textColor: [49, 60, 53], lineColor: [224, 230, 224] },
-        headStyles: { fillColor: [56, 104, 78], textColor: [255, 255, 255], fontStyle: 'bold' },
+        styles: { font: rtl ? 'DejaVuSans' : 'helvetica', fontSize: rtl ? 5.5 : 6.5, cellPadding: 2, overflow: 'linebreak', textColor: [49, 60, 53], lineColor: [224, 230, 224], halign: rtl ? 'right' : 'left' },
+        headStyles: { fillColor: [56, 104, 78], textColor: [255, 255, 255], fontStyle: 'bold', halign: rtl ? 'right' : 'left' },
         alternateRowStyles: { fillColor: [244, 247, 244] },
         margin: { left: 8, right: 8, bottom: 14 },
         didDrawPage: () => {
+          doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'normal');
           doc.setFontSize(8);
           doc.setTextColor(120, 130, 122);
-          doc.text(`${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`, 8, 290);
+          const footer = rtl
+            ? `${data.settings.shop_name} · الصفحة ${doc.getNumberOfPages()}`
+            : `${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`;
+          doc.text(footer, rtl ? 202 : 8, 290, rtl ? { align: 'right' } : undefined);
         },
       });
-      doc.save(`report-vendite-${respectTimeFilters ? salesPeriod.toLowerCase().replaceAll(' ', '-') : 'tutto'}-${todayKey}.pdf`);
+      doc.save(rtl ? `تقرير-المبيعات-${todayKey}.pdf` : `report-vendite-${respectTimeFilters ? salesPeriod.toLowerCase().replaceAll(' ', '-') : 'tutto'}-${todayKey}.pdf`);
     } catch (error) {
       notify(errorText(error));
     }
@@ -1762,8 +1832,11 @@ export default function App() {
   const exportSalesXlsx = async (respectTimeFilters: boolean) => {
     if (!data) return;
     try {
+      const rtl = language === 'ar';
       const sales = data.sales.filter((sale) => !respectTimeFilters || matchesSalesPeriod(sale.created_at));
-      const headers = ['N° scontrino', 'Data e ora', 'Met. di pagamento', 'Articoli', 'Quantità totale', 'Totale lordo', 'Sconto', 'Totale netto'];
+      const headers = rtl
+        ? ['رقم الإيصال', 'التاريخ والوقت', 'طريقة الدفع', 'المنتجات', 'الكمية الإجمالية', 'الإجمالي قبل الخصم', 'الخصم', 'الإجمالي بعد الخصم']
+        : ['N° scontrino', 'Data e ora', 'Met. di pagamento', 'Articoli', 'Quantità totale', 'Totale lordo', 'Sconto', 'Totale netto'];
       const xmlText = (value: string) => value
         .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
         .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
@@ -1771,8 +1844,8 @@ export default function App() {
       const rows = sales.map((sale) => [
         sale.receipt_no,
         dateTime.format(new Date(sale.created_at)),
-        sale.payment_method,
-        sale.items.map((item) => `${item.name} (${quantityFormat.format(item.quantity)} ${item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'})`).join(', '),
+        rtl ? localizedText(sale.payment_method, language) : sale.payment_method,
+        sale.items.map((item) => `${item.name} (${quantityFormat.format(item.quantity)} ${item.unit === 'KG' ? rtl ? 'كغ' : 'kg' : item.unit === 'LITRO' ? rtl ? 'لتر' : 'lit.' : rtl ? 'قطعة' : 'pz'})`).join(', '),
         sale.items.reduce((sum, item) => sum + item.quantity, 0),
         sale.gross_total,
         sale.discount,
@@ -1786,20 +1859,26 @@ export default function App() {
       };
       const headerRow = `<row r="1" ht="30" customHeight="1">${headers.map((header, index) => makeCell(index, 1, header, 1)).join('')}</row>`;
       const bodyRows = rows.map((row, rowIndex) => `<row r="${rowIndex + 2}">${row.map((value, columnIndex) =>
-        makeCell(columnIndex, rowIndex + 2, value, columnIndex === 4 ? 3 : columnIndex >= 5 ? 2 : undefined)
+        makeCell(columnIndex, rowIndex + 2, value, rtl ? columnIndex === 4 ? 3 : columnIndex >= 5 ? 2 : 4 : columnIndex === 4 ? 3 : columnIndex >= 5 ? 2 : undefined)
       ).join('')}</row>`).join('');
+      const sheetAlignment = rtl
+        ? '<alignment horizontal="right" readingOrder="2" vertical="center" wrapText="1"/>'
+        : '<alignment horizontal="left" vertical="center" wrapText="1"/>';
+      const currencyNumberFormat = rtl ? '#,##0.#### &quot;EGP&quot;' : '#,##0.00 &quot;€&quot;';
+      const numberAlignment = rtl ? ' applyAlignment="1"' : '';
+      const numberAlignmentXml = rtl ? sheetAlignment : '';
       const zip = new JSZip();
       zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`);
       zip.folder('_rels')?.file('.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`);
-      zip.folder('xl')?.file('workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Vendite" sheetId="1" r:id="rId1"/></sheets></workbook>`);
+      zip.folder('xl')?.file('workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${rtl ? 'المبيعات' : 'Vendite'}" sheetId="1" r:id="rId1"/></sheets></workbook>`);
       zip.folder('xl')?.folder('_rels')?.file('workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
-      zip.folder('xl')?.file('styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.000"/><numFmt numFmtId="165" formatCode="#,##0.00 &quot;€&quot;"/></numFmts><fonts count="3"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font><font><b/><sz val="14"/><color rgb="FF000000"/><name val="Aptos"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF38684E"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs></styleSheet>`);
-      zip.folder('xl')?.folder('worksheets')?.file('sheet1.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:H${rows.length + 1}"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="19" customWidth="1"/><col min="2" max="2" width="22" customWidth="1"/><col min="3" max="3" width="24" customWidth="1"/><col min="4" max="4" width="60" customWidth="1"/><col min="5" max="5" width="18" customWidth="1"/><col min="6" max="8" width="18" customWidth="1"/></cols><sheetData>${headerRow}${bodyRows}</sheetData></worksheet>`);
+      zip.folder('xl')?.file('styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.000"/><numFmt numFmtId="165" formatCode="${currencyNumberFormat}"/></numFmts><fonts count="3"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font><font><b/><sz val="14"/><color rgb="FF000000"/><name val="Aptos"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF38684E"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">${sheetAlignment}</xf><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"${numberAlignment}>${numberAlignmentXml}</xf><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"${numberAlignment}>${numberAlignmentXml}</xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1">${sheetAlignment}</xf></cellXfs></styleSheet>`);
+      zip.folder('xl')?.folder('worksheets')?.file('sheet1.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:H${rows.length + 1}"/><sheetViews><sheetView workbookViewId="0"${rtl ? ' rightToLeft="1"' : ''}><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="19" customWidth="1"/><col min="2" max="2" width="22" customWidth="1"/><col min="3" max="3" width="24" customWidth="1"/><col min="4" max="4" width="60" customWidth="1"/><col min="5" max="5" width="18" customWidth="1"/><col min="6" max="8" width="18" customWidth="1"/></cols><sheetData>${headerRow}${bodyRows}</sheetData></worksheet>`);
       const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `vendite-${todayKey}.xlsx`;
+      link.download = rtl ? `تقرير-المبيعات-${todayKey}.xlsx` : `vendite-${todayKey}.xlsx`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
@@ -1872,7 +1951,7 @@ export default function App() {
     const expenses = balanceExpenses.filter((expense) => expense.expense_date.startsWith(monthKey))
       .reduce((sum, expense) => sum + expense.amount, 0);
     return {
-      mese: month.toLocaleDateString('it-IT', { month: 'short', year: 'numeric' }),
+      mese: month.toLocaleDateString(appLocale, { month: 'short', year: 'numeric' }),
       vendite: revenue,
       costiMerce: goodsCost,
       speseOperative: expenses,
@@ -1929,9 +2008,9 @@ export default function App() {
       const date = new Date(sale.created_at);
       return date.getFullYear() === month.getFullYear() && date.getMonth() === month.getMonth();
     });
-    return { mese: month.toLocaleDateString('it-IT', { month: 'short' }), totale: monthSales.reduce((sum, sale) => sum + sale.total, 0) };
+    return { mese: month.toLocaleDateString(appLocale, { month: 'short' }), totale: monthSales.reduce((sum, sale) => sum + sale.total, 0) };
   });
-  const chartDays = Array.from({ length: 7 }, (_, index) => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - 6 + index); const sales = statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()); return { giorno: date.toLocaleDateString('it-IT', { weekday: 'short' }), totale: sales.reduce((sum, sale) => sum + sale.total, 0) }; });
+  const chartDays = Array.from({ length: 7 }, (_, index) => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - 6 + index); const sales = statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()); return { giorno: date.toLocaleDateString(appLocale, { weekday: 'short' }), totale: sales.reduce((sum, sale) => sum + sale.total, 0) }; });
   const downloadFinancialBalance = (respectTimeFilters: boolean) => {
     if (!data) return;
     const doc = new jsPDF({ orientation: 'landscape' });
@@ -1953,7 +2032,7 @@ export default function App() {
       const revenue = sales.reduce((sum, sale) => sum + sale.total, 0);
       const cost = sales.reduce((sum, sale) => sum + sale.items.reduce((subtotal, item) => subtotal + item.quantity * item.purchase_price, 0), 0);
       const expenses = reportExpenses.filter((expense) => expense.expense_date.startsWith(monthKey)).reduce((sum, expense) => sum + expense.amount, 0);
-      return { month: month.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' }), revenue, cost, expenses, result: revenue - cost - expenses };
+      return { month: month.toLocaleDateString(appLocale, { month: 'long', year: 'numeric' }), revenue, cost, expenses, result: revenue - cost - expenses };
     });
     const pageHeading = (title: string) => {
       doc.setFillColor(47, 91, 66);
@@ -2265,7 +2344,7 @@ export default function App() {
     </aside>
     <main className="main-content"><header className="topbar"><h1>{sectionLabel}</h1>{data.settings.shop_logo ? <img className="topbar-logo" src={data.settings.shop_logo} alt="Logo negozio" /> : <div className="topbar-logo-fallback"><Store size={19} /></div>}<div className="topbar-right"><div className="today-date">{navbarDate.format(currentTime)} · {navbarTime.format(currentTime)}</div></div></header>
 
-      {section === 'home' && <div className="page-content home-page"><img className="home-banner" src={data.settings.home_image || homeBanner} alt="Immagine homepage" /><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length} scontrini emessi`} /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyProfit)} detail="Profitto dopo sconti e costo merce" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString('it-IT')} detail="Pezzi registrati oggi" /></div><section className="expiry-alert expiry-home-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{canAccess('inventory') && expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length} articoli sotto soglia`} action={canAccess('inventory') ? <button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); navigateTo('inventory'); }}>Vai al magazzino →</button> : undefined} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => { if (canAccess('inventory')) setSelectedProduct(p); }}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock}</td><td>{p.low_stock_threshold}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => navigateTo('sales')}>Tutte le vendite →</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
+      {section === 'home' && <div className="page-content home-page"><img className="home-banner" src={data.settings.home_image || homeBanner} alt="Immagine homepage" /><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length} scontrini emessi`} /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyProfit)} detail="Profitto dopo sconti e costo merce" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString(appLocale)} detail="Pezzi registrati oggi" /></div><section className="expiry-alert expiry-home-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{canAccess('inventory') && expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length} articoli sotto soglia`} action={canAccess('inventory') ? <button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); navigateTo('inventory'); }}>Vai al magazzino →</button> : undefined} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => { if (canAccess('inventory')) setSelectedProduct(p); }}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock}</td><td>{p.low_stock_threshold}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => navigateTo('sales')}>Tutte le vendite →</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
 
       {section === 'inventory' && <div className="page-content">
         <div className="page-toolbar inventory-toolbar"><div><h2>Articoli in magazzino</h2><p>{data.products.length} articoli registrati</p></div>{!isCashierRole(activeRole) && <div className="toolbar-actions"><button className="button button-outline" onClick={exportInventoryReport}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-primary" onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct }); }}><Plus size={16} /> Aggiungi nuovo articolo</button></div>}</div>
@@ -2437,10 +2516,10 @@ export default function App() {
       {section === 'statistics' && <div className="page-content">
         <div className="statistics-periods" role="group" aria-label="Filtra statistiche per periodo">{statisticsPeriods.map((period) => <button key={period} className={`status-filter${statisticsPeriod === period ? ' active' : ''}`} aria-pressed={statisticsPeriod === period} onClick={() => setStatisticsPeriod(period)}>{period}</button>)}</div>
         <section className="panel product-sales-panel"><div className="panel-heading"><div><h3>Prodotti più e meno venduti</h3></div></div><Table headings={['Posizione', 'Prodotto', 'Quantità venduta', 'Ricavi']}><>{productSalesRanking.map((product, index) => <tr key={product.id}><td>{index + 1}</td><td className="cell-primary">{product.name}</td><td>{quantityFormat.format(product.quantitySold)} {product.unit === 'PEZZO' ? 'pz' : product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : ''}</td><td>{money.format(product.revenue)}</td></tr>)}</>{!productSalesRanking.length && <tr><td colSpan={4} className="empty-cell">Nessun prodotto registrato.</td></tr>}</Table></section>
-        <div className="metric-grid stats-metrics"><Metric icon={Banknote} label="Vendite" value={money.format(soldTotal)} detail="Incassi registrati nel periodo" /><Metric icon={CreditCard} label="Acquisto merce venduta" value={money.format(soldCost)} detail="Costo degli articoli venduti" /><Metric icon={TrendingUp} label="Netto stimato" value={money.format(estimatedNet)} detail="Ricavi meno costo del venduto e spese" /><Metric icon={ShoppingBasket} label="Quantità vendite" value={`${soldUnits.toLocaleString('it-IT')} di ${totalTrackedUnits.toLocaleString('it-IT')}`} detail="Articoli venduti rispetto a quelli ancora in magazzino" action={<button className="text-button metric-action" onClick={() => setUnsoldListOpen(true)}>Vedi lista</button>} /></div>
+        <div className="metric-grid stats-metrics"><Metric icon={Banknote} label="Vendite" value={money.format(soldTotal)} detail="Incassi registrati nel periodo" /><Metric icon={CreditCard} label="Acquisto merce venduta" value={money.format(soldCost)} detail="Costo degli articoli venduti" /><Metric icon={TrendingUp} label="Netto stimato" value={money.format(estimatedNet)} detail="Ricavi meno costo del venduto e spese" /><Metric icon={ShoppingBasket} label="Quantità vendite" value={`${soldUnits.toLocaleString(appLocale)} di ${totalTrackedUnits.toLocaleString(appLocale)}`} detail="Articoli venduti rispetto a quelli ancora in magazzino" action={<button className="text-button metric-action" onClick={() => setUnsoldListOpen(true)}>Vedi lista</button>} /></div>
         <div className="metric-grid inventory-values"><Metric icon={Package} label="Valore vendita in magazzino" value={money.format(stockRetail)} detail="Valore al prezzo di vendita" compact /><Metric icon={Archive} label="Valore acquisto in magazzino" value={money.format(stockCost)} detail="Costo delle scorte attuali" compact /><Metric icon={TrendingUp} label="Netto potenziale" value={money.format(stockRetail - stockCost)} detail="Margine potenziale delle scorte" compact /></div>
-        <div className="analytics-grid"><section className="panel calendar-panel"><div className="panel-heading"><div><h3>Calendario vendite</h3><p>Incasso per giorno</p></div><div className="month-controls"><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}>‹</button><strong>{calendarMonth.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</strong><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}>›</button></div></div><div className="calendar-grid">{['L', 'M', 'M', 'G', 'V', 'S', 'D'].map((day, index) => <span className="calendar-weekday" key={`${day}${index}`}>{day}</span>)}{calendarDays().map((day, index) => { const date = day ? new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day) : null; const revenue = date ? statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()).reduce((sum, sale) => sum + sale.total, 0) : 0; return <div key={index} className={`calendar-day${revenue ? ' has-sales' : ''}${date?.toDateString() === new Date().toDateString() ? ' today' : ''}`}>{day && <><span>{day}</span>{revenue > 0 && <small>{money.format(revenue)}</small>}</>}</div>; })}</div></section><section className="panel chart-panel"><div className="panel-heading"><div><h3>Vendite giornaliere</h3><p>Ultimi sette giorni nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><BarChart data={chartDays} margin={{ top: 14, right: 8, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="giorno" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value}€`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Bar dataKey="totale" fill="var(--green)" radius={[4, 4, 0, 0]} maxBarSize={34} /></BarChart></ResponsiveContainer></section></div>
-        <div className="analytics-grid statistics-extra"><section className="panel chart-panel"><div className="panel-heading"><div><h3>Andamento mensile</h3><p>Incasso per mese nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><LineChart data={monthlySales} margin={{ top: 14, right: 12, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="mese" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value}€`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Line type="monotone" dataKey="totale" stroke="var(--green)" strokeWidth={3} dot={{ fill: 'var(--green)', r: 4 }} /></LineChart></ResponsiveContainer></section><section className="panel payment-panel"><div className="panel-heading"><div><h3>Pagamenti per metodo</h3><p>Totale incassato nel periodo</p></div></div><div className="payment-totals">{Object.entries(paymentTotals).length ? Object.entries(paymentTotals).map(([method, amount], index) => <div key={method}><span className="payment-dot" style={{ backgroundColor: colors[index % colors.length] }} /><span>{method}</span><strong>{money.format(amount)}</strong></div>) : <span className="muted">Nessun pagamento nel periodo selezionato.</span>}</div></section></div>
+        <div className="analytics-grid"><section className="panel calendar-panel"><div className="panel-heading"><div><h3>Calendario vendite</h3><p>Incasso per giorno</p></div><div className="month-controls"><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}>‹</button><strong>{calendarMonth.toLocaleDateString(appLocale, { month: 'long', year: 'numeric' })}</strong><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}>›</button></div></div><div className="calendar-grid">{['L', 'M', 'M', 'G', 'V', 'S', 'D'].map((day, index) => <span className="calendar-weekday" key={`${day}${index}`}>{day}</span>)}{calendarDays().map((day, index) => { const date = day ? new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day) : null; const revenue = date ? statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()).reduce((sum, sale) => sum + sale.total, 0) : 0; return <div key={index} className={`calendar-day${revenue ? ' has-sales' : ''}${date?.toDateString() === new Date().toDateString() ? ' today' : ''}`}>{day && <><span>{day}</span>{revenue > 0 && <small>{money.format(revenue)}</small>}</>}</div>; })}</div></section><section className="panel chart-panel"><div className="panel-heading"><div><h3>Vendite giornaliere</h3><p>Ultimi sette giorni nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><BarChart data={chartDays} margin={{ top: 14, right: 8, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="giorno" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value}${language === 'ar' ? ' EGP' : '€'}`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Bar dataKey="totale" fill="var(--green)" radius={[4, 4, 0, 0]} maxBarSize={34} /></BarChart></ResponsiveContainer></section></div>
+        <div className="analytics-grid statistics-extra"><section className="panel chart-panel"><div className="panel-heading"><div><h3>Andamento mensile</h3><p>Incasso per mese nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><LineChart data={monthlySales} margin={{ top: 14, right: 12, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="mese" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value}${language === 'ar' ? ' EGP' : '€'}`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Line type="monotone" dataKey="totale" stroke="var(--green)" strokeWidth={3} dot={{ fill: 'var(--green)', r: 4 }} /></LineChart></ResponsiveContainer></section><section className="panel payment-panel"><div className="panel-heading"><div><h3>Pagamenti per metodo</h3><p>Totale incassato nel periodo</p></div></div><div className="payment-totals">{Object.entries(paymentTotals).length ? Object.entries(paymentTotals).map(([method, amount], index) => <div key={method}><span className="payment-dot" style={{ backgroundColor: colors[index % colors.length] }} /><span>{method}</span><strong>{money.format(amount)}</strong></div>) : <span className="muted">Nessun pagamento nel periodo selezionato.</span>}</div></section></div>
         <section className="panel category-panel"><div className="panel-heading"><div><h3>Vendite per categoria</h3><p>Valore degli articoli venduti nel periodo selezionato</p></div></div><div className="category-chart"><ResponsiveContainer width="100%" height={230}><PieChart><Pie data={Object.entries(categoriesSales).map(([name, value]) => ({ name, value }))} dataKey="value" nameKey="name" innerRadius={57} outerRadius={88} paddingAngle={3}>{Object.keys(categoriesSales).map((name, i) => <Cell key={name} fill={colors[i % colors.length]} />)}</Pie><Tooltip formatter={(value) => money.format(Number(value))} /></PieChart></ResponsiveContainer><div className="chart-legend">{Object.entries(categoriesSales).length ? Object.entries(categoriesSales).map(([name, value], i) => <div key={name}><span style={{ backgroundColor: colors[i % colors.length] }} /><span>{name}</span><strong>{money.format(value)}</strong></div>) : <span className="muted">Le categorie appariranno dopo la prima vendita.</span>}</div></div></section>
       </div>}
 
@@ -2534,7 +2613,8 @@ function Table({ headings, children }: { headings: string[]; children: ReactNode
   return <div className="table-wrap"><table><thead><tr>{headings.map((heading) => <th key={heading}>{localizedText(heading, language)}</th>)}</tr></thead><tbody><LocalizedNodes>{children}</LocalizedNodes></tbody></table></div>;
 }
 function SalesTable({ sales, onSelect }: { sales: Sale[]; onSelect?: (sale: Sale) => void }) {
-  return <div className="table-wrap"><table><thead><tr><th>Numero scontrino</th><th>Data e ora</th><th>Articoli</th><th>Pagamento</th><th className="align-right">Totale</th></tr></thead><tbody>{sales.map((sale) => <tr key={sale.id} onClick={onSelect ? () => onSelect(sale) : undefined}><td className="receipt-number">#{sale.receipt_no}</td><td>{dateTime.format(new Date(sale.created_at))}</td><td>{sale.item_count}</td><td><span className="payment-tag">{sale.payment_method}</span></td><td className="align-right cell-primary">{money.format(sale.total)}</td></tr>)}{!sales.length && <tr><td colSpan={5} className="empty-cell">Nessuna vendita registrata.</td></tr>}</tbody></table></div>;
+  const language = useContext(AppLanguageContext);
+  return <div className="table-wrap"><table><thead><tr><th>{localizedText('Numero scontrino', language)}</th><th>{localizedText('Data e ora', language)}</th><th>{localizedText('Articoli', language)}</th><th>{localizedText('Pagamento', language)}</th><th className="align-right">{localizedText('Totale', language)}</th></tr></thead><tbody><LocalizedNodes>{sales.map((sale) => <tr key={sale.id} onClick={onSelect ? () => onSelect(sale) : undefined}><td className="receipt-number">#{sale.receipt_no}</td><td>{dateTime.format(new Date(sale.created_at))}</td><td>{sale.item_count}</td><td><span className="payment-tag">{localizedText(sale.payment_method, language)}</span></td><td className="align-right cell-primary">{money.format(sale.total)}</td></tr>)}{!sales.length && <tr><td colSpan={5} className="empty-cell">Nessuna vendita registrata.</td></tr>}</LocalizedNodes></tbody></table></div>;
 }
 function SearchInput({ value, onChange, placeholder, numericOnly = false }: { value: string; onChange: (value: string) => void; placeholder: string; numericOnly?: boolean }) {
   const language = useContext(AppLanguageContext);

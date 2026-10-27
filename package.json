@@ -49,6 +49,12 @@
       "out/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "src/renderer/DejaVuSans.LICENSE",
+        "to": "licenses/DejaVuSans.LICENSE"
+      }
+    ],
     "asar": true,
     "npmRebuild": true,
     "win": {
