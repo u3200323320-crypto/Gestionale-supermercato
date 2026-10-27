@@ -1,6 +1,6 @@
 import { cloneElement, createContext, isValidElement, useContext, useEffect, useRef, useState } from 'react';
 import type { FormEvent, InputHTMLAttributes, ReactNode } from 'react';
-import { Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Camera, Check, ChevronDown, CircleAlert, ClipboardList, CreditCard, Eye, House, LockKeyhole, Minus, Package, Palette, Pencil, Plus, Printer, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Store, Trash2, TrendingUp, X } from 'lucide-react';
+import { Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Camera, Check, ChevronDown, CircleAlert, ClipboardList, CreditCard, Eye, House, LockKeyhole, Minus, Package, Palette, Pencil, Plus, Printer, RefreshCw, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Store, Trash2, TrendingUp, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { jsPDF } from 'jspdf';
 import autoTable, { Table as AutoTableTable } from 'jspdf-autotable';
@@ -17,11 +17,13 @@ const arabicMoneyNumber = new Intl.NumberFormat('en-US', { minimumFractionDigits
 let dateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' });
 let receiptDate = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short' });
 let receiptTime = new Intl.DateTimeFormat('it-IT', { timeStyle: 'short' });
+let formatLocalDate = (value: string) => receiptDate.format(new Date(`${value}T00:00:00`));
 let navbarDate = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 let navbarTime = new Intl.DateTimeFormat('it-IT', { hour: '2-digit', minute: '2-digit' });
 let quantityFormat = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 3 });
 let receiptQuantity = quantityFormat;
 let appLocale = 'it-IT';
+let dateTimeText = (date: Date) => dateTime.format(date);
 const roundQuantity = (quantity: number) => Math.round((quantity + Number.EPSILON) * 1000) / 1000;
 const colors = ['var(--green)', '#c17e4f', '#658499', '#a9aa64', '#8a7461', '#609085'];
 const localDateKey = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -35,7 +37,7 @@ const arabicUiTranslations: Record<string, string> = {
   'ACCESSO AL GESTIONALE': 'تسجيل الدخول إلى النظام', 'Inserisci il PIN di sicurezza': 'أدخل رمز الأمان', 'PIN di sicurezza': 'رمز الأمان',
   'Accedi': 'دخول', 'Accedi con barcode': 'الدخول باستخدام الرمز الشريطي', 'Scansiona il barcode del dipendente per accedere': 'امسح الرمز الشريطي للموظف لتسجيل الدخول',
   'Barcode dipendente': 'الرمز الشريطي للموظف', 'Verifica barcode': 'تحقق من الرمز الشريطي', 'Homepage': 'الرئيسية', 'Magazzino': 'المخزن',
-  'Controllo': 'الفحص', 'Storico Magazzino': 'سجل المخزن', 'Carica e scarica merce': 'إدخال وإخراج البضائع', 'Cassa': 'نقطة البيع',
+  'Storico Magazzino': 'سجل المخزن', 'Carica e scarica merce': 'إدخال وإخراج البضائع', 'Cassa': 'نقطة البيع',
   'Vendite': 'المبيعات', 'Statistiche': 'الإحصاءات', 'Bilancio gestionale': 'الميزانية الإدارية', 'Spese': 'المصروفات',
   'Modifica o Elimina': 'تعديل أو حذف', 'Offerta': 'العروض', 'Promozioni': 'العروض الترويجية', 'Crea buoni sconto': 'إنشاء قسائم الخصم',
   'Lista buoni sconto': 'قائمة قسائم الخصم', 'Dipendenti': 'الموظفون', 'Lista Dipendenti': 'قائمة الموظفين', 'Crea Dipendente': 'إنشاء موظف',
@@ -181,6 +183,52 @@ const arabicUiTranslations: Record<string, string> = {
   'Immagine homepage attuale': 'صورة الصفحة الرئيسية الحالية', 'Articolo non presente': 'المنتج غير موجود',
   'Barcode del dipendente': 'الرمز الشريطي للموظف', 'Prezzo acquisto': 'سعر الشراء',
   'Soglia minima': 'الحد الأدنى', 'Margine unitario': 'هامش الوحدة', 'Qtà': 'الكمية',
+  'Aggiorna dati senza chiudere la pagina': 'تحديث البيانات دون إغلاق الصفحة',
+  'Ultimo giorno': 'اليوم الماضي', 'Ultimi 3 giorni': 'آخر 3 أيام',
+  'Incassi registrati nel periodo': 'الإيرادات المسجلة خلال الفترة',
+  'Acquisto merce venduta': 'تكلفة البضائع المباعة', 'Costo degli articoli venduti': 'تكلفة المنتجات المباعة',
+  'Netto stimato': 'صافي الربح التقديري', 'Ricavi meno costo del venduto e spese': 'الإيرادات مطروحًا منها تكلفة البضائع والمصروفات',
+  'Quantità vendite': 'كمية المبيعات', 'Articoli venduti rispetto a quelli ancora in magazzino': 'المنتجات المباعة مقارنة بالمنتجات المتبقية في المخزن',
+  'Valore vendita in magazzino': 'قيمة البيع للمخزون',
+  'Valore al prezzo di vendita': 'القيمة بسعر البيع', 'Valore acquisto in magazzino': 'قيمة الشراء للمخزون',
+  'Costo delle scorte attuali': 'تكلفة المخزون الحالي', 'Netto potenziale': 'صافي الربح المحتمل',
+  'Margine potenziale delle scorte': 'هامش الربح المحتمل للمخزون',
+  'Ricavi da vendite': 'إيرادات المبيعات', 'Costo della merce venduta': 'تكلفة البضائع المباعة',
+  'Risultato gestionale': 'صافي نتيجة النشاط', 'Ricavi meno costi e spese': 'الإيرادات مطروحًا منها التكاليف والمصروفات',
+  'Ricavi netti': 'صافي الإيرادات', 'Costo del venduto': 'تكلفة البضائع المباعة',
+  'Margine lordo': 'إجمالي الربح', 'Valore potenziale di vendita': 'قيمة المبيعات المحتملة',
+  'Articoli in giacenza': 'المنتجات المتوفرة في المخزون',
+  'Dettaglio spese operative': 'تفاصيل المصروفات التشغيلية', 'Dettaglio vendite': 'تفاصيل المبيعات',
+  'Tutto il periodo': 'كامل الفترة', 'Ricavi vendite': 'إيرادات المبيعات',
+  'Valore magazzino': 'قيمة المخزون',
+  '1 giorno': 'يوم واحد', '3 giorni': '3 أيام',
+  '7 giorni': '7 أيام', '1 mese': 'شهر واحد', 'Personalizzata': 'مخصصة',
+  'KG minimi': 'الحد الأدنى بالكيلوغرام', 'Pezzi minimi': 'الحد الأدنى بالقطع',
+  'Promozione creata': 'تم إنشاء العرض الترويجي', 'Promozione modificata': 'تم تعديل العرض الترويجي',
+  'Promozione eliminata': 'تم حذف العرض الترويجي', 'Articolo salvato': 'تم حفظ المنتج',
+  'Articolo eliminato': 'تم حذف المنتج', 'Articolo scaduto smaltito': 'تم التخلص من المنتج منتهي الصلاحية',
+  'Carico merce': 'إضافة بضائع', 'Spesa registrata': 'تم تسجيل المصروف',
+  'Spesa eliminata': 'تم حذف المصروف', 'Stipendio pagato': 'تم دفع الراتب',
+  'Stipendi pagati': 'تم دفع الرواتب', 'Vendita completata': 'تم إتمام عملية البيع',
+  'Vendita modificata': 'تم تعديل عملية البيع', 'Vendita eliminata': 'تم حذف عملية البيع',
+  'Dipendente creato': 'تم إنشاء الموظف', 'Dipendente modificato': 'تم تعديل الموظف',
+  'Dipendente eliminato': 'تم حذف الموظف', 'Apertura sezione': 'فتح القسم',
+  'Accesso al gestionale': 'تسجيل الدخول إلى النظام', 'Uscita dal gestionale': 'تسجيل الخروج من النظام',
+  'Accesso': 'الدخول',
+  'Indirizzo': 'العنوان', 'Email': 'البريد الإلكتروني', 'Telefono': 'الهاتف',
+  'Sede operativa': 'مقر العمل', 'PDF allegato': 'ملف PDF مرفق', 'Non presente': 'غير موجود',
+  'FOTO': 'الصورة',
+  'Tutte le vendite': 'كل المبيعات',
+  'Carico da dettaglio articolo': 'إضافة مخزون من تفاصيل المنتج',
+  'Carica report': 'تحميل التقرير', 'Non è presente tra gli articoli.': 'غير موجود ضمن المنتجات.',
+  'Seleziona un requisito minimo.': 'اختر الحد الأدنى المطلوب.',
+  'Contratto': 'العقد', 'eliminata': 'محذوفة',
+  'Articolo eliminato dal magazzino': 'تم حذف المنتج من المخزن',
+  'Smaltimento prodotto scaduto': 'التخلص من المنتج منتهي الصلاحية',
+  'Gruppo buoni creato': 'تم إنشاء مجموعة القسائم', 'Gruppo buoni modificato': 'تم تعديل مجموعة القسائم',
+  'Gruppo buoni eliminato': 'تم حذف مجموعة القسائم', 'buoni': 'قسائم',
+  'Valore a costo': 'القيمة بالتكلفة', 'Margine potenziale': 'هامش الربح المحتمل',
+  'Totale vendita': 'إجمالي البيع', 'Sconto automatico': 'الخصم التلقائي', 'Sconto manuale': 'الخصم اليدوي',
 };
 const AppLanguageContext = createContext<AppLanguage>('it');
 const AppDynamicNamesContext = createContext<Set<string>>(new Set());
@@ -229,6 +277,18 @@ function LocalizedNodes({ children }: { children: ReactNode }) {
   };
   return <>{translate(children)}</>;
 }
+async function addArabicPdfFont(doc: jsPDF) {
+  const response = await fetch(arabicPdfFontUrl);
+  if (!response.ok) throw new Error('Impossibile caricare il font arabo per il report PDF.');
+  const fontBytes = new Uint8Array(await response.arrayBuffer());
+  let fontBinary = '';
+  for (let offset = 0; offset < fontBytes.length; offset += 0x8000) {
+    fontBinary += String.fromCharCode(...fontBytes.subarray(offset, offset + 0x8000));
+  }
+  doc.addFileToVFS('DejaVuSans.ttf', window.btoa(fontBinary));
+  doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'normal');
+  doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'bold');
+}
 const appThemes = [
   { id: 'green', label: 'Verde', color: '#72bf6a' },
   { id: 'blue', label: 'Blu', color: '#42A4F6' },
@@ -236,7 +296,7 @@ const appThemes = [
   { id: 'orange', label: 'Arancione', color: '#F3500A' },
 ] as const;
 type AppTheme = typeof appThemes[number]['id'];
-type PromotionMinimum = 'none' | 'spend' | 'kilograms' | 'pieces' | 'liters';
+type PromotionMinimum = 'none' | 'spend' | 'kilograms' | 'pieces';
 const nav: { section: Section; label: string; icon: typeof House }[] = [
   { section: 'home', label: 'Homepage', icon: House }, { section: 'inventory', label: 'Magazzino', icon: Package },
   { section: 'cash', label: 'Cassa', icon: ShoppingBasket }, { section: 'sales', label: 'Vendite', icon: ClipboardList },
@@ -248,7 +308,7 @@ const sectionNames: Partial<Record<Section, string>> = {
   'vouchers-list': 'Lista buoni sconto',
   expenses: 'Spese', statistics: 'Analisi vendite', 'financial-balance': 'Bilancio gestionale',
   'expired-products': 'Gestisci articoli scaduti',
-  employees: 'Lista Dipendenti', 'employee-create': 'Crea Dipendente', payroll: 'Paga Stipendi', 'employee-tracker': 'Tracker Dipendenti', 'inventory-control': 'Controllo',
+  employees: 'Lista Dipendenti', 'employee-create': 'Crea Dipendente', payroll: 'Paga Stipendi', 'employee-tracker': 'Tracker Dipendenti',
 };
 function normalizedRole(role: string): string {
   return role.trim().toLocaleLowerCase('it-IT').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -606,9 +666,7 @@ export default function App() {
   const [cart, setCart] = useState<SaleItem[]>([]);
   const [scannerSearch, setScannerSearch] = useState('');
   const [inventorySearch, setInventorySearch] = useState('');
-  const [inventoryControlAuthorized, setInventoryControlAuthorized] = useState(false);
-  const [inventoryControlBarcode, setInventoryControlBarcode] = useState('');
-  const [inventoryControlSearch, setInventoryControlSearch] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [employeeDraft, setEmployeeDraft] = useState<EmployeeInput | null>(null);
   const [employeeDetails, setEmployeeDetails] = useState<Employee | null>(null);
@@ -658,6 +716,16 @@ export default function App() {
 
   const refresh = async () => { const next = await window.gestionale.getState(); setData(next); setShopName(next.settings.shop_name); setArchiveFolder(next.settings.archive_folder); return next; };
   const notify = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 3600); };
+  const refreshCurrentData = async () => {
+    setRefreshing(true);
+    try {
+      setData(await window.gestionale.getState());
+    } catch (error) {
+      notify(`Impossibile aggiornare i dati: ${errorText(error)}`);
+    } finally {
+      setRefreshing(false);
+    }
+  };
   const activeRole = currentUser?.role ?? (data && data.employees.length === 0 ? 'Proprietario' : 'cassiere');
   const canAccess = (target: Section) => canAccessSection(activeRole, target);
   const trackActivity = (sectionName: string, action: string, detail = '', barcode = currentUser?.barcode) => {
@@ -676,11 +744,6 @@ export default function App() {
     }
     if (target !== section) trackActivity(sectionNames[target] ?? nav.find((item) => item.section === target)?.label ?? target, 'Apertura sezione');
     setSection(target);
-    if (target === 'inventory-control') {
-      setInventoryControlAuthorized(false);
-      setInventoryControlBarcode('');
-      setInventoryControlSearch('');
-    }
     setOpenSidebarMenu(null);
     if (target === 'employee-tracker') void refresh();
   };
@@ -982,17 +1045,19 @@ export default function App() {
     window.localStorage.setItem('app-theme', appTheme);
   }, [appTheme]);
   useEffect(() => {
-    document.documentElement.lang = language === 'ar' ? 'ar-EG' : 'it-IT';
+    document.documentElement.lang = language === 'ar' ? 'ar-EG-u-nu-latn' : 'it-IT';
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
     window.localStorage.setItem('app-language', language);
-    const locale = language === 'ar' ? 'ar-EG' : 'it-IT';
+    const locale = language === 'ar' ? 'ar-EG-u-nu-latn' : 'it-IT';
     appLocale = locale;
     money = language === 'ar'
       ? { format: (amount: number) => `${arabicMoneyNumber.format(amount)} EGP` }
       : new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' });
     dateTime = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' });
-    receiptDate = new Intl.DateTimeFormat(locale, { dateStyle: 'short' });
+    receiptDate = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric' });
     receiptTime = new Intl.DateTimeFormat(locale, { timeStyle: 'short' });
+    formatLocalDate = (value: string) => receiptDate.format(new Date(`${value}T00:00:00`));
+    dateTimeText = (date: Date) => `${receiptDate.format(date)} ${receiptTime.format(date)}`;
     navbarDate = new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     navbarTime = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
     quantityFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 3 });
@@ -1124,22 +1189,6 @@ export default function App() {
         setStockProduct(authorization.product);
       }
       setSelectedProduct(null);
-    } catch (error) {
-      notify(errorText(error));
-    }
-  };
-  const authorizeInventoryControl = async (barcode: string) => {
-    const normalized = barcode.trim();
-    if (!normalized) return;
-    try {
-      if (!await window.gestionale.verifyEmployeeBarcode(normalized)) {
-        setInventoryControlBarcode('');
-        notify('Barcode dipendente non riconosciuto.');
-        return;
-      }
-      setInventoryControlAuthorized(true);
-      setInventoryControlBarcode('');
-      notify('Accesso al controllo magazzino autorizzato.');
     } catch (error) {
       notify(errorText(error));
     }
@@ -1316,16 +1365,6 @@ export default function App() {
       void unlockWithBarcode(normalized);
       return;
     }
-    if (section === 'inventory-control') {
-      if (!inventoryControlAuthorized) void authorizeInventoryControl(normalized);
-      else {
-        setInventoryControlSearch(normalized);
-        if (!data?.products.some((product) => product.code === normalized && product.stock > 0)) {
-          notify(`Articolo con barcode ${normalized} non presente in magazzino.`);
-        }
-      }
-      return;
-    }
     if (!data || (!data.settings.barcode_scanner_enabled && !saleAuthorizationScan && !productAuthorizationScan)) return;
     if (data.settings.barcode_scanner_enabled && !data.settings.barcode_scanner_detected) {
       setData((current) => current ? { ...current, settings: { ...current.settings, barcode_scanner_detected: true } } : current);
@@ -1357,13 +1396,13 @@ export default function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       const saleAuthorizationScan = section === 'sale-management' && saleAction !== null;
       const productAuthorizationScan = section === 'inventory' && productAuthorization !== null;
-      if (!['cash', 'inventory', 'inventory-control', 'sales', 'stock-movement', 'sale-management'].includes(section)
-        || (!locked && section !== 'inventory-control' && !data?.settings.barcode_scanner_enabled && !saleAuthorizationScan && !productAuthorizationScan)) return;
+      if (!['cash', 'inventory', 'sales', 'stock-movement', 'sale-management'].includes(section)
+        || (!locked && !data?.settings.barcode_scanner_enabled && !saleAuthorizationScan && !productAuthorizationScan)) return;
       const now = performance.now();
       const sequence = scannerSequence.current;
       if (event.key === 'Enter') {
         const averageInterval = sequence.value.length > 1 ? (now - sequence.startedAt) / (sequence.value.length - 1) : Infinity;
-        const completeBarcode = saleAuthorizationScan || locked || productAuthorizationScan || section === 'inventory-control'
+        const completeBarcode = saleAuthorizationScan || locked || productAuthorizationScan
           ? sequence.value.length >= 4
           : sequence.value.length >= 4 && now - sequence.startedAt <= 600 && averageInterval <= 75;
         if (completeBarcode) {
@@ -1565,7 +1604,7 @@ export default function App() {
       setCheckoutOpen(false);
       await refresh();
       setReceipt(sale);
-      window.setTimeout(printReceipt, 300);
+      window.requestAnimationFrame(() => window.requestAnimationFrame(printReceipt));
     } catch (error) { notify(errorText(error)); await refresh(); }
   };
   const saveStoreName = async (event: FormEvent) => { event.preventDefault(); await window.gestionale.saveSetting('shop_name', shopName.trim() || 'Il tuo supermercato'); await refresh(); notify('Nome negozio aggiornato'); };
@@ -1589,10 +1628,10 @@ export default function App() {
   const chooseFolder = async () => { const chosen = await window.gestionale.chooseArchiveFolder(); if (chosen) { setArchiveFolder(chosen); await refresh(); notify('Cartella archivio aggiornata'); } };
   const savePromotion = async (event: FormEvent) => {
     event.preventDefault();
-    const selectedMinimum = promotionMinimum === 'spend' ? promotion.minimum_spend : promotionMinimum === 'kilograms' ? promotion.minimum_kilograms : promotionMinimum === 'pieces' ? promotion.minimum_pieces : promotionMinimum === 'liters' ? promotion.minimum_liters : 0;
+    const selectedMinimum = promotionMinimum === 'spend' ? promotion.minimum_spend : promotionMinimum === 'kilograms' ? promotion.minimum_kilograms : promotionMinimum === 'pieces' ? promotion.minimum_pieces : 0;
     if (promotionMinimum !== 'none' && (!Number.isFinite(selectedMinimum) || (selectedMinimum ?? 0) <= 0)) { notify('Inserisci un requisito minimo maggiore di zero.'); return; }
     try {
-      await window.gestionale.savePromotion({ ...promotion, minimum_spend: promotionMinimum === 'spend' ? promotion.minimum_spend : 0, minimum_kilograms: promotionMinimum === 'kilograms' ? promotion.minimum_kilograms : 0, minimum_pieces: promotionMinimum === 'pieces' ? promotion.minimum_pieces : 0, minimum_liters: promotionMinimum === 'liters' ? promotion.minimum_liters : 0 });
+      await window.gestionale.savePromotion({ ...promotion, minimum_spend: promotionMinimum === 'spend' ? promotion.minimum_spend : 0, minimum_kilograms: promotionMinimum === 'kilograms' ? promotion.minimum_kilograms : 0, minimum_pieces: promotionMinimum === 'pieces' ? promotion.minimum_pieces : 0, minimum_liters: 0 });
       trackActivity('Offerta', promotion.id === undefined ? 'Promozione creata' : 'Promozione modificata', promotion.name);
       await refresh();
       const wasEditing = promotion.id !== undefined;
@@ -1633,18 +1672,7 @@ export default function App() {
         ? respectTimeFilters ? ` · الفترة: ${localizedText(salesPeriod, language)}` : ' · كامل الفترة'
         : respectTimeFilters ? ` · Periodo: ${salesPeriod}` : ' · Tutto il periodo';
       const doc = new jsPDF({ orientation: 'portrait' });
-      if (rtl) {
-        const fontResponse = await fetch(arabicPdfFontUrl);
-        if (!fontResponse.ok) throw new Error('Impossibile caricare il font arabo per il report PDF.');
-        const fontBytes = new Uint8Array(await fontResponse.arrayBuffer());
-        let fontBinary = '';
-        for (let offset = 0; offset < fontBytes.length; offset += 0x8000) {
-          fontBinary += String.fromCharCode(...fontBytes.subarray(offset, offset + 0x8000));
-        }
-        doc.addFileToVFS('DejaVuSans.ttf', window.btoa(fontBinary));
-        doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'normal');
-        doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'bold');
-      }
+      if (rtl) await addArabicPdfFont(doc);
       doc.setR2L(rtl);
       const textX = rtl ? 198 : data.settings.shop_logo ? 43 : 14;
       doc.setFillColor(43, 82, 61);
@@ -1684,7 +1712,7 @@ export default function App() {
           const purchasePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.purchase_price, 0);
           const salePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
           const totalQuantity = sale.items.reduce((sum, item) => sum + item.quantity, 0);
-          const row = [sale.receipt_no, dateTime.format(new Date(sale.created_at)), quantityFormat.format(totalQuantity), rtl ? localizedText(sale.payment_method, language) : sale.payment_method, money.format(purchasePrice), money.format(salePrice), money.format(sale.total - purchasePrice), money.format(sale.discount), money.format(sale.total)];
+          const row = [sale.receipt_no, dateTimeText(new Date(sale.created_at)), quantityFormat.format(totalQuantity), rtl ? localizedText(sale.payment_method, language) : sale.payment_method, money.format(purchasePrice), money.format(salePrice), money.format(sale.total - purchasePrice), money.format(sale.discount), money.format(sale.total)];
           return rtl ? row.reverse() : row;
         }),
         showHead: 'firstPage',
@@ -1843,7 +1871,7 @@ export default function App() {
       const columnNames = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
       const rows = sales.map((sale) => [
         sale.receipt_no,
-        dateTime.format(new Date(sale.created_at)),
+        dateTimeText(new Date(sale.created_at)),
         rtl ? localizedText(sale.payment_method, language) : sale.payment_method,
         sale.items.map((item) => `${item.name} (${quantityFormat.format(item.quantity)} ${item.unit === 'KG' ? rtl ? 'كغ' : 'kg' : item.unit === 'LITRO' ? rtl ? 'لتر' : 'lit.' : rtl ? 'قطعة' : 'pz'})`).join(', '),
         sale.items.reduce((sum, item) => sum + item.quantity, 0),
@@ -1864,7 +1892,7 @@ export default function App() {
       const sheetAlignment = rtl
         ? '<alignment horizontal="right" readingOrder="2" vertical="center" wrapText="1"/>'
         : '<alignment horizontal="left" vertical="center" wrapText="1"/>';
-      const currencyNumberFormat = rtl ? '#,##0.#### &quot;EGP&quot;' : '#,##0.00 &quot;€&quot;';
+      const currencyNumberFormat = rtl ? '#,##0.00 &quot;EGP&quot;' : '#,##0.00 &quot;€&quot;';
       const numberAlignment = rtl ? ' applyAlignment="1"' : '';
       const numberAlignmentXml = rtl ? sheetAlignment : '';
       const zip = new JSZip();
@@ -1872,7 +1900,7 @@ export default function App() {
       zip.folder('_rels')?.file('.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`);
       zip.folder('xl')?.file('workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${rtl ? 'المبيعات' : 'Vendite'}" sheetId="1" r:id="rId1"/></sheets></workbook>`);
       zip.folder('xl')?.folder('_rels')?.file('workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
-      zip.folder('xl')?.file('styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.000"/><numFmt numFmtId="165" formatCode="${currencyNumberFormat}"/></numFmts><fonts count="3"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font><font><b/><sz val="14"/><color rgb="FF000000"/><name val="Aptos"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF38684E"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">${sheetAlignment}</xf><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"${numberAlignment}>${numberAlignmentXml}</xf><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"${numberAlignment}>${numberAlignmentXml}</xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1">${sheetAlignment}</xf></cellXfs></styleSheet>`);
+      zip.folder('xl')?.file('styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.###"/><numFmt numFmtId="165" formatCode="${currencyNumberFormat}"/></numFmts><fonts count="3"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font><font><b/><sz val="14"/><color rgb="FF000000"/><name val="Aptos"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF38684E"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">${sheetAlignment}</xf><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"${numberAlignment}>${numberAlignmentXml}</xf><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"${numberAlignment}>${numberAlignmentXml}</xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1">${sheetAlignment}</xf></cellXfs></styleSheet>`);
       zip.folder('xl')?.folder('worksheets')?.file('sheet1.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:H${rows.length + 1}"/><sheetViews><sheetView workbookViewId="0"${rtl ? ' rightToLeft="1"' : ''}><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="19" customWidth="1"/><col min="2" max="2" width="22" customWidth="1"/><col min="3" max="3" width="24" customWidth="1"/><col min="4" max="4" width="60" customWidth="1"/><col min="5" max="5" width="18" customWidth="1"/><col min="6" max="8" width="18" customWidth="1"/></cols><sheetData>${headerRow}${bodyRows}</sheetData></worksheet>`);
       const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
@@ -1887,31 +1915,35 @@ export default function App() {
   };
   const exportEmployeeActivityXlsx = async () => {
     if (!data) return;
+    const rtl = language === 'ar';
     const rows = employeeActivityList.map((entry) => [
-      dateTime.format(new Date(entry.created_at)),
+      dateTimeText(new Date(entry.created_at)),
       entry.employee_name,
-      entry.action,
-      entry.section,
-      entry.detail,
+      localizedText(entry.action, language),
+      localizedText(entry.section, language),
+      localizedText(entry.detail, language),
     ]);
-    const headers = ['Data e ora', 'Dipendente', 'Attività', 'Sezione', 'Dettagli'];
+    const headers = rtl
+      ? ['التفاصيل', 'القسم', 'النشاط', 'الموظف', 'التاريخ والوقت']
+      : ['Data e ora', 'Dipendente', 'Attività', 'Sezione', 'Dettagli'];
+    const exportRows = rtl ? rows.map((row) => row.reverse()) : rows;
     const columnNames = ['A', 'B', 'C', 'D', 'E'];
     const xmlText = (value: string) => value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-    const cell = (columnIndex: number, rowIndex: number, value: string) => `<c r="${columnNames[columnIndex]}${rowIndex}"${rowIndex === 1 ? ' s="1"' : ''} t="inlineStr"><is><t xml:space="preserve">${xmlText(value)}</t></is></c>`;
+    const cell = (columnIndex: number, rowIndex: number, value: string) => `<c r="${columnNames[columnIndex]}${rowIndex}"${rowIndex === 1 ? rtl ? ' s="3"' : ' s="1"' : rtl ? ' s="2"' : ''} t="inlineStr"><is><t xml:space="preserve">${xmlText(value)}</t></is></c>`;
     const headerRow = `<row r="1" ht="30" customHeight="1">${headers.map((header, index) => cell(index, 1, header)).join('')}</row>`;
-    const bodyRows = rows.map((row, rowIndex) => `<row r="${rowIndex + 2}">${row.map((value, columnIndex) => cell(columnIndex, rowIndex + 2, value)).join('')}</row>`).join('');
+    const bodyRows = exportRows.map((row, rowIndex) => `<row r="${rowIndex + 2}">${row.map((value, columnIndex) => cell(columnIndex, rowIndex + 2, value)).join('')}</row>`).join('');
     const zip = new JSZip();
     zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`);
     zip.folder('_rels')?.file('.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`);
     zip.folder('xl')?.file('workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Tracker" sheetId="1" r:id="rId1"/></sheets></workbook>`);
     zip.folder('xl')?.folder('_rels')?.file('workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
-    zip.folder('xl')?.file('styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="14"/><color rgb="FF000000"/><name val="Aptos"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf></cellXfs></styleSheet>`);
-    zip.folder('xl')?.folder('worksheets')?.file('sheet1.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:E${rows.length + 1}"/><cols><col min="1" max="1" width="24" customWidth="1"/><col min="2" max="2" width="27" customWidth="1"/><col min="3" max="3" width="34" customWidth="1"/><col min="4" max="4" width="30" customWidth="1"/><col min="5" max="5" width="58" customWidth="1"/></cols><sheetData>${headerRow}${bodyRows}</sheetData></worksheet>`);
+    zip.folder('xl')?.file('styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="14"/><color rgb="FF000000"/><name val="Aptos"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="right" readingOrder="2" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="right" readingOrder="2" vertical="center" wrapText="1"/></xf></cellXfs></styleSheet>`);
+    zip.folder('xl')?.folder('worksheets')?.file('sheet1.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:E${rows.length + 1}"/><sheetViews><sheetView workbookViewId="0"${rtl ? ' rightToLeft="1"' : ''}/></sheetViews><cols><col min="1" max="1" width="24" customWidth="1"/><col min="2" max="2" width="27" customWidth="1"/><col min="3" max="3" width="34" customWidth="1"/><col min="4" max="4" width="30" customWidth="1"/><col min="5" max="5" width="58" customWidth="1"/></cols><sheetData>${headerRow}${bodyRows}</sheetData></worksheet>`);
     const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `tracker-dipendenti-${todayKey}.xlsx`;
+    link.download = rtl ? `سجل-أنشطة-الموظفين-${todayKey}.xlsx` : `tracker-dipendenti-${todayKey}.xlsx`;
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -2011,16 +2043,23 @@ export default function App() {
     return { mese: month.toLocaleDateString(appLocale, { month: 'short' }), totale: monthSales.reduce((sum, sale) => sum + sale.total, 0) };
   });
   const chartDays = Array.from({ length: 7 }, (_, index) => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - 6 + index); const sales = statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()); return { giorno: date.toLocaleDateString(appLocale, { weekday: 'short' }), totale: sales.reduce((sum, sale) => sum + sale.total, 0) }; });
-  const downloadFinancialBalance = (respectTimeFilters: boolean) => {
+  const downloadFinancialBalance = async (respectTimeFilters: boolean) => {
     if (!data) return;
     const doc = new jsPDF({ orientation: 'landscape' });
+    const rtl = language === 'ar';
+    const font = rtl ? 'DejaVuSans' : 'helvetica';
+    if (rtl) await addArabicPdfFont(doc);
+    doc.setR2L(rtl);
     const reportSales = respectTimeFilters ? balanceSales : data.sales;
     const reportExpenses = respectTimeFilters ? balanceExpenses : data.expenses;
     const reportRevenue = reportSales.reduce((sum, sale) => sum + sale.total, 0);
     const reportGoodsCost = reportSales.reduce((sum, sale) => sum + sale.items.reduce((cost, item) => cost + item.quantity * item.purchase_price, 0), 0);
     const reportOperatingExpenses = reportExpenses.reduce((sum, expense) => sum + expense.amount, 0);
     const periodLabel = respectTimeFilters ? balancePeriod : 'Tutto il periodo';
-    const filename = `bilancio-gestionale-${periodLabel.toLowerCase().replaceAll(' ', '-')}-${todayKey}.pdf`;
+    const translatedPeriod = localizedText(periodLabel, language);
+    const filename = rtl
+      ? `الميزانية-الإدارية-${todayKey}.pdf`
+      : `bilancio-gestionale-${periodLabel.toLowerCase().replaceAll(' ', '-')}-${todayKey}.pdf`;
     const allDates = [...reportSales.map((sale) => sale.created_at.slice(0, 10)), ...reportExpenses.map((expense) => expense.expense_date)].sort();
     const monthlyStartDate = respectTimeFilters || !allDates.length ? balanceFirstMonth : new Date(`${allDates[0]}T00:00:00`);
     const firstMonth = new Date(monthlyStartDate.getFullYear(), monthlyStartDate.getMonth(), 1);
@@ -2038,67 +2077,98 @@ export default function App() {
       doc.setFillColor(47, 91, 66);
       doc.rect(0, 0, 297, 28, 'F');
       doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
+      doc.setFont(font, 'bold');
       doc.setFontSize(13);
-      doc.text(title, 12, 13);
-      doc.setFont('helvetica', 'normal');
+      doc.text(title, rtl ? 285 : 12, 13, rtl ? { align: 'right' } : undefined);
+      doc.setFont(font, 'normal');
       doc.setFontSize(8);
-      doc.text(`${data.settings.shop_name} · ${periodLabel} · ${receiptDate.format(new Date())}`, 12, 21);
+      doc.text(`${data.settings.shop_name} · ${translatedPeriod} · ${receiptDate.format(new Date())}`, rtl ? 285 : 12, 21, rtl ? { align: 'right' } : undefined);
     };
-    pageHeading('Bilancio gestionale');
+    pageHeading(rtl ? 'الميزانية الإدارية' : 'Bilancio gestionale');
     autoTable(doc, {
       startY: 36,
-      head: [['Ricavi vendite', 'Costo merce', 'Spese operative', 'Risultato', 'Valore magazzino']],
-      body: [[money.format(reportRevenue), money.format(reportGoodsCost), money.format(reportOperatingExpenses), money.format(reportRevenue - reportGoodsCost - reportOperatingExpenses), money.format(stockCost)]],
+      head: [rtl
+        ? ['قيمة المخزون', 'النتيجة', 'المصروفات التشغيلية', 'تكلفة البضائع', 'إيرادات المبيعات']
+        : ['Ricavi vendite', 'Costo merce', 'Spese operative', 'Risultato', 'Valore magazzino']],
+      body: [rtl
+        ? [money.format(stockCost), money.format(reportRevenue - reportGoodsCost - reportOperatingExpenses), money.format(reportOperatingExpenses), money.format(reportGoodsCost), money.format(reportRevenue)]
+        : [money.format(reportRevenue), money.format(reportGoodsCost), money.format(reportOperatingExpenses), money.format(reportRevenue - reportGoodsCost - reportOperatingExpenses), money.format(stockCost)]],
       theme: 'grid',
-      styles: { fontSize: 9, cellPadding: 5, halign: 'center' },
-      headStyles: { fillColor: [56, 104, 78] },
+      styles: { font, fontSize: 9, cellPadding: 5, halign: rtl ? 'right' : 'center' },
+      headStyles: { fillColor: [56, 104, 78], font, halign: rtl ? 'right' : 'center' },
     });
     autoTable(doc, {
       startY: 67,
-      head: [['Mese', 'Ricavi', 'Costo merce', 'Spese operative', 'Risultato']],
-      body: reportMonthly.map((month) => [month.month, money.format(month.revenue), money.format(month.cost), money.format(month.expenses), money.format(month.result)]),
+      head: [rtl
+        ? ['النتيجة', 'المصروفات التشغيلية', 'تكلفة البضائع', 'الإيرادات', 'الشهر']
+        : ['Mese', 'Ricavi', 'Costo merce', 'Spese operative', 'Risultato']],
+      body: reportMonthly.map((month) => rtl
+        ? [money.format(month.result), money.format(month.expenses), money.format(month.cost), money.format(month.revenue), month.month]
+        : [month.month, money.format(month.revenue), money.format(month.cost), money.format(month.expenses), money.format(month.result)]),
       theme: 'striped',
-      styles: { fontSize: 8, cellPadding: 3 },
-      headStyles: { fillColor: [56, 104, 78] },
+      styles: { font, fontSize: 8, cellPadding: 3, halign: rtl ? 'right' : 'left' },
+      headStyles: { fillColor: [56, 104, 78], font, halign: rtl ? 'right' : 'left' },
       didDrawPage: () => {
+        doc.setFont(font, 'normal');
         doc.setFontSize(8);
         doc.setTextColor(120, 130, 122);
-        doc.text(`${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`, 12, 202);
+        doc.text(rtl
+          ? `${data.settings.shop_name} · الصفحة ${doc.getNumberOfPages()}`
+          : `${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`,
+        rtl ? 285 : 12, 202, rtl ? { align: 'right' } : undefined);
       },
     });
     doc.addPage();
-    pageHeading('Dettaglio vendite');
+    pageHeading(rtl ? 'تفاصيل المبيعات' : 'Dettaglio vendite');
     autoTable(doc, {
       startY: 36,
-      head: [['Scontrino', 'Data e ora', 'Articoli', 'Costo merce', 'Totale vendita', 'Profitto']],
+      head: [rtl
+        ? ['الربح', 'إجمالي البيع', 'تكلفة البضائع', 'المنتجات', 'التاريخ والوقت', 'الإيصال']
+        : ['Scontrino', 'Data e ora', 'Articoli', 'Costo merce', 'Totale vendita', 'Profitto']],
       body: reportSales.map((sale) => {
         const cost = sale.items.reduce((sum, item) => sum + item.quantity * item.purchase_price, 0);
         const items = sale.items.map((item) => `${item.name} × ${quantityFormat.format(item.quantity)}`).join(', ');
-        return [sale.receipt_no, dateTime.format(new Date(sale.created_at)), items, money.format(cost), money.format(sale.total), money.format(sale.total - cost)];
+        const row = [sale.receipt_no, dateTimeText(new Date(sale.created_at)), items, money.format(cost), money.format(sale.total), money.format(sale.total - cost)];
+        return rtl ? row.reverse() : row;
       }),
       theme: 'striped',
-      styles: { fontSize: 7.5, cellPadding: 2, overflow: 'linebreak' },
-      headStyles: { fillColor: [56, 104, 78] },
+      styles: { font, fontSize: rtl ? 6.5 : 7.5, cellPadding: 2, overflow: 'linebreak', halign: rtl ? 'right' : 'left' },
+      headStyles: { fillColor: [56, 104, 78], font, halign: rtl ? 'right' : 'left' },
       didDrawPage: () => {
+        doc.setFont(font, 'normal');
         doc.setFontSize(8);
         doc.setTextColor(120, 130, 122);
-        doc.text(`${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`, 12, 202);
+        doc.text(rtl
+          ? `${data.settings.shop_name} · الصفحة ${doc.getNumberOfPages()}`
+          : `${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`,
+        rtl ? 285 : 12, 202, rtl ? { align: 'right' } : undefined);
       },
     });
     doc.addPage();
-    pageHeading('Dettaglio spese operative');
+    pageHeading(rtl ? 'تفاصيل المصروفات التشغيلية' : 'Dettaglio spese operative');
     autoTable(doc, {
       startY: 36,
-      head: [['Data', 'Descrizione', 'Categoria', 'Importo']],
-      body: reportExpenses.map((expense) => [expense.expense_date, expense.description, expense.category, money.format(expense.amount)]),
+      head: [rtl ? ['المبلغ', 'الفئة', 'الوصف', 'التاريخ'] : ['Data', 'Descrizione', 'Categoria', 'Importo']],
+      body: reportExpenses.map((expense) => {
+        const row = [
+          receiptDate.format(new Date(`${expense.expense_date}T00:00:00`)),
+          expense.description,
+          localizedText(expense.category, language),
+          money.format(expense.amount),
+        ];
+        return rtl ? row.reverse() : row;
+      }),
       theme: 'striped',
-      styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
-      headStyles: { fillColor: [56, 104, 78] },
+      styles: { font, fontSize: 8, cellPadding: 3, overflow: 'linebreak', halign: rtl ? 'right' : 'left' },
+      headStyles: { fillColor: [56, 104, 78], font, halign: rtl ? 'right' : 'left' },
       didDrawPage: () => {
+        doc.setFont(font, 'normal');
         doc.setFontSize(8);
         doc.setTextColor(120, 130, 122);
-        doc.text(`${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`, 12, 202);
+        doc.text(rtl
+          ? `${data.settings.shop_name} · الصفحة ${doc.getNumberOfPages()}`
+          : `${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`,
+        rtl ? 285 : 12, 202, rtl ? { align: 'right' } : undefined);
       },
     });
     doc.save(filename);
@@ -2120,9 +2190,6 @@ export default function App() {
       || (inventoryStatus === 'available' && item.stock > item.low_stock_threshold)
       || (inventoryStatus === 'low' && item.stock > 0 && item.stock <= item.low_stock_threshold)
       || (inventoryStatus === 'out' && item.stock === 0))
-  ) ?? [];
-  const inventoryControlList = data?.products.filter((item) => item.stock > 0 &&
-    (item.name.toLocaleLowerCase('it').includes(inventoryControlSearch.toLocaleLowerCase('it')) || item.code.includes(inventoryControlSearch))
   ) ?? [];
   const employeeList = data?.employees.filter((employee) =>
     [employee.first_name, employee.last_name, employee.role, employee.shift, employee.operational_site, employee.email]
@@ -2267,21 +2334,6 @@ export default function App() {
     });
     return doc;
   };
-  const downloadInventoryControlList = () => {
-    const doc = new jsPDF({ orientation: 'landscape' });
-    doc.setFontSize(18);
-    doc.text(data?.settings.shop_name ?? 'Gestione Supermercato', 14, 17);
-    doc.setFontSize(11);
-    doc.text('Articoli in magazzino', 14, 25);
-    autoTable(doc, {
-      startY: 32,
-      head: [['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Prezzo vendita']],
-      body: inventoryControlList.map((product) => [product.name, product.code, product.category, `${quantityFormat.format(product.stock)} ${product.unit ?? 'PEZZO'}`, money.format(product.sale_price)]),
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [56, 104, 78] },
-    });
-    doc.save(`lista-magazzino-${todayKey}.pdf`);
-  };
   const shareUnsoldList = async () => {
     try {
       const doc = createUnsoldListPdf();
@@ -2315,8 +2367,8 @@ export default function App() {
       <nav>
         {canAccess('home') && <button className={`nav-item${section === 'home' ? ' active' : ''}`} onClick={() => navigateTo('home')}><House size={18} /><span>Homepage</span></button>}
         {canAccess('inventory') && <>
-          <button aria-expanded={openSidebarMenu === 'inventory'} className={`nav-item${section === 'inventory' || section === 'inventory-control' || section === 'expired-products' || section === 'inventory-history' || section === 'stock-movement' ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'inventory' ? null : 'inventory')}><Package size={18} /><span>{language === 'ar' ? 'المخزن' : 'Magazzino'}</span>{!isCashierRole(activeRole) && <ChevronDown className={`nav-chevron${openSidebarMenu === 'inventory' ? ' open' : ''}`} size={15} />}</button>
-          {openSidebarMenu === 'inventory' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'inventory' ? ' selected' : ''}`} onClick={() => navigateTo('inventory')}>{language === 'ar' ? 'المخزن' : 'Magazzino'}</button>{canAccess('inventory-history') && <button className={`sidebar-subitem${section === 'inventory-history' ? ' selected' : ''}`} onClick={() => navigateTo('inventory-history')}>{language === 'ar' ? 'سجل المخزن' : 'Storico Magazzino'}</button>}<button className={`sidebar-subitem${section === 'inventory-control' ? ' selected' : ''}`} onClick={() => navigateTo('inventory-control')}>{language === 'ar' ? 'فحص المخزن' : 'Controllo'}</button></div>}
+          <button aria-expanded={openSidebarMenu === 'inventory'} className={`nav-item${section === 'inventory' || section === 'expired-products' || section === 'inventory-history' || section === 'stock-movement' ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'inventory' ? null : 'inventory')}><Package size={18} /><span>{language === 'ar' ? 'المخزن' : 'Magazzino'}</span>{!isCashierRole(activeRole) && <ChevronDown className={`nav-chevron${openSidebarMenu === 'inventory' ? ' open' : ''}`} size={15} />}</button>
+          {openSidebarMenu === 'inventory' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'inventory' ? ' selected' : ''}`} onClick={() => navigateTo('inventory')}>{language === 'ar' ? 'المخزن' : 'Magazzino'}</button>{canAccess('inventory-history') && <button className={`sidebar-subitem${section === 'inventory-history' ? ' selected' : ''}`} onClick={() => navigateTo('inventory-history')}>{language === 'ar' ? 'سجل المخزن' : 'Storico Magazzino'}</button>}</div>}
         </>}
         {nav.filter((item) => ['cash', 'sales'].includes(item.section) && canAccess(item.section)).map(({ section: target, label, icon: Icon }) => <button key={target} className={`nav-item${section === target ? ' active' : ''}`} onClick={() => navigateTo(target)}><Icon size={18} /><span>{label}</span>{target === 'cash' && <kbd>F2</kbd>}</button>)}
         {canAccess('statistics') && <>
@@ -2340,11 +2392,11 @@ export default function App() {
           {openSidebarMenu === 'employees' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => navigateTo('employees')}>Lista Dipendenti</button><button className={`sidebar-subitem${section === 'employee-create' ? ' selected' : ''}`} onClick={startEmployeeCreation}>Crea Dipendente</button><button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => navigateTo('payroll')}>Paga Stipendi</button><button className={`sidebar-subitem${section === 'employee-tracker' ? ' selected' : ''}`} onClick={() => navigateTo('employee-tracker')}>Tracker Dipendenti</button></div>}
         </>}
       </nav>
-      <div className="sidebar-bottom">{canAccess('settings') && <button className={`nav-item settings-link${section === 'settings' ? ' active' : ''}`} onClick={() => { setSettingsTab(null); setDeviceTab(null); navigateTo('settings'); }}><Settings size={18} /><span>Impostazioni</span></button>}<div className="user-card"><div className="user-avatar">{currentUser?.first_name.slice(0, 1).toUpperCase() ?? data.settings.shop_name.slice(0, 1).toUpperCase()}</div><div><strong>{currentUser ? `${currentUser.first_name} ${currentUser.last_name}`.trim() : 'Gestore'}</strong><small>{currentUser?.role ?? 'Account locale'}</small></div>{data.employees.length > 0 && <button className="icon-button small" title="Blocca e cambia utente" aria-label="Blocca e cambia utente" onClick={() => { trackActivity('Accesso', 'Uscita dal gestionale'); setSelectedProduct(null); setProductAuthorization(null); setStockProduct(null); setCurrentUser(null); setLocked(true); setLoginBarcode(''); setPin(''); }}><LockKeyhole size={15} /></button>}</div></div>
+      <div className="sidebar-bottom"><div className="sidebar-settings-row">{canAccess('settings') && <button className={`nav-item settings-link${section === 'settings' ? ' active' : ''}`} onClick={() => { setSettingsTab(null); setDeviceTab(null); navigateTo('settings'); }}><Settings size={18} /><span>Impostazioni</span></button>}<button className="nav-item sidebar-refresh" type="button" onClick={() => void refreshCurrentData()} disabled={refreshing} title="Aggiorna dati senza chiudere la pagina" aria-label="Aggiorna dati senza chiudere la pagina"><RefreshCw className={refreshing ? 'refreshing-icon' : ''} size={18} /></button></div><div className="user-card"><div className="user-avatar">{currentUser?.first_name.slice(0, 1).toUpperCase() ?? data.settings.shop_name.slice(0, 1).toUpperCase()}</div><div><strong>{currentUser ? `${currentUser.first_name} ${currentUser.last_name}`.trim() : 'Gestore'}</strong><small>{currentUser?.role ?? 'Account locale'}</small></div>{data.employees.length > 0 && <button className="icon-button small" title="Blocca e cambia utente" aria-label="Blocca e cambia utente" onClick={() => { trackActivity('Accesso', 'Uscita dal gestionale'); setSelectedProduct(null); setProductAuthorization(null); setStockProduct(null); setCurrentUser(null); setLocked(true); setLoginBarcode(''); setPin(''); }}><LockKeyhole size={15} /></button>}</div></div>
     </aside>
     <main className="main-content"><header className="topbar"><h1>{sectionLabel}</h1>{data.settings.shop_logo ? <img className="topbar-logo" src={data.settings.shop_logo} alt="Logo negozio" /> : <div className="topbar-logo-fallback"><Store size={19} /></div>}<div className="topbar-right"><div className="today-date">{navbarDate.format(currentTime)} · {navbarTime.format(currentTime)}</div></div></header>
 
-      {section === 'home' && <div className="page-content home-page"><img className="home-banner" src={data.settings.home_image || homeBanner} alt="Immagine homepage" /><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length} scontrini emessi`} /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyProfit)} detail="Profitto dopo sconti e costo merce" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString(appLocale)} detail="Pezzi registrati oggi" /></div><section className="expiry-alert expiry-home-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{canAccess('inventory') && expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length} articoli sotto soglia`} action={canAccess('inventory') ? <button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); navigateTo('inventory'); }}>Vai al magazzino →</button> : undefined} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => { if (canAccess('inventory')) setSelectedProduct(p); }}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock}</td><td>{p.low_stock_threshold}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => navigateTo('sales')}>Tutte le vendite →</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
+      {section === 'home' && <div className="page-content home-page"><img className="home-banner" src={data.settings.home_image || homeBanner} alt="Immagine homepage" /><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length} scontrini emessi`} /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyProfit)} detail="Profitto dopo sconti e costo merce" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString(appLocale)} detail="Pezzi registrati oggi" /></div><section className="expiry-alert expiry-home-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{canAccess('inventory') && expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length} articoli sotto soglia`} action={canAccess('inventory') ? <button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); navigateTo('inventory'); }}>{language === 'ar' ? 'الانتقال إلى المخزن ←' : 'Vai al magazzino →'}</button> : undefined} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => { if (canAccess('inventory')) setSelectedProduct(p); }}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock}</td><td>{p.low_stock_threshold}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => navigateTo('sales')}>{language === 'ar' ? 'كل المبيعات ←' : 'Tutte le vendite →'}</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
 
       {section === 'inventory' && <div className="page-content">
         <div className="page-toolbar inventory-toolbar"><div><h2>Articoli in magazzino</h2><p>{data.products.length} articoli registrati</p></div>{!isCashierRole(activeRole) && <div className="toolbar-actions"><button className="button button-outline" onClick={exportInventoryReport}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-primary" onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct }); }}><Plus size={16} /> Aggiungi nuovo articolo</button></div>}</div>
@@ -2356,19 +2408,11 @@ export default function App() {
         <div className="product-grid">{inventoryList.map((product) => <button className="product-tile" key={product.id} onClick={() => { if (!isCashierRole(activeRole)) setSelectedProduct(product); }}><div className="tile-icon"><Package size={20} /></div><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="tile-price">{money.format(product.sale_price)}</span><span className={`tile-stock${product.stock <= product.low_stock_threshold ? ' text-low' : ''}`}>{quantityFormat.format(product.stock)} disponibili</span></button>)}</div>{inventoryList.length === 0 && <Empty icon={Package} title="Nessun articolo trovato" detail="Modifica la ricerca o aggiungi un articolo." />}
       </div>}
 
-      {section === 'inventory-control' && <div className="page-content inventory-control-page">
-        {!inventoryControlAuthorized ? <section className="panel inventory-control-auth"><div className="security-icon"><ShieldCheck size={22} /></div><h2>Verifica dipendente</h2><p>Scansiona o inserisci il barcode del dipendente per aprire il controllo magazzino.</p><form onSubmit={(event) => { event.preventDefault(); void authorizeInventoryControl(inventoryControlBarcode); }}><Field label="Barcode dipendente" value={inventoryControlBarcode} onChange={(event) => setInventoryControlBarcode(event.target.value)} autoFocus required /><button className="button button-primary"><Barcode size={16} /> Verifica barcode</button></form></section> : <>
-          <div className="page-toolbar"><h2>Articoli in magazzino</h2></div>
-          <div className="inventory-control-tools no-print"><SearchInput value={inventoryControlSearch} onChange={setInventoryControlSearch} placeholder="Cerca per nome o barcode…" /><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa lista</button><button className="button button-primary" onClick={downloadInventoryControlList}><ArrowDownToLine size={16} /> Scarica lista</button></div>
-          <div id="inventory-control-print"><Table headings={['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Prezzo vendita']}><>{inventoryControlList.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td className="mono">{product.code}</td><td>{product.category}</td><td>{quantityFormat.format(product.stock)} {product.unit ?? 'PEZZO'}</td><td>{money.format(product.sale_price)}</td></tr>)}</>{!inventoryControlList.length && <tr><td colSpan={5} className="empty-cell">Nessun articolo in magazzino trovato.</td></tr>}</Table></div>
-        </>}
-      </div>}
-
       {section === 'expired-products' && <div className="page-content"><div className="page-toolbar"><div><h2>Gestione prodotti scaduti</h2><p>Verifica gli articoli scaduti e registra lo smaltimento.</p></div><button className="button button-outline" onClick={() => navigateTo('inventory')}>Torna al magazzino</button></div><Table headings={['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Data di scadenza', 'Azione']}><>{expiredProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td className="mono">{product.code}</td><td>{product.category}</td><td>{quantityFormat.format(product.stock)} {product.unit ?? 'PEZZO'}</td><td>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</td><td><button className="button button-danger" onClick={() => void disposeExpiredProduct(product)}><Trash2 size={14} /> Butta articolo</button></td></tr>)}</>{!expiredProducts.length && <tr><td colSpan={6} className="empty-cell">Non ci sono prodotti scaduti da gestire.</td></tr>}</Table></div>}
 
       {section === 'inventory-history' && <div className="page-content"><div id="inventory-history-print">
         <div className="inventory-history-actions no-print"><SelectField label="Periodo" value={inventoryHistoryPeriod} onChange={setInventoryHistoryPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Da - A']} />{inventoryHistoryPeriod === 'Da - A' && <><Field label="Da" type="date" value={inventoryHistoryFrom} onChange={(event) => setInventoryHistoryFrom(event.target.value)} /><Field label="A" type="date" value={inventoryHistoryTo} onChange={(event) => setInventoryHistoryTo(event.target.value)} /></>}<SearchInput value={inventoryHistorySearch} onChange={setInventoryHistorySearch} placeholder="Cerca articolo, persona o nota…" /><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa</button></div>
-        <Table headings={['Data e ora', 'Articolo', 'Movimento', 'Quantità', 'Persona', 'Nota']}><>{inventoryHistoryMovements.map((movement) => <tr key={movement.id}><td>{dateTime.format(new Date(movement.created_at))}</td><td className="cell-primary">{movement.product_name}</td><td><span className={`movement-badge ${movement.movement_type === 'Carico' ? 'movement-in' : 'movement-out'}`}>{movement.movement_type}</span></td><td>{quantityFormat.format(movement.quantity)}</td><td>{movement.person || '—'}</td><td>{movement.note || '—'}</td></tr>)}</>{!inventoryHistoryMovements.length && <tr><td colSpan={6} className="empty-cell">Nessun movimento nel periodo selezionato.</td></tr>}</Table></div></div>}
+        <Table headings={['Data e ora', 'Articolo', 'Movimento', 'Quantità', 'Persona', 'Nota']}><>{inventoryHistoryMovements.map((movement) => <tr key={movement.id}><td>{dateTimeText(new Date(movement.created_at))}</td><td className="cell-primary">{movement.product_name}</td><td><span className={`movement-badge ${movement.movement_type === 'Carico' ? 'movement-in' : 'movement-out'}`}>{movement.movement_type}</span></td><td>{quantityFormat.format(movement.quantity)}</td><td>{movement.person || '—'}</td><td>{localizedText(movement.note || '—', language)}</td></tr>)}</>{!inventoryHistoryMovements.length && <tr><td colSpan={6} className="empty-cell">Nessun movimento nel periodo selezionato.</td></tr>}</Table></div></div>}
 
       {section === 'cash' && <div className="page-content cash-content"><div className="cash-layout">
         <section className="cash-products">
@@ -2383,7 +2427,7 @@ export default function App() {
         <div className="sale-management-search"><SearchInput value={saleManagementSearch} onChange={setSaleManagementSearch} placeholder="Inserisci o scansiona il numero dello scontrino…" numericOnly /></div>
         {saleMatch ? <section className="panel sale-found">
           <div className="sale-found-shop">{data.settings.shop_name}</div>
-          <div className="sale-found-meta"><span>{dateTime.format(new Date(saleMatch.created_at))}</span><span>Scontrino #{saleMatch.receipt_no}</span></div>
+          <div className="sale-found-meta"><span>{dateTimeText(new Date(saleMatch.created_at))}</span><span>Scontrino #{saleMatch.receipt_no}</span></div>
           <div className="sale-found-items">{saleMatch.items.map((item, index) => <div className="sale-found-item" key={`${item.code}-${index}`}><span>{item.name}<small>{quantityFormat.format(item.quantity)} × {money.format(item.unit_price)}</small></span><strong>{money.format(item.quantity * item.unit_price)}</strong></div>)}</div>
           <div className="sale-found-total"><strong>TOTALE</strong><strong>{money.format(saleMatch.total)}</strong></div>
           <div className="sale-found-actions">
@@ -2407,19 +2451,18 @@ export default function App() {
           <SelectField label="Durata offerta" value={promotionDuration} onChange={changePromotionDuration} options={promotionDurations} />
           {promotionDuration === 'Personalizzata' && <><Field label="Dal" type="date" value={promotion.starts_at} onChange={(e) => changePromotionStart(e.target.value)} required /><Field label="Al" type="date" value={promotion.ends_at} onChange={(e) => setPromotion({ ...promotion, ends_at: e.target.value })} required /></>}
           <fieldset className="promotion-minimum-options"><legend>Requisito minimo</legend>
-            {([{ value: 'none', label: 'Nessuno' }, { value: 'spend', label: 'Spesa minima' }, { value: 'kilograms', label: 'KG minimi' }, { value: 'pieces', label: 'Pezzi minimi' }, { value: 'liters', label: 'Litri minimi' }] as const).map(({ value, label }) => <label key={value}><input type="radio" name="promotion-minimum" checked={promotionMinimum === value} onChange={() => setPromotionMinimum(value)} /><span>{label}</span></label>)}
+            {([{ value: 'none', label: 'Nessuno' }, { value: 'spend', label: 'Spesa minima' }, { value: 'kilograms', label: 'KG minimi' }, { value: 'pieces', label: 'Pezzi minimi' }] as const).map(({ value, label }) => <label key={value}><input type="radio" name="promotion-minimum" checked={promotionMinimum === value} onChange={() => setPromotionMinimum(value)} /><span>{label}</span></label>)}
           </fieldset>
           {promotionMinimum === 'spend' && <Field label="Spesa minima (€)" type="number" min="0.01" step="0.01" value={promotion.minimum_spend || ''} onChange={(e) => setPromotion({ ...promotion, minimum_spend: Number(e.target.value) })} required />}
           {promotionMinimum === 'kilograms' && <Field label="KG minimi" type="number" min="0.1" step="0.1" value={promotion.minimum_kilograms || ''} onChange={(e) => setPromotion({ ...promotion, minimum_kilograms: Number(e.target.value) })} required />}
           {promotionMinimum === 'pieces' && <Field label="Pezzi minimi" type="number" min="1" step="1" value={promotion.minimum_pieces || ''} onChange={(e) => setPromotion({ ...promotion, minimum_pieces: Number(e.target.value) })} required />}
-          {promotionMinimum === 'liters' && <Field label="Litri minimi" type="number" min="0.1" step="0.1" value={promotion.minimum_liters || ''} onChange={(e) => setPromotion({ ...promotion, minimum_liters: Number(e.target.value) })} required />}
           <div className="form-actions">{promotion.id !== undefined && <button className="button button-quiet" type="button" onClick={resetPromotionForm}>Annulla modifica</button>}<button className="button button-primary"><Check size={16} /> {promotion.id === undefined ? 'Crea promozione' : 'Salva modifiche'}</button></div>
         </form>
         <div className="promotion-list">{data.promotions.map((item) => <div className="promotion-row" key={item.id}>
-          <div><strong>{item.name}</strong><span>{item.category} · {item.starts_at} — {item.ends_at === permanentPromotionEnd ? 'Sempre' : item.ends_at}{item.minimum_spend > 0 ? ` · Spesa minima ${money.format(item.minimum_spend)}` : ''}{item.minimum_kilograms ? ` · ${item.minimum_kilograms} KG minimi` : ''}{item.minimum_pieces ? ` · ${item.minimum_pieces} pezzi minimi` : ''}{item.minimum_liters ? ` · ${item.minimum_liters} litri minimi` : ''}</span></div>
+          <div><strong>{item.name}</strong><span>{item.category} · {formatLocalDate(item.starts_at)} — {item.ends_at === permanentPromotionEnd ? 'Sempre' : formatLocalDate(item.ends_at)}{item.minimum_spend > 0 ? ` · Spesa minima ${money.format(item.minimum_spend)}` : ''}{item.minimum_kilograms ? ` · ${item.minimum_kilograms} KG minimi` : ''}{item.minimum_pieces ? ` · ${item.minimum_pieces} pezzi minimi` : ''}</span></div>
           <b>{promotionDiscountLabel(item)}</b><span className="stock-badge">{item.application_mode}</span>
           <div className="promotion-actions">
-            <button className="button button-outline" onClick={() => { setPromotion({ ...item }); setPromotionDiscountType(item.discount_type !== 'buy_get' ? 'percentage' : item.buy_quantity === 2 && item.free_quantity === 1 ? '2+1' : item.buy_quantity === 3 && item.free_quantity === 1 ? '3+1' : 'custom'); setPromotionDuration(item.ends_at === permanentPromotionEnd ? 'Sempre' : 'Personalizzata'); setPromotionMinimum(item.minimum_spend > 0 ? 'spend' : item.minimum_kilograms ? 'kilograms' : item.minimum_pieces ? 'pieces' : item.minimum_liters ? 'liters' : 'none'); }}><Pencil size={14} /> Modifica</button>
+            <button className="button button-outline" onClick={() => { setPromotion({ ...item }); setPromotionDiscountType(item.discount_type !== 'buy_get' ? 'percentage' : item.buy_quantity === 2 && item.free_quantity === 1 ? '2+1' : item.buy_quantity === 3 && item.free_quantity === 1 ? '3+1' : 'custom'); setPromotionDuration(item.ends_at === permanentPromotionEnd ? 'Sempre' : 'Personalizzata'); setPromotionMinimum(item.minimum_spend > 0 ? 'spend' : item.minimum_kilograms ? 'kilograms' : item.minimum_pieces ? 'pieces' : 'none'); }}><Pencil size={14} /> Modifica</button>
             <button className="button button-danger" onClick={() => void deletePromotion(item)}><Trash2 size={14} /> Elimina</button>
           </div>
         </div>)}</div>
@@ -2439,7 +2482,7 @@ export default function App() {
             <button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa lista</button>
           </div>
           <Table headings={['Data e ora', 'Dipendente', 'Attività', 'Sezione', 'Dettagli']}>
-            <>{employeeActivityList.map((entry) => <tr key={entry.id}><td>{dateTime.format(new Date(entry.created_at))}</td><td className="cell-primary">{entry.employee_name}</td><td>{entry.action}</td><td>{entry.section}</td><td>{entry.detail || '—'}</td></tr>)}</>
+            <>{employeeActivityList.map((entry) => <tr key={entry.id}><td>{dateTimeText(new Date(entry.created_at))}</td><td className="cell-primary">{entry.employee_name}</td><td>{localizedText(entry.action, language)}</td><td>{localizedText(entry.section, language)}</td><td>{localizedText(entry.detail || '—', language)}</td></tr>)}</>
             {!employeeActivityList.length && <tr><td colSpan={5} className="empty-cell">Nessuna attività registrata per i filtri selezionati.</td></tr>}
           </Table>
         </div>
@@ -2447,7 +2490,7 @@ export default function App() {
       {section === 'employee-create' && employeeDraft && <div className="page-content settings-page"><section className="settings-panel employee-create-panel"><EmployeeForm initial={employeeDraft} save={saveEmployee} cancel={() => { setEmployeeDraft(null); navigateTo('employees'); }} notify={notify} canDelete={canAccess('employees')} onDelete={async () => { const employee = data.employees.find((item) => item.id === employeeDraft.id); if (employee) await deleteEmployee(employee); }} /></section></div>}
       {section === 'payroll' && <div className="page-content">
         <div className="panel payroll-toolbar"><Field label="Mese di competenza" type="month" value={payrollMonth} onChange={(event) => setPayrollMonth(event.target.value)} /><Field label="Data di pagamento" type="date" value={payrollDate} onChange={(event) => setPayrollDate(event.target.value)} /><button className="button button-primary" onClick={() => void payAllEmployees()}><Banknote size={15} /> Paga tutti gli stipendi</button><button className="button button-outline" onClick={() => { const payments = data.payrollPayments.filter((payment) => payment.pay_month === payrollMonth); void exportPayrollZip(payments).catch((error: unknown) => notify(errorText(error))); }}><ArrowDownToLine size={15} /> Scarica ricevute del mese</button></div>
-        <Table headings={['Dipendente', 'Ruolo', 'Stipendio', 'Metodo', 'Stato', 'Azione']}><>{data.employees.map((employee) => { const payment = data.payrollPayments.find((item) => item.employee_id === employee.id && item.pay_month === payrollMonth); return <tr key={employee.id}><td className="cell-primary">{employee.first_name} {employee.last_name}</td><td>{employee.role}</td><td>{money.format(employee.salary)}</td><td>{employee.payment_method}</td><td><span className={`stock-badge${payment ? '' : ' low'}`}>{payment ? `Pagato il ${payment.payment_date}` : 'Da pagare'}</span></td><td>{payment ? <button className="button button-outline" onClick={() => savePdf(createSalaryPdf(employee, payment.payment_date, payment.pay_month, payment.amount), `Stipendio-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}-${payment.payment_date}.pdf`)}><ArrowDownToLine size={14} /> Ricevuta</button> : <button className="button button-primary" onClick={() => void payEmployee(employee)}><Check size={14} /> Paga</button>}</td></tr>; })}</>{!data.employees.length && <tr><td colSpan={6} className="empty-cell">Nessun dipendente registrato.</td></tr>}</Table>
+        <Table headings={['Dipendente', 'Ruolo', 'Stipendio', 'Metodo', 'Stato', 'Azione']}><>{data.employees.map((employee) => { const payment = data.payrollPayments.find((item) => item.employee_id === employee.id && item.pay_month === payrollMonth); return <tr key={employee.id}><td className="cell-primary">{employee.first_name} {employee.last_name}</td><td>{employee.role}</td><td>{money.format(employee.salary)}</td><td>{employee.payment_method}</td><td><span className={`stock-badge${payment ? '' : ' low'}`}>{payment ? `Pagato il ${formatLocalDate(payment.payment_date)}` : 'Da pagare'}</span></td><td>{payment ? <button className="button button-outline" onClick={() => savePdf(createSalaryPdf(employee, payment.payment_date, payment.pay_month, payment.amount), `Stipendio-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}-${payment.payment_date}.pdf`)}><ArrowDownToLine size={14} /> Ricevuta</button> : <button className="button button-primary" onClick={() => void payEmployee(employee)}><Check size={14} /> Paga</button>}</td></tr>; })}</>{!data.employees.length && <tr><td colSpan={6} className="empty-cell">Nessun dipendente registrato.</td></tr>}</Table>
       </div>}
       {section === 'expenses' && <div className="page-content accounting-page">
         <section className="panel expense-entry-panel"><div className="panel-heading"><div><h3>Registra una spesa</h3><p>Inserisci descrizione, categoria, importo e data.</p></div></div>
@@ -2462,7 +2505,7 @@ export default function App() {
           </form>
         </section>
         <div className="expense-list-toolbar"><SearchInput value={expenseSearch} onChange={setExpenseSearch} placeholder="Cerca descrizione o categoria…" /></div>
-        <Table headings={['Data', 'Descrizione', 'Sede', 'Categoria', 'Importo', 'Ricevuta', '']}>{expenseList.map((expense) => <tr key={expense.id}><td>{expense.expense_date}</td><td className="cell-primary">{expense.description}</td><td>{expense.site}</td><td>{expense.category}</td><td className="align-right">{money.format(expense.amount)}</td><td>{expense.receipt_data ? <a className="button button-outline expense-receipt-download" href={expense.receipt_data} download={`ricevuta-${safeFilePart(expense.description)}.${dataUrlExtension(expense.receipt_data)}`}><ArrowDownToLine size={14} /> Scarica</a> : '—'}</td><td><button className="icon-button small" title="Elimina spesa" aria-label={`Elimina la spesa ${expense.description}`} onClick={() => void deleteExpense(expense)}><Trash2 size={15} /></button></td></tr>)}{!expenseList.length && <tr><td colSpan={7} className="empty-cell">{data.expenses.length ? 'Nessuna spesa corrisponde alla ricerca.' : 'Nessuna spesa registrata.'}</td></tr>}</Table>
+        <Table headings={['Data', 'Descrizione', 'Sede', 'Categoria', 'Importo', 'Ricevuta', '']}>{expenseList.map((expense) => <tr key={expense.id}><td>{formatLocalDate(expense.expense_date)}</td><td className="cell-primary">{expense.description}</td><td>{expense.site}</td><td>{expense.category}</td><td className="align-right">{money.format(expense.amount)}</td><td>{expense.receipt_data ? <a className="button button-outline expense-receipt-download" href={expense.receipt_data} download={`ricevuta-${safeFilePart(expense.description)}.${dataUrlExtension(expense.receipt_data)}`}><ArrowDownToLine size={14} /> Scarica</a> : '—'}</td><td><button className="icon-button small" title="Elimina spesa" aria-label={`Elimina la spesa ${expense.description}`} onClick={() => void deleteExpense(expense)}><Trash2 size={15} /></button></td></tr>)}{!expenseList.length && <tr><td colSpan={7} className="empty-cell">{data.expenses.length ? 'Nessuna spesa corrisponde alla ricerca.' : 'Nessuna spesa registrata.'}</td></tr>}</Table>
       </div>}
 
       {section === 'financial-balance' && <div id="financial-balance-report" className="page-content accounting-page">
@@ -2497,18 +2540,18 @@ export default function App() {
               ? <div className="voucher-edit-actions"><button className="button button-quiet" type="button" onClick={() => { cancelVoucherPreview(); navigateTo('vouchers-list'); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Salva modifiche</button></div>
               : <button className="button button-primary"><Check size={16} /> Genera codici</button>}
           </form> : <>
-            <div className="voucher-preview-heading"><strong>{voucherPreview.codes.length} codici · {voucherPreview.discount_percentage}% di sconto</strong><span>{voucherPreview.starts_at} — {voucherPreview.ends_at}</span></div>
-            <div id="voucher-print" className="table-wrap voucher-codes"><table><thead><tr><th>Codice</th><th>Barcode</th><th>Sconto</th><th>Inizio</th><th>Scadenza</th></tr></thead><tbody>{voucherPreview.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td><BarcodeImage value={code} /></td><td>{voucherPreview.discount_percentage}%</td><td>{voucherPreview.starts_at}</td><td>{voucherPreview.ends_at}</td></tr>)}</tbody></table></div>
+            <div className="voucher-preview-heading"><strong>{voucherPreview.codes.length} codici · {voucherPreview.discount_percentage}% di sconto</strong><span>{formatLocalDate(voucherPreview.starts_at)} — {formatLocalDate(voucherPreview.ends_at)}</span></div>
+            <div id="voucher-print" className="table-wrap voucher-codes"><table><thead><tr><th>Codice</th><th>Barcode</th><th>Sconto</th><th>Inizio</th><th>Scadenza</th></tr></thead><tbody>{voucherPreview.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td><BarcodeImage value={code} /></td><td>{voucherPreview.discount_percentage}%</td><td>{formatLocalDate(voucherPreview.starts_at)}</td><td>{formatLocalDate(voucherPreview.ends_at)}</td></tr>)}</tbody></table></div>
             <div className="voucher-actions no-print"><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa codici</button><button className="button button-quiet" onClick={cancelVoucherPreview}>Annulla</button><button className="button button-primary" onClick={() => void confirmVoucherBatch()}><Check size={16} /> Conferma e salva</button></div>
           </>}
         </div>}
         {section === 'vouchers-list' && <div className="voucher-section">
           {!data.voucherBatches.length ? <Empty icon={Barcode} title="Nessun buono sconto" detail="Crea e conferma un gruppo di codici per visualizzarlo qui." /> : <>
             <div className="voucher-batch-list">{data.voucherBatches.map((batch) => <div className="voucher-batch-row" key={batch.id}>
-              <div><strong>Gruppo {batch.id}</strong><span>{batch.codes.length} codici · {batch.discount_percentage}% di sconto</span><small>{batch.starts_at} — {batch.ends_at}</small></div>
+              <div><strong>Gruppo {batch.id}</strong><span>{batch.codes.length} codici · {batch.discount_percentage}% di sconto</span><small>{formatLocalDate(batch.starts_at)} — {formatLocalDate(batch.ends_at)}</small></div>
               <div className="voucher-actions no-print"><button className="icon-button" title="Visualizza codici" aria-label={`Visualizza codici del gruppo ${batch.id}`} onClick={() => setVoucherViewBatch(batch)}><Eye size={17} /></button><button className="button button-outline" onClick={() => startVoucherBatchEdit(batch)}><Pencil size={15} /> Modifica</button><button className="button button-outline" onClick={() => setVoucherPrintBatch(batch)}><Printer size={15} /> Stampa</button><button className="button button-outline" onClick={() => downloadVoucherBatch(batch)}><ArrowDownToLine size={15} /> Scarica lista</button><button className="button button-danger" onClick={() => void deleteVoucherBatch(batch)}><Trash2 size={15} /> Elimina</button></div>
             </div>)}</div>
-            {voucherPrintBatch && <div id="voucher-print" className="table-wrap voucher-codes voucher-print-only"><h2>Buoni sconto gruppo {voucherPrintBatch.id} · {voucherPrintBatch.discount_percentage}%</h2><p>{voucherPrintBatch.starts_at} — {voucherPrintBatch.ends_at}</p><table><thead><tr><th>Codice</th><th>Barcode</th><th>Sconto</th><th>Inizio</th><th>Scadenza</th></tr></thead><tbody>{voucherPrintBatch.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td><BarcodeImage value={code} /></td><td>{voucherPrintBatch.discount_percentage}%</td><td>{voucherPrintBatch.starts_at}</td><td>{voucherPrintBatch.ends_at}</td></tr>)}</tbody></table></div>}
+            {voucherPrintBatch && <div id="voucher-print" className="table-wrap voucher-codes voucher-print-only"><h2>Buoni sconto gruppo {voucherPrintBatch.id} · {voucherPrintBatch.discount_percentage}%</h2><p>{formatLocalDate(voucherPrintBatch.starts_at)} — {formatLocalDate(voucherPrintBatch.ends_at)}</p><table><thead><tr><th>Codice</th><th>Barcode</th><th>Sconto</th><th>Inizio</th><th>Scadenza</th></tr></thead><tbody>{voucherPrintBatch.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td><BarcodeImage value={code} /></td><td>{voucherPrintBatch.discount_percentage}%</td><td>{formatLocalDate(voucherPrintBatch.starts_at)}</td><td>{formatLocalDate(voucherPrintBatch.ends_at)}</td></tr>)}</tbody></table></div>}
           </>}
         </div>}
       </section></div>}
@@ -2534,7 +2577,7 @@ export default function App() {
     </main>
 
     {unsoldListOpen && <Modal title="Articoli ancora in magazzino" close={() => setUnsoldListOpen(false)} wide><div id="unsold-list-print"><Table headings={['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']}><>{unsoldProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td>{product.category}</td><td>{product.stock} {product.unit ?? 'PEZZO'}</td><td>{money.format(product.sale_price)}</td></tr>)}</>{!unsoldProducts.length && <tr><td colSpan={4} className="empty-cell">Non risultano articoli rimanenti in magazzino.</td></tr>}</Table></div><div className="unsold-list-actions no-print"><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa</button><button className="button button-primary" onClick={() => void shareUnsoldList()}><Share2 size={16} /> Condividi</button></div></Modal>}
-    {reportExportOpen && <Modal title={reportExportType.startsWith('sales') ? 'Esporta report vendite' : 'Esporta report contabilità e finanza'} close={() => setReportExportOpen(false)}><div className="report-export-options"><p>Vuoi applicare al report il filtro temporale selezionato ({reportExportType.startsWith('sales') ? salesPeriod : balancePeriod}) o includere tutto il periodo disponibile?</p><button className="button button-primary" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(true); else if (reportExportType === 'sales-xlsx') void exportSalesXlsx(true); else downloadFinancialBalance(true); }}><Check size={15} /> Rispetta il filtro di tempo</button><button className="button button-outline" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(false); else if (reportExportType === 'sales-xlsx') void exportSalesXlsx(false); else downloadFinancialBalance(false); }}><ArrowDownToLine size={15} /> Esporta tutto</button></div></Modal>}
+    {reportExportOpen && <Modal title={reportExportType.startsWith('sales') ? 'Esporta report vendite' : 'Esporta report contabilità e finanza'} close={() => setReportExportOpen(false)}><div className="report-export-options"><p>Vuoi applicare al report il filtro temporale selezionato ({reportExportType.startsWith('sales') ? salesPeriod : balancePeriod}) o includere tutto il periodo disponibile?</p><button className="button button-primary" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(true); else if (reportExportType === 'sales-xlsx') void exportSalesXlsx(true); else void downloadFinancialBalance(true); }}><Check size={15} /> Rispetta il filtro di tempo</button><button className="button button-outline" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(false); else if (reportExportType === 'sales-xlsx') void exportSalesXlsx(false); else void downloadFinancialBalance(false); }}><ArrowDownToLine size={15} /> Esporta tutto</button></div></Modal>}
     {employeeDetails && <Modal title={`${employeeDetails.first_name} ${employeeDetails.last_name}`} close={() => setEmployeeDetails(null)} rightHalf>
       <div className="employee-detail-content">
         <div className="employee-detail-hero"><img src={employeeDetails.photo_data} alt={`Foto di ${employeeDetails.first_name} ${employeeDetails.last_name}`} /><div><strong>{employeeDetails.role}</strong><span>{employeeDetails.operational_site} · {employeeDetails.shift}</span></div></div>
@@ -2543,7 +2586,7 @@ export default function App() {
       </div>
       <div className="drawer-footer employee-profile-actions"><button className="button button-outline" onClick={() => void exportEmployeePdf(employeeDetails)}><ArrowDownToLine size={15} /> Scarica</button><button className="button button-outline" onClick={() => void printEmployeePdf(employeeDetails)}><Printer size={15} /> Stampa</button><button className="button button-outline" onClick={() => editEmployee(employeeDetails)}><Pencil size={15} /> Modifica dipendente</button>{canAccess('employees') && <button className="button button-danger" onClick={() => void deleteEmployee(employeeDetails)}><Trash2 size={15} /> Elimina dipendente</button>}<button className="button button-primary" onClick={() => setEmployeeDetails(null)}>Chiudi</button></div>
     </Modal>}
-    {voucherViewBatch && <Modal title={`Codici buono · Gruppo ${voucherViewBatch.id}`} close={() => setVoucherViewBatch(null)} wide><div className="voucher-preview-heading"><strong>{voucherViewBatch.discount_percentage}% di sconto</strong><span>{voucherViewBatch.starts_at} — {voucherViewBatch.ends_at}</span></div><Table headings={['Codice', 'Barcode', 'Sconto', 'Inizio', 'Scadenza']}><>{voucherViewBatch.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td><BarcodeImage value={code} /></td><td>{voucherViewBatch.discount_percentage}%</td><td>{voucherViewBatch.starts_at}</td><td>{voucherViewBatch.ends_at}</td></tr>)}</></Table></Modal>}
+    {voucherViewBatch && <Modal title={`Codici buono · Gruppo ${voucherViewBatch.id}`} close={() => setVoucherViewBatch(null)} wide><div className="voucher-preview-heading"><strong>{voucherViewBatch.discount_percentage}% di sconto</strong><span>{formatLocalDate(voucherViewBatch.starts_at)} — {formatLocalDate(voucherViewBatch.ends_at)}</span></div><Table headings={['Codice', 'Barcode', 'Sconto', 'Inizio', 'Scadenza']}><>{voucherViewBatch.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td><BarcodeImage value={code} /></td><td>{voucherViewBatch.discount_percentage}%</td><td>{formatLocalDate(voucherViewBatch.starts_at)}</td><td>{formatLocalDate(voucherViewBatch.ends_at)}</td></tr>)}</></Table></Modal>}
     {pendingUnknownCode && <Modal title="Articolo non presente" wide close={() => { setPendingUnknownCode(''); setScannerSearch(''); }}><div className="unknown-code-message"><CircleAlert size={26} /><p>Il codice a barre <strong>{pendingUnknownCode}</strong> non è presente tra gli articoli.</p><span>Puoi aggiungerlo come nuovo articolo: il codice acquisito sarà già inserito nel modulo.</span><div className="form-actions"><button className="button button-quiet" onClick={() => { setPendingUnknownCode(''); setScannerSearch(''); }}>Annulla</button><button className="button button-primary" onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct, code: pendingUnknownCode }); setPendingUnknownCode(''); }}><Plus size={16} /> Aggiungi articolo</button></div></div></Modal>}
     {measuredProduct && <Modal title={measuredProduct.unit === 'KG' ? `Inserisci il peso · ${measuredProduct.name}` : `Inserisci il volume · ${measuredProduct.name}`} close={() => setMeasuredProduct(null)}><form className="form-grid measured-quantity-form" onSubmit={confirmMeasuredQuantity}><p className="measured-price">{money.format(measuredProduct.sale_price)} / {measuredProduct.unit === 'KG' ? 'kg' : 'lit.'}</p><Field label={measuredProduct.unit === 'KG' ? 'Peso in kg' : 'Volume in litri'} type="number" min="0.001" step="0.001" value={measuredQuantity} onChange={(event) => setMeasuredQuantity(event.target.value)} required autoFocus placeholder={measuredProduct.unit === 'KG' ? 'Es. 0,750' : 'Es. 1,500'} /><div className="measured-quantity-options">{(measuredProduct.unit === 'KG' ? [{ label: '50 g', quantity: 0.05 }, { label: '100 g', quantity: 0.1 }, { label: '250 g', quantity: 0.25 }, { label: '500 g', quantity: 0.5 }, { label: '1 kg', quantity: 1 }, { label: '2 kg', quantity: 2 }] : [{ label: '50 ml', quantity: 0.05 }, { label: '100 ml', quantity: 0.1 }, { label: '250 ml', quantity: 0.25 }, { label: '500 ml', quantity: 0.5 }, { label: '1 L', quantity: 1 }, { label: '2 L', quantity: 2 }]).map(({ label, quantity }) => <button className="button button-outline" key={label} type="button" onClick={() => addMeasuredQuantity(quantity)}>{label}</button>)}</div><div className="form-actions"><button className="button button-quiet full-width" type="button" onClick={() => setMeasuredProduct(null)}>Annulla</button><button className="button button-primary full-width"><Check size={16} /> Aggiungi al carrello</button></div></form></Modal>}
     {productAuthorization && <Modal title={productAuthorization.action === 'edit' ? 'Autorizza modifica articolo' : 'Autorizza nuova quantità'} close={() => { setProductAuthorization(null); setProductAuthorizationBarcode(''); }}><form className="form-grid" onSubmit={(event) => { event.preventDefault(); void authorizeProductAction(productAuthorizationBarcode); }}><p>Scansiona il barcode di un dipendente per continuare con «{productAuthorization.product.name}».</p><Field label="Barcode del dipendente" value={productAuthorizationBarcode} onChange={(event) => setProductAuthorizationBarcode(event.target.value)} autoFocus required /><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setProductAuthorization(null); setProductAuthorizationBarcode(''); }}>Annulla</button><button className="button button-primary"><Barcode size={16} /> Verifica barcode</button></div></form></Modal>}
@@ -2614,7 +2657,7 @@ function Table({ headings, children }: { headings: string[]; children: ReactNode
 }
 function SalesTable({ sales, onSelect }: { sales: Sale[]; onSelect?: (sale: Sale) => void }) {
   const language = useContext(AppLanguageContext);
-  return <div className="table-wrap"><table><thead><tr><th>{localizedText('Numero scontrino', language)}</th><th>{localizedText('Data e ora', language)}</th><th>{localizedText('Articoli', language)}</th><th>{localizedText('Pagamento', language)}</th><th className="align-right">{localizedText('Totale', language)}</th></tr></thead><tbody><LocalizedNodes>{sales.map((sale) => <tr key={sale.id} onClick={onSelect ? () => onSelect(sale) : undefined}><td className="receipt-number">#{sale.receipt_no}</td><td>{dateTime.format(new Date(sale.created_at))}</td><td>{sale.item_count}</td><td><span className="payment-tag">{localizedText(sale.payment_method, language)}</span></td><td className="align-right cell-primary">{money.format(sale.total)}</td></tr>)}{!sales.length && <tr><td colSpan={5} className="empty-cell">Nessuna vendita registrata.</td></tr>}</LocalizedNodes></tbody></table></div>;
+  return <div className="table-wrap"><table><thead><tr><th>{localizedText('Numero scontrino', language)}</th><th>{localizedText('Data e ora', language)}</th><th>{localizedText('Articoli', language)}</th><th>{localizedText('Pagamento', language)}</th><th className="align-right">{localizedText('Totale', language)}</th></tr></thead><tbody><LocalizedNodes>{sales.map((sale) => <tr key={sale.id} onClick={onSelect ? () => onSelect(sale) : undefined}><td className="receipt-number">#{sale.receipt_no}</td><td>{dateTimeText(new Date(sale.created_at))}</td><td>{sale.item_count}</td><td><span className="payment-tag">{localizedText(sale.payment_method, language)}</span></td><td className="align-right cell-primary">{money.format(sale.total)}</td></tr>)}{!sales.length && <tr><td colSpan={5} className="empty-cell">Nessuna vendita registrata.</td></tr>}</LocalizedNodes></tbody></table></div>;
 }
 function SearchInput({ value, onChange, placeholder, numericOnly = false }: { value: string; onChange: (value: string) => void; placeholder: string; numericOnly?: boolean }) {
   const language = useContext(AppLanguageContext);

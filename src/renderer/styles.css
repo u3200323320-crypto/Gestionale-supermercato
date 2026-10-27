@@ -67,9 +67,13 @@ h1, h2, h3, .brand strong { font-family: 'Manrope', 'Segoe UI', sans-serif; lett
 .nav-item.active::before { position: absolute; top: 10px; bottom: 10px; left: -16px; width: 3px; border-radius: 0 3px 3px 0; background: var(--green); content: ''; }
 kbd { margin-left: auto; padding: 2px 5px; border: 1px solid #e5e8e4; border-radius: 3px; color: #919992; font-family: inherit; font-size: 9px; }
 .sidebar-bottom { margin-top: auto; }
+.sidebar-settings-row { display: flex; gap: 5px; margin-bottom: 13px; }
 .connection-status { display: flex; align-items: center; gap: 8px; padding: 12px 10px 16px; color: #78817b; font-size: 10px; }
 .status-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--green); }
-.settings-link { width: 100%; margin-bottom: 13px; }
+.settings-link { width: auto; flex: 1; margin-bottom: 0; }
+.sidebar-refresh { width: 42px; flex: 0 0 42px; justify-content: center; padding: 0; }
+.refreshing-icon { animation: refresh-spin .8s linear infinite; }
+@keyframes refresh-spin { to { transform: rotate(360deg); } }
 .user-card { display: flex; align-items: center; gap: 10px; padding: 12px 3px 0; border-top: 1px solid var(--line); }
 .user-avatar { display: grid; width: 33px; height: 33px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #efe9dc; color: #66553d; font-size: 12px; font-weight: 700; }
 .user-card > div:nth-child(2) { min-width: 0; flex: 1; }
@@ -320,7 +324,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .promotion-form { grid-template-columns: 1fr 1fr; padding-top: 17px; }
 .promotion-minimum { display: flex; grid-column: 1 / -1; align-items: center; gap: 8px; color: #657168; font-size: 10px; }
 .promotion-minimum input { width: 15px; height: 15px; margin: 0; accent-color: var(--green); }
-.promotion-minimum-options { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; margin: 0; padding: 0; border: 0; }
+.promotion-minimum-options { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin: 0; padding: 0; border: 0; }
 .promotion-minimum-options legend { margin-bottom: 7px; color: #758078; font-size: 10px; font-weight: 500; }
 .promotion-minimum-options label { display: flex; min-height: 36px; align-items: center; gap: 6px; padding: 0 8px; border: 1px solid #dfe4de; border-radius: 4px; color: #536158; cursor: pointer; font-size: 9px; }
 .promotion-minimum-options input { margin: 0; accent-color: var(--green); }
@@ -339,7 +343,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .measured-price { grid-column: 1; padding: 12px; border-radius: 4px; background: var(--green-soft); color: var(--green-dark); font-size: 13px; font-weight: 700; }
 .measured-quantity-form .form-actions { display: grid; grid-template-columns: 1fr 1fr; }
 .form-actions { display: flex; grid-column: 1 / -1; justify-content: flex-end; gap: 8px; padding-top: 5px; }
-.product-form .unit-choice { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; border: 0; }
+.product-form .unit-choice { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; border: 0; }
 .unit-choice legend, .field-label { grid-column: 1 / -1; color: #758078; font-size: 10px; font-weight: 500; }
 .unit-choice label { display: flex; min-height: 37px; align-items: center; justify-content: center; gap: 7px; border: 1px solid #dfe4de; border-radius: 4px; color: #536158; cursor: pointer; font-size: 10px; }
 .unit-choice input { margin: 0; accent-color: var(--green); }
@@ -518,7 +522,9 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
   .sidebar .nav-item { justify-content: center; padding: 0; }
   .sidebar .nav-item.active::before { left: -8px; }
   .sidebar-bottom { display: grid; width: 100%; justify-items: center; }
-  .sidebar .settings-link { display: flex; }
+  .sidebar-settings-row { width: 100%; justify-content: center; gap: 2px; }
+  .sidebar .settings-link { display: flex; width: 25px; flex: 0 0 25px; }
+  .sidebar .sidebar-refresh { width: 25px; flex: 0 0 25px; }
   .sidebar .user-card { justify-content: center; padding-top: 9px; }
   .main-content { margin-left: 68px; }
   .topbar { min-height: 68px; padding: 10px 16px; }
@@ -572,14 +578,13 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
   body, body * { visibility: hidden !important; }
   #receipt-print, #receipt-print *,
   #inventory-history-print, #inventory-history-print *,
-  #inventory-control-print, #inventory-control-print *,
   #employee-tracker-print, #employee-tracker-print *,
   #unsold-list-print, #unsold-list-print *,
   #voucher-print, #voucher-print * { visibility: visible !important; }
   #receipt-print { position: fixed; top: 0; left: 0; width: 76mm; max-width: none; padding: 0; color: #000; font-size: 9.5pt; }
-  #inventory-history-print, #inventory-control-print, #employee-tracker-print, #unsold-list-print, #voucher-print { position: fixed; top: 0; left: 0; width: 100%; max-width: none; padding: 0; background: white; }
+  #inventory-history-print, #employee-tracker-print, #unsold-list-print, #voucher-print { position: fixed; top: 0; left: 0; width: 100%; max-width: none; padding: 0; background: white; }
   #voucher-print { display: block !important; }
-  #inventory-history-print .table-wrap, #inventory-control-print .table-wrap, #employee-tracker-print .table-wrap, #unsold-list-print .table-wrap, #voucher-print { overflow: visible; border: 0; max-height: none; }
+  #inventory-history-print .table-wrap, #employee-tracker-print .table-wrap, #unsold-list-print .table-wrap, #voucher-print { overflow: visible; border: 0; max-height: none; }
   .page-content { animation: none !important; transform: none !important; }
   .no-print { display: none !important; }
   .modal-backdrop { position: static; display: block; padding: 0; background: transparent; }
@@ -656,20 +661,11 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .product-category-add .field { min-width: 150px; flex: 1; }
 .product-category-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .product-category-list > span { display: flex; align-items: center; gap: 3px; padding: 2px 4px 2px 9px; border: 1px solid var(--line); border-radius: 4px; background: white; font-size: 11px; }
-.inventory-control-auth { display: grid; max-width: 520px; gap: 14px; margin: 60px auto; padding: 24px; }
-.inventory-control-auth > .security-icon { width: 42px; height: 42px; }
-.inventory-control-auth h2 { font-size: 17px; }
-.inventory-control-auth p { color: var(--muted); font-size: 11px; line-height: 1.5; }
-.inventory-control-auth form { display: grid; gap: 12px; }
-.inventory-control-tools { display: flex; align-items: center; gap: 9px; margin-bottom: 16px; }
-.inventory-control-tools > .search-field { flex: 1; }
 .payment-promotion-always-visible > strong { display: block; margin-bottom: 8px; color: #536b58; font-size: 11px; }
 .employee-tracker-actions { flex-wrap: wrap; }
 #employee-tracker-print table { min-width: 100%; font-size: 12px; }
 #employee-tracker-print th { height: 48px; color: #000; font-size: 14px; font-weight: 700; }
 #employee-tracker-print td { font-size: 12px; }
-.inventory-control-page table { font-size: 12px; }
-.inventory-control-page th { height: 48px; color: #000; font-size: 15px; font-weight: 800; }
 .employee-create-panel { max-width: none; }
 .employee-form { display: grid; gap: 17px; padding-top: 20px; }
 .employee-uploads { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
@@ -816,8 +812,6 @@ html[dir='rtl'] .home-page .section-heading .text-button { margin-right: auto; m
 }
 @media (max-width: 700px) {
   .employee-card-grid { grid-template-columns: 1fr; }
-  .inventory-control-tools { flex-wrap: wrap; }
-  .inventory-control-tools > .search-field { flex-basis: 100%; }
   .analytics-grid { grid-template-columns: 1fr; }
   .accounting-metrics, .accounting-balance-metrics { grid-template-columns: 1fr 1fr; }
   .expense-form { grid-template-columns: 1fr; }
