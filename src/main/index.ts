@@ -1,12 +1,13 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import Database from 'better-sqlite3';
 import PDFDocument from 'pdfkit';
 import { randomInt, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
-import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, Employee, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, SaleItem, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
+import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, Employee, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, SaleItem, Site, SiteInput, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
 
 let database: Database.Database;
 let mainWindow: BrowserWindow;
@@ -144,6 +145,9 @@ function allSales(): unknown[] {
 function state() {
   removeExpiredVouchers();
   removeExpiredRecords();
+  const employees = database.prepare(`SELECT id, first_name, last_name, age, gender, home_address, email, phone, operational_site,
+    role, shift, salary, payment_method, iban, recognition_code, barcode, photo_data, documents_data, contract_pdf_data, created_at
+    FROM employees ORDER BY last_name, first_name`).all() as Employee[];
   return {
     products: (database.prepare('SELECT * FROM products ORDER BY name').all() as Array<Omit<Product, 'expiry_enabled'> & { expiry_enabled: number }>).map((product) => ({ ...product, expiry_enabled: Boolean(product.expiry_enabled) })),
     sales: allSales(),
@@ -151,20 +155,25 @@ function state() {
     expenses: database.prepare('SELECT * FROM expenses ORDER BY expense_date DESC, id DESC').all() as Expense[],
     promotions: database.prepare('SELECT * FROM promotions ORDER BY starts_at DESC').all(),
     voucherBatches: allVoucherBatches(),
-    employees: database.prepare(`SELECT id, first_name, last_name, age, gender, home_address, email, phone, operational_site,
-      role, shift, salary, payment_method, iban, recognition_code, barcode, photo_data, documents_data, contract_pdf_data, created_at
-      FROM employees ORDER BY last_name, first_name`).all() as Employee[],
+    employees,
     employeeActivities: database.prepare('SELECT * FROM employee_activity ORDER BY created_at DESC, id DESC').all(),
-    payrollPayments: database.prepare(`SELECT payments.*, employees.first_name, employees.last_name
+    payrollPayments: database.prepare(`SELECT payments.*, employees.first_name, employees.last_name, employees.operational_site AS site
       FROM payroll_payments payments JOIN employees ON employees.id = payments.employee_id
       ORDER BY payments.pay_month DESC, employees.last_name, employees.first_name`).all() as PayrollPayment[],
+    sites: database.prepare('SELECT * FROM sites ORDER BY name').all() as Site[],
     settings: {
       shop_name: setting('shop_name', 'Il tuo supermercato'),
+      shop_address: setting('shop_address'),
+      shop_phone: setting('shop_phone'),
+      shop_email: setting('shop_email'),
+      shop_tax_id: setting('shop_tax_id'),
+      setup_complete: setting('setup_complete', employees.length ? 'true' : 'false') === 'true',
       shop_logo: setting('shop_logo'),
       home_image: setting('home_image'),
       archive_folder: setting('archive_folder', join(app.getPath('documents'), 'Gestionale-Archivio')),
       database_file: databaseFile,
       receipt_printer: setting('receipt_printer'),
+      receipt_printer_thermal: setting('receipt_printer_thermal'),
       barcode_scanner_enabled: setting('barcode_scanner_enabled', 'true') === 'true',
       barcode_scanner_detected: setting('barcode_scanner_detected') === 'true',
     },
@@ -186,7 +195,7 @@ function initDatabase(): void {
     CREATE TABLE IF NOT EXISTS sales (
       id INTEGER PRIMARY KEY AUTOINCREMENT, receipt_no TEXT NOT NULL UNIQUE,
       created_at TEXT NOT NULL, payment_method TEXT NOT NULL, discount REAL NOT NULL DEFAULT 0,
-      total REAL NOT NULL DEFAULT 0
+      total REAL NOT NULL DEFAULT 0, site TEXT NOT NULL DEFAULT 'Sede principale'
     );
     CREATE TABLE IF NOT EXISTS sale_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
@@ -202,11 +211,15 @@ function initDatabase(): void {
       application_mode TEXT NOT NULL CHECK(application_mode IN ('Automatica', 'Manuale'))
     );
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS sites (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, address TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS stock_movements (
       id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, product_name TEXT NOT NULL,
       movement_type TEXT NOT NULL CHECK(movement_type IN ('Carico', 'Scarico')),
       quantity REAL NOT NULL, created_at TEXT NOT NULL, person TEXT NOT NULL DEFAULT '',
-      destination TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT ''
+      destination TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', site TEXT NOT NULL DEFAULT 'Sede principale'
     );
     CREATE TABLE IF NOT EXISTS employee_activity (
       id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL, employee_name TEXT NOT NULL,
@@ -269,6 +282,9 @@ function initDatabase(): void {
   if (!stockMovementColumns.some((column) => column.name === 'destination')) {
     database.exec("ALTER TABLE stock_movements ADD COLUMN destination TEXT NOT NULL DEFAULT ''");
   }
+  if (!stockMovementColumns.some((column) => column.name === 'site')) {
+    database.exec("ALTER TABLE stock_movements ADD COLUMN site TEXT NOT NULL DEFAULT 'Sede principale'");
+  }
   const loyaltyCardColumns = database.prepare('PRAGMA table_info(loyalty_cards)').all() as Array<{ name: string }>;
   if (!loyaltyCardColumns.some((column) => column.name === 'barcode')) {
     database.exec("ALTER TABLE loyalty_cards ADD COLUMN barcode TEXT NOT NULL DEFAULT ''");
@@ -276,6 +292,9 @@ function initDatabase(): void {
   }
   database.exec('CREATE UNIQUE INDEX IF NOT EXISTS loyalty_cards_barcode_unique ON loyalty_cards(barcode)');
   const saleColumns = database.prepare('PRAGMA table_info(sales)').all() as Array<{ name: string }>;
+  if (!saleColumns.some((column) => column.name === 'site')) {
+    database.exec("ALTER TABLE sales ADD COLUMN site TEXT NOT NULL DEFAULT 'Sede principale'");
+  }
   if (!saleColumns.some((column) => column.name === 'gross_total')) {
     database.exec('ALTER TABLE sales ADD COLUMN gross_total REAL NOT NULL DEFAULT 0');
     database.exec(`UPDATE sales SET gross_total = COALESCE(
@@ -290,6 +309,10 @@ function initDatabase(): void {
   if (!expenseColumns.some((column) => column.name === 'receipt_data')) {
     database.exec("ALTER TABLE expenses ADD COLUMN receipt_data TEXT NOT NULL DEFAULT ''");
   }
+  database.prepare("INSERT OR IGNORE INTO sites (name, address, phone, created_at) VALUES ('Sede principale', '', '', ?)").run(new Date().toISOString());
+  database.prepare(`INSERT OR IGNORE INTO sites (name, address, phone, created_at)
+    SELECT DISTINCT operational_site, '', '', ? FROM employees WHERE TRIM(operational_site) != ''`).run(new Date().toISOString());
+  database.prepare("UPDATE expenses SET site = 'Sede principale' WHERE site IN ('Negozio', 'Non assegnata', '')").run();
   const promotionColumns = database.prepare('PRAGMA table_info(promotions)').all() as Array<{ name: string }>;
   for (const [column, definition] of [
     ['discount_type', "TEXT NOT NULL DEFAULT 'percentage'"],
@@ -365,9 +388,9 @@ function replaceItems(saleId: number, items: SaleItem[]): void {
   }
 }
 
-function recordStockMovement(productId: number, productName: string, type: 'Carico' | 'Scarico', quantity: number, note: string, person = '', destination = ''): void {
-  database.prepare(`INSERT INTO stock_movements (product_id, product_name, movement_type, quantity, created_at, person, destination, note)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(productId, productName, type, quantity, new Date().toISOString(), person, destination, note);
+function recordStockMovement(productId: number, productName: string, type: 'Carico' | 'Scarico', quantity: number, note: string, person = '', destination = '', site = 'Sede principale'): void {
+  database.prepare(`INSERT INTO stock_movements (product_id, product_name, movement_type, quantity, created_at, person, destination, note, site)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(productId, productName, type, quantity, new Date().toISOString(), person, destination, note, site);
 }
 
 const archiveNumber = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 2 });
@@ -541,7 +564,17 @@ function createWindow(): void {
     minHeight: 720,
     backgroundColor: '#f6f7f5',
     title: 'Gestione Supermercato',
-    webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false },
+    webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  const rendererUrl = process.env.ELECTRON_RENDERER_URL;
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => ({ action: url === 'about:blank' ? 'allow' : 'deny' }));
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const sameOrigin = rendererUrl && new URL(url).origin === new URL(rendererUrl).origin;
+    const sameFile = !rendererUrl && url === pathToFileURL(join(__dirname, '../renderer/index.html')).href;
+    const localBlob = url.startsWith('blob:') && (rendererUrl
+      ? new URL(url).origin === new URL(rendererUrl).origin
+      : url.startsWith('blob:file://'));
+    if (!sameOrigin && !sameFile && !localBlob) event.preventDefault();
   });
   if (process.env.ELECTRON_RENDERER_URL) mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
   else mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
@@ -615,14 +648,21 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   });
   ipcMain.handle('product:dispose-expired', (_event, productId: number) => {
     if (!Number.isInteger(productId) || productId < 1) throw new Error('Articolo scaduto non valido.');
-    const product = database.prepare(`SELECT name, stock FROM products
+    const product = database.prepare(`SELECT name, stock, purchase_price FROM products
       WHERE id = ? AND expiry_enabled = 1 AND expiry_date < ?`).get(productId, localDate(new Date())) as
-      { name: string; stock: number } | undefined;
+      { name: string; stock: number; purchase_price: number } | undefined;
     if (!product) throw new Error('Articolo non trovato o non scaduto.');
     if (product.stock <= 0) throw new Error('L’articolo scaduto non ha giacenza da smaltire.');
     database.transaction(() => {
       database.prepare('UPDATE products SET stock = 0 WHERE id = ?').run(productId);
       recordStockMovement(productId, product.name, 'Scarico', product.stock, 'Smaltimento prodotto scaduto');
+      database.prepare(`INSERT INTO expenses (description, category, amount, expense_date, created_at, site)
+        VALUES (?, 'Merce buttata', ?, ?, ?, 'Negozio')`).run(
+        `Perdita merce scaduta: ${product.name}`,
+        product.stock * product.purchase_price,
+        localDate(new Date()),
+        new Date().toISOString(),
+      );
     })();
   });
   ipcMain.handle('product:stock', (_event, productId: number, stock: number) => {
@@ -643,8 +683,8 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     database.transaction(() => {
       const product = database.prepare('SELECT name, stock FROM products WHERE id = ?').get(movement.productId) as { name: string; stock: number } | undefined;
       if (!product) throw new Error('Articolo non trovato.');
-      const employee = database.prepare('SELECT first_name, last_name FROM employees WHERE barcode = ?')
-        .get(movement.employee_barcode.trim()) as { first_name: string; last_name: string } | undefined;
+      const employee = database.prepare('SELECT first_name, last_name, operational_site FROM employees WHERE barcode = ?')
+        .get(movement.employee_barcode.trim()) as { first_name: string; last_name: string; operational_site: string } | undefined;
       if (!employee) throw new Error('Barcode personale non riconosciuto. Scansiona il badge di un dipendente registrato.');
       if (movement.type === 'Scarico' && product.stock < movement.quantity) throw new Error('La quantità da scaricare supera la giacenza disponibile.');
       const delta = movement.type === 'Carico' ? movement.quantity : -movement.quantity;
@@ -657,6 +697,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         movement.note.trim(),
         `${employee.first_name} ${employee.last_name}`,
         movement.type === 'Scarico' ? movement.destination?.trim() ?? '' : '',
+        employee.operational_site,
       );
     })();
   });
@@ -676,6 +717,11 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     if (voucherCode && !findValidVoucher(voucherCode)) throw new Error('Buono sconto non valido, scaduto o già utilizzato.');
     const grossTotal = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
     const createSale = database.transaction(() => {
+      const employee = sale.employee_barcode ? employeeForLogin(sale.employee_barcode) : null;
+      const employeeSite = employee
+        ? (database.prepare('SELECT operational_site FROM employees WHERE id = ?').get(employee.id) as { operational_site: string }).operational_site
+        : 'Sede principale';
+      const site = database.prepare('SELECT name FROM sites WHERE name = ?').get(employeeSite) ? employeeSite : 'Sede principale';
       const voucher = voucherCode ? findValidVoucher(voucherCode) : undefined;
       if (voucherCode && !voucher) throw new Error('Buono sconto non valido, scaduto o già utilizzato.');
       const voucherDiscount = voucher
@@ -684,10 +730,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       const discount = discounts.automaticDiscount + discounts.manualDiscount + voucherDiscount;
       const amountPaid = Math.max(0, grossTotal - discount);
       const receiptNo = receiptNumber();
-      const result = database.prepare('INSERT INTO sales (receipt_no, created_at, payment_method, discount, gross_total, total) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(receiptNo, new Date().toISOString(), sale.payment_method, discount, grossTotal, amountPaid);
+      const result = database.prepare('INSERT INTO sales (receipt_no, created_at, payment_method, discount, gross_total, total, site) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(receiptNo, new Date().toISOString(), sale.payment_method, discount, grossTotal, amountPaid, site);
       replaceItems(Number(result.lastInsertRowid), items);
-      const employee = sale.employee_barcode ? employeeForLogin(sale.employee_barcode) : null;
       items.forEach((item) => recordStockMovement(
         item.product_id,
         item.name,
@@ -695,6 +740,8 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         item.quantity,
         `Vendita #${receiptNo}`,
         employee ? `${employee.first_name} ${employee.last_name}`.trim() : '',
+        site,
+        site,
       ));
       if (voucher) {
         database.prepare('DELETE FROM vouchers WHERE id = ?').run(voucher.id);
@@ -726,7 +773,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         nextQuantities.set(item.product_id, { quantity: (current?.quantity ?? 0) + item.quantity, name: item.name });
       });
       replaceItems(sale.id, sale.items);
-      const receipt = database.prepare('SELECT receipt_no FROM sales WHERE id = ?').get(sale.id) as { receipt_no: string } | undefined;
+      const receipt = database.prepare('SELECT receipt_no, site FROM sales WHERE id = ?').get(sale.id) as { receipt_no: string; site: string } | undefined;
       new Set([...previousQuantities.keys(), ...nextQuantities.keys()]).forEach((productId) => {
         const previous = previousQuantities.get(productId);
         const next = nextQuantities.get(productId);
@@ -739,6 +786,8 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
             Math.abs(difference),
             `Modifica vendita #${receipt?.receipt_no ?? sale.id}`,
             employee ? `${employee.first_name} ${employee.last_name}`.trim() : '',
+            '',
+            receipt?.site ?? 'Sede principale',
           );
         }
       });
@@ -752,7 +801,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       if (!Number.isInteger(id) || id < 1 || !isEmployeeBarcode(employeeBarcode)) {
         throw new Error('Barcode dipendente non riconosciuto. Scansiona il codice di riconoscimento di un dipendente.');
       }
-      const receipt = database.prepare('SELECT receipt_no FROM sales WHERE id = ?').get(id) as { receipt_no: string } | undefined;
+      const receipt = database.prepare('SELECT receipt_no, site FROM sales WHERE id = ?').get(id) as { receipt_no: string; site: string } | undefined;
       if (!receipt) throw new Error('Scontrino non trovato.');
       const employee = employeeForLogin(employeeBarcode);
       saleItems(id).forEach((item) => {
@@ -764,6 +813,8 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
           item.quantity,
           `Vendita #${receipt?.receipt_no ?? id} eliminata`,
           employee ? `${employee.first_name} ${employee.last_name}`.trim() : '',
+          '',
+          receipt?.site ?? 'Sede principale',
         );
       });
       database.prepare('DELETE FROM sales WHERE id=?').run(id);
@@ -868,6 +919,53 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     const result = database.prepare('DELETE FROM expenses WHERE id = ?').run(id);
     if (result.changes === 0) throw new Error('Spesa non trovata.');
   });
+  ipcMain.handle('site:save', (_event, input: SiteInput, requesterBarcode: string) => {
+    const requester = employeeForLogin(requesterBarcode);
+    if (!requester || normalizedEmployeeRole(requester.role) !== 'proprietario') throw new Error('Solo il Proprietario può gestire le sedi.');
+    if (!input || typeof input.name !== 'string' || !input.name.trim() || input.name.trim().length > 80
+      || typeof input.address !== 'string' || input.address.length > 200
+      || typeof input.phone !== 'string' || input.phone.length > 40
+      || (input.id !== undefined && (!Number.isInteger(input.id) || input.id < 1))) throw new Error('I dati della sede non sono validi.');
+    const name = input.name.trim();
+    try {
+      if (input.id !== undefined) {
+        const existing = database.prepare('SELECT name FROM sites WHERE id = ?').get(input.id) as { name: string } | undefined;
+        if (!existing) throw new Error('Sede non trovata.');
+        if (existing.name === 'Sede principale' && name !== existing.name) throw new Error('Il nome della sede principale non può essere modificato.');
+        database.transaction(() => {
+          database.prepare('UPDATE sites SET name = ?, address = ?, phone = ? WHERE id = ?').run(name, input.address.trim(), input.phone.trim(), input.id);
+          if (existing.name !== name) {
+            database.prepare('UPDATE employees SET operational_site = ? WHERE operational_site = ?').run(name, existing.name);
+            database.prepare('UPDATE sales SET site = ? WHERE site = ?').run(name, existing.name);
+            database.prepare('UPDATE expenses SET site = ? WHERE site = ?').run(name, existing.name);
+            database.prepare('UPDATE stock_movements SET site = ? WHERE site = ?').run(name, existing.name);
+            database.prepare('UPDATE stock_movements SET destination = ? WHERE destination = ?').run(name, existing.name);
+          }
+        })();
+      } else {
+        database.prepare('INSERT INTO sites (name, address, phone, created_at) VALUES (?, ?, ?, ?)')
+          .run(name, input.address.trim(), input.phone.trim(), new Date().toISOString());
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('UNIQUE constraint failed: sites.name')) throw new Error('Esiste già una sede con questo nome.');
+      throw error;
+    }
+  });
+  ipcMain.handle('site:delete', (_event, siteId: number, requesterBarcode: string) => {
+    const requester = employeeForLogin(requesterBarcode);
+    if (!requester || normalizedEmployeeRole(requester.role) !== 'proprietario') throw new Error('Solo il Proprietario può gestire le sedi.');
+    if (!Number.isInteger(siteId) || siteId < 1) throw new Error('Sede non valida.');
+    const site = database.prepare('SELECT name FROM sites WHERE id = ?').get(siteId) as { name: string } | undefined;
+    if (!site) throw new Error('Sede non trovata.');
+    if (site.name === 'Sede principale') throw new Error('La sede principale non può essere eliminata.');
+    const used = database.prepare(`SELECT
+      (SELECT COUNT(*) FROM employees WHERE operational_site = ?) +
+      (SELECT COUNT(*) FROM sales WHERE site = ?) +
+      (SELECT COUNT(*) FROM expenses WHERE site = ?) +
+      (SELECT COUNT(*) FROM stock_movements WHERE site = ?) AS count`).get(site.name, site.name, site.name, site.name) as { count: number };
+    if (used.count > 0) throw new Error('La sede contiene dipendenti, vendite o spese e non può essere eliminata.');
+    database.prepare('DELETE FROM sites WHERE id = ?').run(siteId);
+  });
   ipcMain.handle('employee:save', (_event, employee: EmployeeInput) => {
     const requiredText: Array<keyof EmployeeInput> = [
       'first_name', 'last_name', 'gender', 'home_address', 'email', 'phone', 'operational_site',
@@ -889,6 +987,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       }
     }
     const editing = Boolean(employee?.id);
+    const firstAccount = !editing && (database.prepare('SELECT COUNT(*) AS count FROM employees').get() as { count: number }).count === 0;
     const existingEmployee = editing && Number.isInteger(employee.id) && typeof employee.id === 'number' && employee.id > 0
       ? database.prepare('SELECT id, recognition_code, barcode, photo_data, documents_data, contract_pdf_data FROM employees WHERE id = ?').get(employee.id) as {
         id: number;
@@ -908,6 +1007,10 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       contract_pdf_data: employee.contract_pdf_data || existingEmployee.contract_pdf_data,
     } : employee;
     const initialPassword = candidate?.initial_password ?? '';
+    if (firstAccount && (normalizedEmployeeRole(candidate?.role ?? '') !== 'proprietario'
+      || ['shop_name', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id'].some((key) => !setting(key).trim()))) {
+      throw new Error('Completa i dati del negozio e crea il primo account Proprietario dalla configurazione iniziale.');
+    }
     const documentImagesChanged = !editing || candidate?.documents_data !== existingEmployee?.documents_data;
     const photoChanged = !editing || candidate?.photo_data !== existingEmployee?.photo_data;
     const contractChanged = !editing || candidate?.contract_pdf_data !== existingEmployee?.contract_pdf_data;
@@ -957,6 +1060,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
           initial_password_hash: passwordHash,
           created_at: new Date().toISOString(),
         });
+        if (firstAccount) setSetting('setup_complete', 'true');
       }
     } catch (error) {
       if (error instanceof Error && error.message.includes('UNIQUE constraint failed: employees.email')) {
@@ -1115,12 +1219,13 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     return { valid: true, discount_percentage: voucher.discount_percentage };
   });
   ipcMain.handle('settings:save', (_event, key: string, value: string) => {
-    if (!['shop_name', 'archive_folder', 'receipt_printer', 'barcode_scanner_enabled', 'barcode_scanner_detected'].includes(key)) throw new Error('Impostazione non valida.');
+    if (!['shop_name', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id', 'archive_folder', 'receipt_printer', 'receipt_printer_thermal', 'barcode_scanner_enabled', 'barcode_scanner_detected'].includes(key)) throw new Error('Impostazione non valida.');
     setSetting(key, value);
   });
   ipcMain.handle('devices:printers', async () => (await mainWindow.webContents.getPrintersAsync()).map(({ name, displayName }) => ({ name, displayName })));
-  ipcMain.handle('receipt:print', async () => {
-    const printer = setting('receipt_printer');
+  ipcMain.handle('receipt:print', async (_event, target: 'regular' | 'thermal' = 'regular') => {
+    if (!['regular', 'thermal'].includes(target)) throw new Error('Destinazione di stampa non valida.');
+    const printer = target === 'thermal' ? setting('receipt_printer_thermal') : setting('receipt_printer');
     if (!printer) throw new Error('Seleziona una stampante per gli scontrini nelle impostazioni Dispositivi.');
     await new Promise<void>((resolve, reject) => {
       mainWindow.webContents.print({ silent: true, deviceName: printer, printBackground: true, copies: 1 }, (success, failureReason) => {
@@ -1128,6 +1233,28 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         else reject(new Error(failureReason || 'Stampa dello scontrino non riuscita.'));
       });
     });
+  });
+  ipcMain.handle('payroll:save-receipts', async (_event, input: { folderName: string; files: Array<{ name: string; data: string }> }) => {
+    if (!input || typeof input.folderName !== 'string' || basename(input.folderName) !== input.folderName
+      || !/^[\w -]{1,80}$/.test(input.folderName) || !Array.isArray(input.files)
+      || input.files.length < 1 || input.files.length > 500) throw new Error('Dati delle ricevute non validi.');
+    const folderPath = join(app.getPath('downloads'), input.folderName);
+    mkdirSync(folderPath, { recursive: true });
+    for (const file of input.files) {
+      if (!file || typeof file.name !== 'string' || basename(file.name) !== file.name
+        || !/^[\w \u0600-\u06FF.-]{1,160}\.pdf$/i.test(file.name)
+        || typeof file.data !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(file.data)) {
+        throw new Error('Nome o contenuto di una ricevuta non valido.');
+      }
+      const contents = Buffer.from(file.data, 'base64');
+      if (contents.length > 10 * 1024 * 1024 || contents.subarray(0, 5).toString() !== '%PDF-') {
+        throw new Error('Una ricevuta non è un PDF valido o supera 10 MB.');
+      }
+      writeFileSync(join(folderPath, file.name), contents);
+    }
+    const openError = await shell.openPath(folderPath);
+    if (openError) throw new Error(`Le ricevute sono state salvate, ma non è possibile aprire la cartella: ${openError}`);
+    return folderPath;
   });
   const chooseImage = async (settingKey: 'shop_logo' | 'home_image', title: string) => {
     const result = await dialog.showOpenDialog(mainWindow, { title, properties: ['openFile'], filters: [{ name: 'Immagini', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] });

@@ -1,6 +1,8 @@
-export type Section = 'home' | 'inventory' | 'expired-products' | 'inventory-history' | 'stock-movement' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'expenses' | 'financial-balance' | 'employees' | 'employee-create' | 'payroll' | 'employee-tracker' | 'settings';
+export type Section = 'home' | 'inventory' | 'expired-products' | 'inventory-history' | 'stock-movement' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'expenses' | 'financial-balance' | 'employees' | 'employee-create' | 'payroll' | 'employee-tracker' | 'site-statistics' | 'site-management' | 'site-create' | 'site-list' | 'settings';
 export type ProductUnit = 'KG' | 'LITRO' | 'PEZZO';
 export type Printer = { name: string; displayName: string };
+export interface Site { id: number; name: string; address: string; phone: string; created_at: string }
+export type SiteInput = Pick<Site, 'name' | 'address' | 'phone'> & { id?: number };
 
 export interface Product {
   id: number;
@@ -31,6 +33,7 @@ export interface Sale {
   id: number;
   receipt_no: string;
   created_at: string;
+  site: string;
   payment_method: string;
   discount: number;
   gross_total: number;
@@ -47,6 +50,7 @@ export interface StockMovement {
   quantity: number;
   created_at: string;
   person: string;
+  site: string;
   destination: string;
   note: string;
 }
@@ -132,6 +136,7 @@ export interface PayrollPayment {
   payment_method: 'Bonifico' | 'Contanti';
   first_name: string;
   last_name: string;
+  site: string;
 }
 export type PayrollPaymentInput = { employee_id: number; pay_month: string; payment_date: string };
 export type CustomerInput = { first_name: string; last_name: string; phone: string; email: string; address: string };
@@ -148,9 +153,10 @@ export interface AppState {
   employees: Employee[];
   employeeActivities: EmployeeActivity[];
   payrollPayments: PayrollPayment[];
-  settings: { shop_name: string; shop_logo?: string; home_image?: string; archive_folder: string; database_file: string; receipt_printer: string; barcode_scanner_enabled: boolean; barcode_scanner_detected: boolean };
+  settings: { shop_name: string; shop_logo?: string; home_image?: string; shop_address: string; shop_phone: string; shop_email: string; shop_tax_id: string; setup_complete: boolean; archive_folder: string; database_file: string; receipt_printer: string; receipt_printer_thermal: string; barcode_scanner_enabled: boolean; barcode_scanner_detected: boolean };
   stockMovements: StockMovement[];
   expenses: Expense[];
+  sites: Site[];
 }
 
 export interface ProductInput {
@@ -192,14 +198,17 @@ declare global {
     disposeExpiredProduct: (productId: number) => Promise<void>;
     paySalary: (input: PayrollPaymentInput) => Promise<void>;
     payAllSalaries: (input: { pay_month: string; payment_date: string }) => Promise<void>;
-    saveSetting: (key: 'shop_name' | 'archive_folder' | 'receipt_printer' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => Promise<void>;
+    saveSetting: (key: 'shop_name' | 'shop_address' | 'shop_phone' | 'shop_email' | 'shop_tax_id' | 'archive_folder' | 'receipt_printer' | 'receipt_printer_thermal' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => Promise<void>;
     getPrinters: () => Promise<Printer[]>;
-    printReceipt: () => Promise<void>;
+    printReceipt: (target?: 'regular' | 'thermal') => Promise<void>;
+    savePayrollReceipts: (input: { folderName: string; files: Array<{ name: string; data: string }> }) => Promise<string>;
     authorizeSaleAction: (employeeBarcode: string) => Promise<boolean>;
     updateSale: (sale: Pick<Sale, 'id' | 'payment_method' | 'discount'> & { items: SaleItem[]; employee_barcode: string }) => Promise<void>;
     deleteSale: (id: number, employeeBarcode: string) => Promise<void>;
     saveExpense: (expense: Pick<Expense, 'description' | 'category' | 'amount' | 'expense_date' | 'site' | 'receipt_data'>) => Promise<void>;
     deleteExpense: (id: number) => Promise<void>;
+    saveSite: (site: SiteInput, requesterBarcode: string) => Promise<void>;
+    deleteSite: (siteId: number, requesterBarcode: string) => Promise<void>;
     chooseArchiveFolder: () => Promise<string | null>;
     chooseShopLogo: () => Promise<string | null>;
     chooseHomepageImage: () => Promise<string | null>;

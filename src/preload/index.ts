@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AuthenticatedEmployee, CheckoutInput, EmployeeInput, Expense, PayrollPaymentInput, Printer, ProductInput, PromotionInput, SaleItem, VoucherBatchInput } from '../shared/types';
+import type { AuthenticatedEmployee, CheckoutInput, EmployeeInput, Expense, PayrollPaymentInput, Printer, ProductInput, PromotionInput, SaleItem, SiteInput, VoucherBatchInput } from '../shared/types';
 
 contextBridge.exposeInMainWorld('gestionale', {
   getState: () => ipcRenderer.invoke('state:get'),
@@ -29,14 +29,17 @@ contextBridge.exposeInMainWorld('gestionale', {
   disposeExpiredProduct: (productId: number) => ipcRenderer.invoke('product:dispose-expired', productId),
   paySalary: (input: PayrollPaymentInput) => ipcRenderer.invoke('payroll:pay', input),
   payAllSalaries: (input: { pay_month: string; payment_date: string }) => ipcRenderer.invoke('payroll:pay-all', input),
-  saveSetting: (key: 'shop_name' | 'archive_folder' | 'receipt_printer' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => ipcRenderer.invoke('settings:save', key, value),
+  saveSetting: (key: 'shop_name' | 'shop_address' | 'shop_phone' | 'shop_email' | 'shop_tax_id' | 'archive_folder' | 'receipt_printer' | 'receipt_printer_thermal' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => ipcRenderer.invoke('settings:save', key, value),
   getPrinters: (): Promise<Printer[]> => ipcRenderer.invoke('devices:printers'),
-  printReceipt: (): Promise<void> => ipcRenderer.invoke('receipt:print'),
+  printReceipt: (target: 'regular' | 'thermal' = 'regular'): Promise<void> => ipcRenderer.invoke('receipt:print', target),
+  savePayrollReceipts: (input: { folderName: string; files: Array<{ name: string; data: string }> }): Promise<string> => ipcRenderer.invoke('payroll:save-receipts', input),
   authorizeSaleAction: (employeeBarcode: string): Promise<boolean> => ipcRenderer.invoke('sale:authorize', employeeBarcode),
   updateSale: (sale: { id: number; payment_method: string; discount: number; items: SaleItem[]; employee_barcode: string }) => ipcRenderer.invoke('sale:update', sale),
   deleteSale: (id: number, employeeBarcode: string): Promise<void> => ipcRenderer.invoke('sale:delete', id, employeeBarcode),
   saveExpense: (expense: Pick<Expense, 'description' | 'category' | 'amount' | 'expense_date' | 'site' | 'receipt_data'>) => ipcRenderer.invoke('expense:save', expense),
   deleteExpense: (id: number) => ipcRenderer.invoke('expense:delete', id),
+  saveSite: (site: SiteInput, requesterBarcode: string) => ipcRenderer.invoke('site:save', site, requesterBarcode),
+  deleteSite: (siteId: number, requesterBarcode: string) => ipcRenderer.invoke('site:delete', siteId, requesterBarcode),
   chooseArchiveFolder: () => ipcRenderer.invoke('archive:choose-folder'),
   chooseShopLogo: () => ipcRenderer.invoke('settings:choose-shop-logo'),
   chooseHomepageImage: () => ipcRenderer.invoke('settings:choose-homepage-image'),
