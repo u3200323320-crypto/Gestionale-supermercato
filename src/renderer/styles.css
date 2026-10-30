@@ -265,6 +265,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .stats-metrics .metric-card { min-height: 135px; }
 .stats-metrics .stats-wide-card { grid-column: span 2; }
 .inventory-values { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 19px; }
+.inventory-values .metric-card { min-height: 205px; }
 .analytics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
 .panel { min-width: 0; padding: 15px; border: 1px solid var(--line); border-radius: 5px; background: white; }
 .panel-heading { display: flex; min-height: 37px; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
@@ -762,6 +763,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .home-banner { display: block; width: 100%; height: 142px; margin-bottom: 13px; border: 1px solid var(--line); border-radius: 6px; object-fit: cover; }
 .site-summary-panel { margin-top: 14px; }
 .site-summary-panel .table-wrap { max-height: 360px; }
+.site-stock-lines { display: grid; min-width: 180px; gap: 4px; font-size: 10px; }
 .site-statistics-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; gap: 10px; margin-bottom: 16px; }
 .site-management-list { display: grid; gap: 10px; }
 .site-management-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px; }
@@ -840,6 +842,8 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .distribution-available { color: #78827a; font-size: 11px; }
 .distribution-available strong { color: var(--green-dark); }
 .distribution-actions { display: flex; justify-content: flex-end; }
+.distribution-source { min-height: 37px; align-content: end; }
+.distribution-source strong { min-height: 37px; padding: 10px; border: 1px solid #dfe4de; border-radius: 4px; background: #f7f8f6; font-size: 11px; }
 .site-inventory-panel { margin-top: 14px; }
 .client-form-panel, .client-list-panel, .loyalty-panel { margin-bottom: 14px; }
 .client-form, .loyalty-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 12px; }
@@ -848,10 +852,10 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .loyalty-activation-panel .loyalty-form { margin-top: 18px; }
 .loyalty-panel .table-wrap { margin-top: 10px; }
 .ranking-expand { display: flex; min-width: 100px; margin: 10px auto 0; }
-.balance-toolbar { align-items: stretch; }
+.balance-toolbar { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: stretch; gap: 8px; }
 .balance-download { flex: 0 0 auto; }
-.balance-periods { display: grid; min-width: 0; flex: 1; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.balance-periods .status-filter { width: 100%; min-height: 37px; padding: 0 8px; white-space: normal; }
+.balance-periods { display: grid; min-width: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.balance-periods .status-filter { width: 100%; min-width: 0; min-height: 37px; padding: 0 5px; font-size: 9px; white-space: normal; }
 
 html[lang^='ar'] body, html[lang^='ar'] body * { font-family: 'Noto Sans Arabic', 'Noto Naskh Arabic', Tahoma, sans-serif !important; letter-spacing: 0; }
 html[dir='rtl'] .sidebar { right: 0; left: auto; border-right: 0; border-left: 1px solid var(--line); }
@@ -879,8 +883,6 @@ html[dir='rtl'] .home-page .section-heading .text-button { margin-right: auto; m
   html[dir='rtl'] .sidebar .nav-item.active::before { right: -8px; }
   .employee-card-grid { grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); }
   .employee-toolbar { grid-template-columns: auto minmax(0, 1fr) auto; }
-  .balance-toolbar { flex-wrap: wrap; }
-  .balance-download, .balance-periods { width: 100%; }
 }
 @media (max-width: 700px) {
   .employee-card-grid { grid-template-columns: 1fr; }
