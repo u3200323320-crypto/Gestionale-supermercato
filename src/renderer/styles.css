@@ -263,6 +263,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .period-chip { display: flex; align-items: center; gap: 7px; color: #7d887e; font-size: 10px; }
 .stats-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 12px; }
 .stats-metrics .metric-card { min-height: 135px; }
+.stats-metrics .stats-wide-card { grid-column: span 2; }
 .inventory-values { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 19px; }
 .analytics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
 .panel { min-width: 0; padding: 15px; border: 1px solid var(--line); border-radius: 5px; background: white; }
@@ -441,11 +442,11 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .payment-offer-choice:hover, .payment-offer-choice.selected { border-color: #8eae95; background: white; }
 .payment-offer-choice small { color: #718174; font-size: 9px; }
 .receipt-print { max-width: 320px; margin: 0 auto; padding: 14px 18px 10px; color: #252a26; font-family: 'DM Mono', 'Consolas', monospace; font-size: 11px; }
-.receipt-shop { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 5px; font-family: 'DM Sans', sans-serif; font-size: 19px; font-weight: 800; text-align: center; }
+.receipt-shop { display: flex; align-items: center; justify-content: center; font-family: 'DM Sans', sans-serif; font-size: 19px; font-weight: 800; text-align: center; }
 .receipt-shop img { width: 40px; height: 40px; object-fit: contain; }
 .receipt-spacer { height: 13px; }
 .receipt-shop + .receipt-spacer { height: 25px; }
-.receipt-datetime { display: flex; gap: 30px; }
+.receipt-datetime { display: flex; gap: 14px; }
 .receipt-head, .receipt-item { display: grid; grid-template-columns: minmax(0, 1fr) 43px 71px; gap: 4px; padding: 4px 0; }
 .receipt-head { border-bottom: 1px solid #c9cdc9; font-weight: 700; }
 .receipt-head span:nth-child(n+2), .receipt-item span:nth-child(n+2) { text-align: right; }
@@ -504,7 +505,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .custom-role-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; }
 .device-setting > .field { max-width: 460px; margin-top: 16px; }
 .lock-panel .brand-mark { margin: 0 auto 21px; }
-.language-choice { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-bottom: 20px; }
+.language-choice { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-bottom: 20px; direction: ltr; }
 .language-choice button { min-height: 40px; border: 1px solid #dce2dc; border-radius: 12px; background: white; color: #536157; cursor: pointer; font-size: 11px; font-weight: 600; }
 .language-choice button.selected { border-color: var(--green-dark); background: var(--green-soft); color: var(--green-dark); }
 .lock-panel > .eyebrow, .lock-panel > h1, .lock-panel > p.muted { text-align: center; }
@@ -744,7 +745,18 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .employee-profile-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .report-export-options { display: grid; gap: 10px; padding: 20px; }
 .report-export-options p { margin-bottom: 4px; color: #66736a; font-size: 11px; line-height: 1.6; }
-.payroll-toolbar { display: grid; grid-template-columns: 1fr 1fr auto auto; align-items: end; gap: 12px; margin-bottom: 20px; padding: 16px; }
+.payroll-toolbar { display: grid; grid-template-columns: minmax(170px, 1fr) minmax(170px, 1fr) auto auto; align-items: end; gap: 12px; margin-bottom: 16px; padding: 18px; border: 0; background: linear-gradient(120deg, #fff 30%, var(--green-soft)); box-shadow: 0 8px 22px rgb(39 49 42 / 6%); }
+.payroll-page { display: grid; gap: 18px; }
+.payroll-page-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.payroll-page-heading h2 { margin-top: 5px; font-size: 20px; }
+.payroll-page-heading p { margin-top: 5px; color: var(--muted); font-size: 11px; }
+.payroll-summary-chip { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border: 1px solid #d6e5d4; border-radius: 12px; background: #fff; color: var(--green-dark); }
+.payroll-summary-chip strong { font-family: 'Manrope', sans-serif; font-size: 18px; }
+.payroll-summary-chip span { color: #718174; font-size: 10px; }
+.payroll-table-panel { overflow: hidden; padding: 0; }
+.payroll-table-panel .table-wrap { border: 0; border-radius: 5px; }
+.payroll-table-panel thead { background: #f2f7f1; }
+.payroll-table-panel tbody tr:hover { background: #f5faf4; }
 .barcode-image { width: 132px; height: 32px; }
 .voucher-codes .barcode-image { width: 132px; height: 32px; }
 .home-banner { display: block; width: 100%; height: 142px; margin-bottom: 13px; border: 1px solid var(--line); border-radius: 6px; object-fit: cover; }
@@ -799,7 +811,10 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 }
 
 .accounting-page .page-toolbar p { margin-top: 5px; color: var(--muted); font-size: 11px; }
-.accounting-metrics, .accounting-balance-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.accounting-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.accounting-balance-metrics { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.accounting-balance-metrics .metric-card:nth-child(-n+3) { grid-column: span 2; }
+.accounting-balance-metrics .balance-wide-card { grid-column: span 3; }
 .accounting-balance-metrics .metric-card { min-height: 130px; }
 .expense-entry-panel { margin-bottom: 14px; }
 .expense-form { display: grid; grid-template-columns: minmax(180px, 2fr) repeat(3, minmax(120px, 1fr)); align-items: end; gap: 10px; }
@@ -820,6 +835,18 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .balance-pie-legend > div { display: grid; min-height: 43px; grid-template-columns: 9px minmax(0, 1fr) auto; align-items: center; gap: 9px; border-bottom: 1px solid #eff1ee; color: #67736b; font-size: 10px; }
 .balance-pie-legend > div:last-child { border-bottom: 0; }
 .balance-pie-legend strong { color: var(--ink); font-size: 10px; text-align: right; }
+.distribution-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 14px; margin-bottom: 14px; padding: 18px; }
+.distribution-available, .distribution-actions { grid-column: 1 / -1; }
+.distribution-available { color: #78827a; font-size: 11px; }
+.distribution-available strong { color: var(--green-dark); }
+.distribution-actions { display: flex; justify-content: flex-end; }
+.site-inventory-panel { margin-top: 14px; }
+.client-form-panel, .client-list-panel, .loyalty-panel { margin-bottom: 14px; }
+.client-form, .loyalty-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 12px; }
+.client-form > button, .loyalty-form > button { min-height: 39px; }
+.loyalty-activation-panel { max-width: 760px; margin: 0 auto; padding: 24px; }
+.loyalty-activation-panel .loyalty-form { margin-top: 18px; }
+.loyalty-panel .table-wrap { margin-top: 10px; }
 .ranking-expand { display: flex; min-width: 100px; margin: 10px auto 0; }
 .balance-toolbar { align-items: stretch; }
 .balance-download { flex: 0 0 auto; }
@@ -840,6 +867,7 @@ html[dir='rtl'] .home-page .section-heading .text-button { margin-right: auto; m
 
 @media (max-width: 1000px) {
   .accounting-metrics, .accounting-balance-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .accounting-balance-metrics .metric-card:nth-child(-n+3), .accounting-balance-metrics .balance-wide-card { grid-column: span 1; }
   .expense-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .expense-actions { grid-column: 1 / -1; }
 }
@@ -858,6 +886,10 @@ html[dir='rtl'] .home-page .section-heading .text-button { margin-right: auto; m
   .employee-card-grid { grid-template-columns: 1fr; }
   .analytics-grid { grid-template-columns: 1fr; }
   .accounting-metrics, .accounting-balance-metrics { grid-template-columns: 1fr 1fr; }
+  .distribution-form, .client-form, .loyalty-form { grid-template-columns: 1fr; }
+  .distribution-available, .distribution-actions { grid-column: auto; }
+  .payroll-page-heading { align-items: flex-start; flex-direction: column; }
+  .payroll-summary-chip { width: 100%; }
   .expense-form { grid-template-columns: 1fr; }
   .expense-actions { grid-column: auto; }
   .expenses-total { font-size: 10px; }

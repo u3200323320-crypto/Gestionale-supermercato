@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AuthenticatedEmployee, CheckoutInput, EmployeeInput, Expense, PayrollPaymentInput, Printer, ProductInput, PromotionInput, SaleItem, SiteInput, VoucherBatchInput } from '../shared/types';
+import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, EmployeeInput, Expense, PayrollPaymentInput, Printer, ProductInput, PromotionInput, SaleItem, SiteInput, VoucherBatchInput } from '../shared/types';
 
 contextBridge.exposeInMainWorld('gestionale', {
   getState: () => ipcRenderer.invoke('state:get'),
@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('gestionale', {
   saveProduct: (product: ProductInput) => ipcRenderer.invoke('product:save', product),
   updateStock: (productId: number, stock: number) => ipcRenderer.invoke('product:stock', productId, stock),
   moveStock: (movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; employee_barcode: string; destination?: string; note: string }) => ipcRenderer.invoke('product:move-stock', movement),
+  transferStock: (movement: { productId: number; fromSiteId: number; toSiteId: number; quantity: number; employee_barcode: string }) => ipcRenderer.invoke('product:transfer-stock', movement),
   checkout: (sale: CheckoutInput) => ipcRenderer.invoke('sale:checkout', sale),
   validateVoucher: (code: string) => ipcRenderer.invoke('voucher:validate', code),
   savePromotion: (promotion: PromotionInput) => ipcRenderer.invoke('promotion:save', promotion),
@@ -36,6 +37,10 @@ contextBridge.exposeInMainWorld('gestionale', {
   authorizeSaleAction: (employeeBarcode: string): Promise<boolean> => ipcRenderer.invoke('sale:authorize', employeeBarcode),
   updateSale: (sale: { id: number; payment_method: string; discount: number; items: SaleItem[]; employee_barcode: string }) => ipcRenderer.invoke('sale:update', sale),
   deleteSale: (id: number, employeeBarcode: string): Promise<void> => ipcRenderer.invoke('sale:delete', id, employeeBarcode),
+  saveCustomer: (customer: CustomerInput) => ipcRenderer.invoke('customer:save', customer),
+  generateLoyaltyCards: (input: { quantity: number; discount_percentage: number }) => ipcRenderer.invoke('loyalty-cards:generate', input),
+  activateLoyaltyCard: (input: { card_id: number; customer_id: number }) => ipcRenderer.invoke('loyalty-card:activate', input),
+  deleteLoyaltyCard: (id: number) => ipcRenderer.invoke('loyalty-card:delete', id),
   saveExpense: (expense: Pick<Expense, 'description' | 'category' | 'amount' | 'expense_date' | 'site' | 'receipt_data'>) => ipcRenderer.invoke('expense:save', expense),
   deleteExpense: (id: number) => ipcRenderer.invoke('expense:delete', id),
   saveSite: (site: SiteInput, requesterBarcode: string) => ipcRenderer.invoke('site:save', site, requesterBarcode),

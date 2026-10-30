@@ -1,6 +1,6 @@
 import { cloneElement, createContext, isValidElement, useContext, useEffect, useRef, useState } from 'react';
 import type { FormEvent, InputHTMLAttributes, ReactNode } from 'react';
-import { Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Camera, Check, ChevronDown, CircleAlert, ClipboardList, CreditCard, Eye, House, LockKeyhole, Minus, Package, Palette, Pencil, Plus, Printer, RefreshCw, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Store, Trash2, TrendingUp, X } from 'lucide-react';
+import { Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Camera, Check, ChevronDown, CircleAlert, ClipboardList, CreditCard, Eye, House, LockKeyhole, Minus, Package, Palette, Pencil, Plus, Printer, RefreshCw, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Store, Trash2, TrendingUp, Users, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { jsPDF } from 'jspdf';
 import autoTable, { Table as AutoTableTable } from 'jspdf-autotable';
@@ -92,7 +92,7 @@ const arabicUiTranslations: Record<string, string> = {
   'Stampa scontrino': 'طباعة الإيصال', 'Nessuno scontrino trovato con questo numero.': 'لم يتم العثور على هذا الإيصال.',
   'Esporta report vendite': 'تصدير تقرير المبيعات', 'Esporta report contabilità e finanza': 'تصدير تقرير المحاسبة والمالية', 'Esporta tutto': 'تصدير الكل',
   'Rispetta il filtro di tempo': 'استخدم عامل تصفية الوقت', 'Tutte le vendite →': 'كل المبيعات ←', 'Tutti': 'الكل', 'Oggi': 'اليوم', 'Ieri': 'أمس',
-  'Ultima settimana': 'الأسبوع الماضي', 'Ultimi 3 mesi': 'آخر 3 أشهر', 'Ultimi 6 mesi': 'آخر 6 أشهر', 'Ultimo anno': 'العام الماضي', 'Da - A': 'من - إلى',
+  'Ultima settimana': 'الأسبوع الماضي', 'Ultimo mese': 'الشهر الماضي', 'Ultimi 3 mesi': 'آخر 3 أشهر', 'Ultimi 6 mesi': 'آخر 6 أشهر', 'Ultimo anno': 'العام الماضي', 'Da - A': 'من - إلى',
   'Vai al magazzino →': 'الانتقال إلى المخزن ←', 'Valore del magazzino': 'قيمة المخزون', 'Valorizzazione della giacenza attuale': 'قيمة المخزون الحالي',
   'Prodotti più e meno venduti': 'المنتجات الأكثر والأقل مبيعًا', 'Vendite giornaliere': 'المبيعات اليومية', 'Vendite per categoria': 'المبيعات حسب الفئة',
   'Calendario vendite': 'تقويم المبيعات', 'Andamento mensile': 'الاتجاه الشهري', 'Ricavi': 'الإيرادات', 'Costo merce': 'تكلفة البضائع',
@@ -113,10 +113,33 @@ const arabicUiTranslations: Record<string, string> = {
   'CONFIGURAZIONE INIZIALE': 'الإعداد الأولي', 'Informazioni del negozio': 'معلومات المتجر', 'Account Proprietario': 'حساب المالك',
   'Codice fiscale o partita IVA': 'الرقم الضريبي',
   'Continua': 'متابعة', 'Crea le credenziali e completa il profilo del proprietario.': 'أنشئ بيانات الدخول وأكمل ملف المالك.',
-  'Stampante termica per scontrini Bluetooth': 'طابعة الإيصالات الحرارية عبر Bluetooth',
-  'Stampa su termica Bluetooth': 'الطباعة على الطابعة الحرارية عبر Bluetooth',
+  'Stampante termica per scontrini USB': 'طابعة الإيصالات الحرارية عبر USB',
+  'Stampa su termica USB': 'الطباعة على الطابعة الحرارية عبر USB',
   'GESTIONE CLIENTI': 'إدارة العملاء', 'Gestione sedi': 'إدارة الفروع',
   'Statistiche sedi': 'إحصاءات الفروع', 'Gestisci sedi': 'إدارة الفروع', 'Aggiungi sede': 'إضافة فرع', 'Lista sedi': 'قائمة الفروع',
+  'Distribuisci merce': 'توزيع البضائع', 'Distribuzione merce tra sedi': 'توزيع البضائع بين الفروع',
+  'Trasferisci una quantità dalla giacenza di una sede a quella di un’altra.': 'انقل كمية من مخزون فرع إلى مخزون فرع آخر.',
+  'Seleziona articolo': 'اختر المنتج', 'Sede di partenza': 'فرع الانطلاق',
+  'Sede di destinazione': 'فرع الوجهة', 'Disponibile nella sede di partenza:': 'المتاح في فرع الانطلاق:',
+  'Conferma trasferimento': 'تأكيد النقل', 'Giacenze per sede': 'المخزون حسب الفرع',
+  'Quantità attualmente disponibili per ogni articolo.': 'الكميات المتاحة حاليًا لكل منتج.',
+  'Clientela': 'العملاء', 'Lista clienti': 'قائمة العملاء', 'Sviluppa tessere': 'إنشاء البطاقات',
+  'Attiva tessera': 'تفعيل البطاقة', 'Tessere attive': 'البطاقات النشطة',
+  'Registra un cliente': 'تسجيل عميل', 'Aggiungi i dati del cliente per poter attivare una tessera.': 'أدخل بيانات العميل لتفعيل بطاقة.',
+  'Registra cliente': 'تسجيل العميل', 'clienti registrati': 'عملاء مسجلون',
+  'Nessun cliente registrato.': 'لا يوجد عملاء مسجلون.', 'Genera tessere': 'إنشاء البطاقات',
+  'Quantità di tessere': 'عدد البطاقات', 'Sconto (%)': 'الخصم (%)',
+  'Genera tessere barcode da assegnare ai clienti.': 'أنشئ بطاقات برموز شريطية لتخصيصها للعملاء.',
+  'Tessere da attivare': 'بطاقات بانتظار التفعيل', 'Stampa o elimina le tessere non ancora assegnate.': 'اطبع أو احذف البطاقات غير المخصصة بعد.',
+  'Creata il': 'تاريخ الإنشاء',
+  'Nessuna tessera da attivare.': 'لا توجد بطاقات بانتظار التفعيل.', 'Associa una tessera sviluppata a un cliente registrato.': 'اربط بطاقة منشأة بعميل مسجل.',
+  'Tessera': 'البطاقة', 'Seleziona tessera': 'اختر البطاقة', 'Seleziona cliente': 'اختر العميل',
+  'tessere associate ai clienti': 'بطاقات مرتبطة بالعملاء',
+  'Punti': 'النقاط', 'Attivata il': 'تاريخ التفعيل', 'Nessuna tessera attiva.': 'لا توجد بطاقات نشطة.',
+  'Tessere sviluppate.': 'تم إنشاء البطاقات.', 'Tessera attivata.': 'تم تفعيل البطاقة.',
+  'Cliente registrato.': 'تم تسجيل العميل.', 'Trasferimento di merce registrato.': 'تم تسجيل نقل البضائع.',
+  'Composizione del venduto': 'تركيبة المبيعات',
+  'Valore merce venduta': 'قيمة البضائع المباعة',
   'Entrate sedi': 'إيرادات الفروع', 'Uscite sedi': 'مصروفات الفروع', 'Saldo sedi': 'صافي الفروع', 'Sedi attive': 'الفروع النشطة',
   'Entrate e uscite per sede': 'الإيرادات والمصروفات حسب الفرع',
   'Seleziona sede': 'اختر الفرع', 'Nome sede': 'اسم الفرع', 'Modifica sede': 'تعديل الفرع', 'Salva sede': 'حفظ الفرع',
@@ -184,12 +207,12 @@ const arabicUiTranslations: Record<string, string> = {
   'Da riordinare': 'منتجات لإعادة الطلب', 'articoli sotto soglia': 'منتجات دون الحد الأدنى',
   'Cerca articolo, persona o nota…': 'ابحث عن منتج أو شخص أو ملاحظة…',
   'Carico': 'إضافة مخزون', 'Scarico': 'سحب من المخزون', 'Sconto (€)': 'الخصم (EGP)',
-  'Spesa minima (€)': 'الحد الأدنى للإنفاق (EGP)', 'Importo (€)': 'المبلغ (EGP)', 'Ultimo mese': 'الشهر الماضي',
+  'Spesa minima (€)': 'الحد الأدنى للإنفاق (EGP)', 'Importo (€)': 'المبلغ (EGP)',
   'Report vendite': 'تقرير المبيعات', 'Esportato il': 'تم التصدير في', 'Applica al report': 'تطبيق على التقرير',
   'Cerca o scansiona un codice a barre…': 'ابحث عن رمز شريطي أو امسحه ضوئيًا…',
   'Scansiona con fotocamera': 'المسح بالكاميرا', 'Rimuovi uno': 'إزالة قطعة واحدة', 'Aggiungi uno': 'إضافة قطعة واحدة',
   'Vendita': 'عملية بيع', 'Cerca articolo o codice…': 'ابحث عن منتج أو رمز…',
-  'modificare': 'تعديل', 'eliminare': 'حذف', 'dalla vendita': 'من البيع', 'Sconto (%)': 'الخصم (%)',
+  'modificare': 'تعديل', 'eliminare': 'حذف', 'dalla vendita': 'من البيع',
   'Scontrino': 'الإيصال', 'scontrino': 'الإيصال', 'Ultime vendite': 'أحدث المبيعات',
   'Filtra prodotti per disponibilità': 'تصفية المنتجات حسب التوفر',
   'Percentuale di sconto (%)': 'نسبة الخصم (%)', 'Articoli da acquistare': 'المنتجات المطلوب شراؤها',
@@ -201,7 +224,7 @@ const arabicUiTranslations: Record<string, string> = {
   'Aggiorna dati senza chiudere la pagina': 'تحديث البيانات دون إغلاق الصفحة',
   'Ultimo giorno': 'اليوم الماضي', 'Ultimi 3 giorni': 'آخر 3 أيام',
   'Incassi registrati nel periodo': 'الإيرادات المسجلة خلال الفترة',
-  'Acquisto merce venduta': 'تكلفة البضائع المباعة', 'Costo degli articoli venduti': 'تكلفة المنتجات المباعة',
+  'Costo degli articoli venduti': 'تكلفة المنتجات المباعة',
   'Netto stimato': 'صافي الربح التقديري', 'Ricavi meno costo del venduto e spese': 'الإيرادات مطروحًا منها تكلفة البضائع والمصروفات',
   'Quantità vendite': 'كمية المبيعات', 'Articoli venduti rispetto a quelli ancora in magazzino': 'المنتجات المباعة مقارنة بالمنتجات المتبقية في المخزن',
   'Valore vendita in magazzino': 'قيمة البيع للمخزون',
@@ -322,12 +345,14 @@ const nav: { section: Section; label: string; icon: typeof House }[] = [
 ];
 const sectionNames: Partial<Record<Section, string>> = {
   'inventory-history': 'Storico Magazzino', 'stock-movement': 'Carica e scarica merce',
+  'stock-distribution': 'Distribuisci merce',
   'sale-management': 'Modifica o Elimina', promotions: 'Offerta', 'vouchers-create': 'Crea buoni sconto',
   'vouchers-list': 'Lista buoni sconto',
   expenses: 'Spese', statistics: 'Analisi vendite', 'financial-balance': 'Bilancio gestionale',
   'expired-products': 'Gestisci articoli scaduti',
   employees: 'Lista Dipendenti', 'employee-create': 'Crea Dipendente', payroll: 'Paga Stipendi', 'employee-tracker': 'Tracker Dipendenti',
   'site-statistics': 'Statistiche sedi', 'site-management': 'Gestisci sedi', 'site-create': 'Aggiungi sede', 'site-list': 'Lista sedi',
+  'customer-list': 'Lista clienti', 'loyalty-generate': 'Sviluppa tessere', 'loyalty-activate': 'Attiva tessera', 'loyalty-active': 'Tessere attive',
 };
 function normalizedRole(role: string): string {
   return role.trim().toLocaleLowerCase('it-IT').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -341,7 +366,7 @@ function canAccessSection(role: string, section: Section): boolean {
     case 'direttore':
       return !['cash', 'sale-management', 'employees', 'employee-create', 'payroll', 'employee-tracker', 'site-management', 'site-create', 'promotions', 'vouchers-create', 'vouchers-list'].includes(section);
     case 'contabilita':
-      return ['home', 'sales', 'statistics', 'financial-balance', 'employees', 'employee-create', 'payroll', 'employee-tracker', 'site-statistics', 'site-list', 'promotions', 'vouchers-create', 'vouchers-list', 'settings'].includes(section);
+      return ['home', 'sales', 'statistics', 'financial-balance', 'employees', 'employee-create', 'payroll', 'employee-tracker', 'site-statistics', 'site-list', 'promotions', 'vouchers-create', 'vouchers-list', 'customer-list', 'loyalty-generate', 'loyalty-activate', 'loyalty-active', 'settings'].includes(section);
     default:
       return section === 'cash';
   }
@@ -630,6 +655,19 @@ export default function App() {
   const [section, setSection] = useState<Section>('cash');
   const [openSidebarMenu, setOpenSidebarMenu] = useState<'inventory' | 'offers' | 'statistics' | 'employees' | 'sites' | null>(null);
   const [siteMenuOpen, setSiteMenuOpen] = useState(false);
+  const [customerFirstName, setCustomerFirstName] = useState('');
+  const [customerLastName, setCustomerLastName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [customerAddress, setCustomerAddress] = useState('');
+  const [loyaltyQuantity, setLoyaltyQuantity] = useState('1');
+  const [loyaltyDiscount, setLoyaltyDiscount] = useState('0');
+  const [activateCardId, setActivateCardId] = useState('');
+  const [activateCustomerId, setActivateCustomerId] = useState('');
+  const [distributionProductId, setDistributionProductId] = useState('');
+  const [distributionFromSiteId, setDistributionFromSiteId] = useState('');
+  const [distributionToSiteId, setDistributionToSiteId] = useState('');
+  const [distributionQuantity, setDistributionQuantity] = useState('');
   const [stockMovementType, setStockMovementType] = useState<'Carico' | 'Scarico'>('Carico');
   const [stockMovementProduct, setStockMovementProduct] = useState('');
   const [stockMovementQuantity, setStockMovementQuantity] = useState('');
@@ -670,7 +708,7 @@ export default function App() {
   const [voucherEndsAt, setVoucherEndsAt] = useState(localDateKey());
   const [voucherPreview, setVoucherPreview] = useState<{ discount_percentage: number; starts_at: string; ends_at: string; codes: string[] } | null>(null);
   const [editingVoucherBatchId, setEditingVoucherBatchId] = useState<number | null>(null);
-  const [balancePeriod, setBalancePeriod] = useState<'Ultimi 3 mesi' | 'Ultimi 6 mesi' | 'Ultimo anno'>('Ultimi 6 mesi');
+  const [balancePeriod, setBalancePeriod] = useState<'Ultimo mese' | 'Ultimi 3 mesi' | 'Ultimi 6 mesi' | 'Ultimo anno'>('Ultimi 6 mesi');
   const [printers, setPrinters] = useState<PrinterDevice[]>([]);
   const [locked, setLocked] = useState(true);
   const [currentUser, setCurrentUser] = useState<AuthenticatedEmployee | null>(null);
@@ -770,6 +808,10 @@ export default function App() {
     }
   };
   const activeRole = currentUser?.role ?? (data && data.employees.length === 0 ? 'Proprietario' : 'cassiere');
+  const activeSiteName = data?.employees.find((employee) => employee.id === currentUser?.id)?.operational_site ?? 'Sede principale';
+  const activeSiteId = data?.sites.find((site) => site.name === activeSiteName)?.id;
+  const siteStockFor = (productId: number, siteId = activeSiteId) =>
+    data?.siteStocks.find((item) => item.product_id === productId && item.site_id === siteId)?.stock ?? 0;
   const canAccess = (target: Section) => canAccessSection(activeRole, target);
   const trackActivity = (sectionName: string, action: string, detail = '', barcode = currentUser?.barcode) => {
     if (!barcode) return;
@@ -1064,7 +1106,7 @@ export default function App() {
     doc.text(data?.settings.shop_name ?? 'Gestionale', rtl ? 166 : 43, 19, textOptions);
     doc.setFont(font, 'normal');
     doc.setFontSize(9);
-    doc.text(rtl ? 'إيصال استلام الراتب' : 'Ricevuta pagamento stipendio', rtl ? 196 : 43, 27, textOptions);
+    doc.text(rtl ? 'إيصال استلام الراتب' : 'Ricevuta pagamento stipendio', rtl ? 166 : 43, 27, textOptions);
     doc.setTextColor(41, 53, 46);
     doc.setFont(font, 'bold');
     doc.setFontSize(15);
@@ -1087,11 +1129,11 @@ export default function App() {
     doc.setDrawColor(90, 100, 93);
     doc.setFontSize(9);
     doc.text(rtl ? 'التاريخ' : 'Data', rtl ? 196 : 18, 245, textOptions);
-    doc.line(rtl ? 112 : 18, 250, rtl ? 196 : 92, 250);
+    doc.line(rtl ? 118 : 18, 250, rtl ? 196 : 92, 250);
     doc.setFont('helvetica', 'normal');
     doc.setFont(font, 'normal');
-    doc.text(rtl ? 'توقيع الموظف بالاستلام' : 'Firma del dipendente per ricevuta', rtl ? 196 : 18, 270, textOptions);
-    doc.line(rtl ? 112 : 18, 263, rtl ? 196 : 92, 263);
+    doc.text(rtl ? 'توقيع الموظف بالاستلام' : 'Firma del dipendente per ricevuta', rtl ? 92 : 192, 245, { align: 'right' });
+    doc.line(rtl ? 18 : 118, 250, rtl ? 92 : 192, 250);
     return doc;
   };
   const savePdf = (doc: jsPDF | Promise<jsPDF>, filename: string) => {
@@ -1296,7 +1338,7 @@ export default function App() {
     const normalizedAmount = roundQuantity(amount);
     setCart((current) => {
       const line = current.find((item) => item.product_id === product.id);
-      if (product.stock - (line?.quantity ?? 0) < normalizedAmount) { notify(`Scorta insufficiente per ${product.name}.`); return current; }
+      if (siteStockFor(product.id) - (line?.quantity ?? 0) < normalizedAmount) { notify(`Scorta insufficiente per ${product.name} nella sede ${activeSiteName}.`); return current; }
       return line
         ? current.map((item) => item.product_id === product.id ? { ...item, quantity: roundQuantity(item.quantity + normalizedAmount) } : item)
         : [...current, { product_id: product.id, name: product.name, code: product.code, unit: product.unit ?? 'PEZZO', quantity: normalizedAmount, unit_price: product.sale_price, purchase_price: product.purchase_price }];
@@ -1621,7 +1663,8 @@ export default function App() {
       .filter((item) => item.product_id === product.id).reduce((sum, item) => sum + item.quantity, 0) ?? 0;
     const editedQuantity = saleDialog?.items
       .filter((item) => item.product_id === product.id).reduce((sum, item) => sum + item.quantity, 0) ?? 0;
-    if (product.stock + originalQuantity - editedQuantity - (staged?.quantity ?? 0) < addedAmount) { notify(`Scorta insufficiente per ${product.name}.`); return; }
+    const saleSiteId = data?.sites.find((site) => site.name === data.sales.find((sale) => sale.id === saleDialog?.id)?.site)?.id;
+    if (siteStockFor(product.id, saleSiteId) + originalQuantity - editedQuantity - (staged?.quantity ?? 0) < addedAmount) { notify(`Scorta insufficiente per ${product.name}.`); return; }
     setSaleCart((current) => staged
       ? current.map((item) => item.product_id === product.id ? { ...item, quantity: roundQuantity(item.quantity + addedAmount) } : item)
       : [...current, { product_id: product.id, name: product.name, code: product.code, unit: product.unit ?? 'PEZZO', quantity: addedAmount, unit_price: product.sale_price, purchase_price: product.purchase_price }]);
@@ -1656,7 +1699,7 @@ export default function App() {
     if (!Number.isFinite(quantity) || quantity <= 0) { notify('Inserisci un peso o un volume maggiore di zero.'); return; }
     if (measuredTarget === 'cash') {
       const inCart = cart.find((item) => item.product_id === measuredProduct.id)?.quantity ?? 0;
-      if (measuredProduct.stock - inCart < quantity) { notify(`Scorta insufficiente per ${measuredProduct.name}.`); return; }
+      if (siteStockFor(measuredProduct.id) - inCart < quantity) { notify(`Scorta insufficiente per ${measuredProduct.name} nella sede ${activeSiteName}.`); return; }
       addToCart(measuredProduct, quantity);
     } else {
       const staged = saleCart.find((item) => item.product_id === measuredProduct.id)?.quantity ?? 0;
@@ -1664,7 +1707,8 @@ export default function App() {
         .filter((item) => item.product_id === measuredProduct.id).reduce((sum, item) => sum + item.quantity, 0) ?? 0;
       const edited = saleDialog?.items.filter((item) => item.product_id === measuredProduct.id)
         .reduce((sum, item) => sum + item.quantity, 0) ?? 0;
-      if (measuredProduct.stock + original - edited - staged < quantity) { notify(`Scorta insufficiente per ${measuredProduct.name}.`); return; }
+      const saleSiteId = data?.sites.find((site) => site.name === data.sales.find((sale) => sale.id === saleDialog?.id)?.site)?.id;
+      if (siteStockFor(measuredProduct.id, saleSiteId) + original - edited - staged < quantity) { notify(`Scorta insufficiente per ${measuredProduct.name}.`); return; }
       addProductToSaleCart(measuredProduct, quantity);
     }
     setMeasuredProduct(null);
@@ -1732,10 +1776,83 @@ export default function App() {
       await refresh();
       setSaleDialog(null);
       setSaleEmployeeBarcode('');
+      setSaleManagementSearch('');
+      setSaleAction(null);
       notify('Vendita eliminata.');
     } catch (error) {
       notify(errorText(error));
       await refresh();
+    }
+  };
+  const distributeStock = async (event: FormEvent) => {
+    event.preventDefault();
+    const productId = Number(distributionProductId);
+    const fromSiteId = Number(distributionFromSiteId);
+    const toSiteId = Number(distributionToSiteId);
+    const quantity = Number(distributionQuantity);
+    if (!currentUser?.barcode) { notify('Accedi con il barcode di un dipendente per distribuire la merce.'); return; }
+    try {
+      await window.gestionale.transferStock({
+        productId,
+        fromSiteId,
+        toSiteId,
+        quantity,
+        employee_barcode: currentUser.barcode,
+      });
+      await refresh();
+      setDistributionQuantity('');
+      notify('Trasferimento di merce registrato.');
+    } catch (error) {
+      notify(errorText(error));
+    }
+  };
+  const saveCustomer = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      await window.gestionale.saveCustomer({
+        first_name: customerFirstName.trim(),
+        last_name: customerLastName.trim(),
+        phone: customerPhone.trim(),
+        email: customerEmail.trim(),
+        address: customerAddress.trim(),
+      });
+      await refresh();
+      setCustomerFirstName('');
+      setCustomerLastName('');
+      setCustomerPhone('');
+      setCustomerEmail('');
+      setCustomerAddress('');
+      notify('Cliente registrato.');
+    } catch (error) {
+      notify(errorText(error));
+    }
+  };
+  const generateLoyaltyCards = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      await window.gestionale.generateLoyaltyCards({
+        quantity: Number(loyaltyQuantity),
+        discount_percentage: Number(loyaltyDiscount),
+      });
+      await refresh();
+      notify('Tessere sviluppate.');
+    } catch (error) {
+      notify(errorText(error));
+    }
+  };
+  const activateLoyaltyCard = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      await window.gestionale.activateLoyaltyCard({
+        card_id: Number(activateCardId),
+        customer_id: Number(activateCustomerId),
+      });
+      await refresh();
+      setActivateCardId('');
+      setActivateCustomerId('');
+      notify('Tessera attivata.');
+    } catch (error) {
+      notify(errorText(error));
     }
   };
   const subtotal = cart.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
@@ -1747,7 +1864,7 @@ export default function App() {
     const line = cart.find((item) => item.product_id === id);
     const product = data?.products.find((item) => item.id === id);
     const step = line?.unit === 'PEZZO' || !line?.unit ? 1 : 0.1;
-    if (amount > 0 && line && product && line.quantity + step > product.stock) { notify(`Scorta insufficiente per ${line.name}.`); return; }
+    if (amount > 0 && line && product && line.quantity + step > siteStockFor(product.id)) { notify(`Scorta insufficiente per ${line.name} nella sede ${activeSiteName}.`); return; }
     setCart((current) => current.map((item) => item.product_id === id ? { ...item, quantity: Math.max(0, roundQuantity(item.quantity + amount * step)) } : item).filter((item) => item.quantity > 0));
   };
   const checkout = async () => {
@@ -1926,9 +2043,12 @@ export default function App() {
       autoTable(doc, {
         startY: 43,
         head: [rtl
-          ? ['الرمز', 'المنتج', 'الفئة', 'سعر البيع', 'سعر الشراء', 'الربح', 'المخزون', 'حد التنبيه', 'تاريخ الصلاحية']
+          ? ['الرمز', 'المنتج', 'الفئة', 'سعر البيع', 'سعر الشراء', 'الربح', 'المخزون', 'حد التنبيه', 'تاريخ الصلاحية'].reverse()
           : ['Codice', 'Articolo', 'Categoria', 'Vendita', 'Acquisto', 'Profitto', 'Giacenza', 'Soglia', 'Scadenza']],
-        body: data.products.map((item) => [item.code, item.name, localizedText(item.category, language), money.format(item.sale_price), money.format(item.purchase_price), money.format(item.sale_price - item.purchase_price), `${item.stock} ${rtl ? item.unit === 'KG' ? 'كغ' : item.unit === 'LITRO' ? 'لتر' : 'قطعة' : item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'}`, String(item.low_stock_threshold), item.expiry_enabled && item.expiry_date ? new Intl.DateTimeFormat(rtl ? 'ar-EG' : 'it-IT', { dateStyle: 'short' }).format(new Date(`${item.expiry_date}T00:00:00`)) : '—']),
+        body: data.products.map((item) => {
+          const row = [item.code, item.name, localizedText(item.category, language), money.format(item.sale_price), money.format(item.purchase_price), money.format(item.sale_price - item.purchase_price), `${item.stock} ${rtl ? item.unit === 'KG' ? 'كغ' : item.unit === 'LITRO' ? 'لتر' : 'قطعة' : item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'}`, String(item.low_stock_threshold), item.expiry_enabled && item.expiry_date ? new Intl.DateTimeFormat(rtl ? 'ar-EG' : 'it-IT', { dateStyle: 'short' }).format(new Date(`${item.expiry_date}T00:00:00`)) : '—'];
+          return rtl ? row.reverse() : row;
+        }),
         theme: 'striped',
         styles: { font: rtl ? font : 'helvetica', fontSize: rtl ? 5 : 6, cellPadding: 1.5, overflow: 'linebreak', textColor: [49, 60, 53], lineColor: [224, 230, 224], halign: rtl ? 'right' : 'left' },
         headStyles: { fillColor: [56, 104, 78], textColor: [255, 255, 255], font, fontStyle: 'bold', halign: rtl ? 'right' : 'left' },
@@ -1943,7 +2063,7 @@ export default function App() {
       });
       const tableLayout = (doc as jsPDF & { lastAutoTable?: AutoTableTable }).lastAutoTable;
       if (tableLayout?.finalY === undefined) throw new Error('Impossibile determinare la fine della tabella del report.');
-      let summaryY = tableLayout.finalY + 8;
+      let summaryY = tableLayout.finalY + 4;
       if (summaryY + 18 > 279) {
         doc.addPage();
         summaryY = 20;
@@ -1955,7 +2075,7 @@ export default function App() {
       doc.setFillColor(56, 104, 78);
       doc.roundedRect(8, summaryY, 194, 18, 2, 2, 'F');
       doc.setFont(font, 'bold');
-      doc.setFontSize(rtl ? 6 : 8);
+      doc.setFontSize(rtl ? 7.5 : 8);
       doc.setTextColor(255, 255, 255);
       const summary = rtl ? [
         ['المنتجات', String(data.products.length)],
@@ -2068,9 +2188,9 @@ export default function App() {
         if (typeof value === 'number') return `<c r="${ref}"${styleAttribute}><v>${Number.isFinite(value) ? value : 0}</v></c>`;
         return `<c r="${ref}"${styleAttribute} t="inlineStr"><is><t xml:space="preserve">${xmlText(value)}</t></is></c>`;
       };
-      const headerRow = `<row r="1" ht="30" customHeight="1">${headers.map((header, index) => makeCell(index, 1, header, 1)).join('')}</row>`;
+      const headerRow = `<row r="1" ht="30" customHeight="1">${headers.map((header, index) => makeCell(index, 1, header, rtl && index >= 5 ? 6 : 1)).join('')}</row>`;
       const bodyRows = rows.map((row, rowIndex) => `<row r="${rowIndex + 2}">${row.map((value, columnIndex) =>
-        makeCell(columnIndex, rowIndex + 2, value, rtl ? columnIndex === 4 ? 3 : columnIndex >= 5 ? 2 : 4 : columnIndex === 4 ? 3 : columnIndex >= 5 ? 2 : undefined)
+        makeCell(columnIndex, rowIndex + 2, value, columnIndex === 4 ? 5 : rtl ? columnIndex >= 5 ? 2 : 4 : columnIndex >= 5 ? 2 : undefined)
       ).join('')}</row>`).join('');
       const sheetAlignment = rtl
         ? '<alignment horizontal="right" readingOrder="2" vertical="center" wrapText="1"/>'
@@ -2083,7 +2203,7 @@ export default function App() {
       zip.folder('_rels')?.file('.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`);
       zip.folder('xl')?.file('workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${rtl ? 'المبيعات' : 'Vendite'}" sheetId="1" r:id="rId1"/></sheets></workbook>`);
       zip.folder('xl')?.folder('_rels')?.file('workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
-      zip.folder('xl')?.file('styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.###"/><numFmt numFmtId="165" formatCode="${currencyNumberFormat}"/></numFmts><fonts count="3"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font><font><b/><sz val="14"/><color rgb="FF000000"/><name val="Aptos"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF38684E"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">${sheetAlignment}</xf><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"${numberAlignment}>${numberAlignmentXml}</xf><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"${numberAlignment}>${numberAlignmentXml}</xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1">${sheetAlignment}</xf></cellXfs></styleSheet>`);
+      zip.folder('xl')?.file('styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.###"/><numFmt numFmtId="165" formatCode="${currencyNumberFormat}"/></numFmts><fonts count="3"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font><font><b/><sz val="14"/><color rgb="FF000000"/><name val="Aptos"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF38684E"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="7"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">${sheetAlignment}</xf><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"${numberAlignment}>${numberAlignmentXml}</xf><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"${numberAlignment}>${numberAlignmentXml}</xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1">${sheetAlignment}</xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf></cellXfs></styleSheet>`);
       zip.folder('xl')?.folder('worksheets')?.file('sheet1.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:H${rows.length + 1}"/><sheetViews><sheetView workbookViewId="0"${rtl ? ' rightToLeft="1"' : ''}><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="19" customWidth="1"/><col min="2" max="2" width="22" customWidth="1"/><col min="3" max="3" width="24" customWidth="1"/><col min="4" max="4" width="60" customWidth="1"/><col min="5" max="5" width="18" customWidth="1"/><col min="6" max="8" width="18" customWidth="1"/></cols><sheetData>${headerRow}${bodyRows}</sheetData></worksheet>`);
       const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
@@ -2135,7 +2255,7 @@ export default function App() {
     sum + sale.total - sale.items.reduce((cost, item) => cost + item.quantity * item.purchase_price, 0), 0);
   const dailyGross = todaySales.reduce((sum, sale) => sum + sale.gross_total, 0);
   const dailyUnits = todaySales.reduce((sum, sale) => sum + sale.item_count, 0);
-  const balanceMonthCount = balancePeriod === 'Ultimi 3 mesi' ? 3 : balancePeriod === 'Ultimi 6 mesi' ? 6 : 12;
+  const balanceMonthCount = balancePeriod === 'Ultimo mese' ? 1 : balancePeriod === 'Ultimi 3 mesi' ? 3 : balancePeriod === 'Ultimi 6 mesi' ? 6 : 12;
   const balanceRangeStart = new Date();
   balanceRangeStart.setHours(0, 0, 0, 0);
   const balanceStartDay = balanceRangeStart.getDate();
@@ -2160,17 +2280,15 @@ export default function App() {
     { name: 'Margine di profitto', value: Math.max(0, balanceOperatingResult) },
   ].filter((part) => part.value > 0);
   const balancePieTotal = balancePieParts.reduce((sum, part) => sum + part.value, 0);
-  const balanceFirstMonth = new Date(balanceRangeStart.getFullYear(), balanceRangeStart.getMonth(), 1);
-  const balanceMonthsInRange = (new Date().getFullYear() - balanceFirstMonth.getFullYear()) * 12
-    + new Date().getMonth() - balanceFirstMonth.getMonth() + 1;
-  const balanceMonthly = Array.from({ length: balanceMonthsInRange }, (_, index) => {
+  const balanceFirstMonth = new Date(balanceRangeStart.getFullYear(), balanceRangeStart.getMonth() - 5, 1);
+  const balanceMonthly = Array.from({ length: 6 }, (_, index) => {
     const month = new Date(balanceFirstMonth.getFullYear(), balanceFirstMonth.getMonth() + index, 1);
     const monthKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`;
-    const salesInMonth = balanceSales.filter((sale) => sale.created_at.slice(0, 7) === monthKey);
+    const salesInMonth = (data?.sales ?? []).filter((sale) => sale.created_at.slice(0, 7) === monthKey);
     const revenue = salesInMonth.reduce((sum, sale) => sum + sale.total, 0);
     const goodsCost = salesInMonth.reduce((sum, sale) =>
       sum + sale.items.reduce((cost, item) => cost + item.quantity * item.purchase_price, 0), 0);
-    const monthlyExpenses = balanceExpenses.filter((expense) => expense.expense_date.startsWith(monthKey));
+    const monthlyExpenses = (data?.expenses ?? []).filter((expense) => expense.expense_date.startsWith(monthKey));
     const expenses = monthlyExpenses.filter((expense) => expense.category !== 'Merce buttata')
       .reduce((sum, expense) => sum + expense.amount, 0);
     const wasteLoss = monthlyExpenses.filter((expense) => expense.category === 'Merce buttata')
@@ -2256,17 +2374,15 @@ export default function App() {
     const filename = rtl
       ? `الميزانية-الإدارية-${todayKey}.pdf`
       : `bilancio-gestionale-${periodLabel.toLowerCase().replaceAll(' ', '-')}-${todayKey}.pdf`;
-    const allDates = [...reportSales.map((sale) => sale.created_at.slice(0, 10)), ...reportExpenses.map((expense) => expense.expense_date)].sort();
-    const monthlyStartDate = respectTimeFilters || !allDates.length ? balanceFirstMonth : new Date(`${allDates[0]}T00:00:00`);
-    const firstMonth = new Date(monthlyStartDate.getFullYear(), monthlyStartDate.getMonth(), 1);
-    const monthsCount = Math.max(1, (new Date().getFullYear() - firstMonth.getFullYear()) * 12 + new Date().getMonth() - firstMonth.getMonth() + 1);
-    const reportMonthly = Array.from({ length: monthsCount }, (_, index) => {
+    const reportOperatingResult = reportRevenue - reportGoodsCost - reportOperatingExpenses - reportWasteLoss;
+    const firstMonth = new Date(new Date().getFullYear(), new Date().getMonth() - 5, 1);
+    const reportMonthly = Array.from({ length: 6 }, (_, index) => {
       const month = new Date(firstMonth.getFullYear(), firstMonth.getMonth() + index, 1);
       const monthKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`;
-      const sales = reportSales.filter((sale) => sale.created_at.slice(0, 7) === monthKey);
+      const sales = data.sales.filter((sale) => sale.created_at.slice(0, 7) === monthKey);
       const revenue = sales.reduce((sum, sale) => sum + sale.total, 0);
       const cost = sales.reduce((sum, sale) => sum + sale.items.reduce((subtotal, item) => subtotal + item.quantity * item.purchase_price, 0), 0);
-      const monthExpenses = reportExpenses.filter((expense) => expense.expense_date.startsWith(monthKey));
+      const monthExpenses = data.expenses.filter((expense) => expense.expense_date.startsWith(monthKey));
       const expenses = monthExpenses.filter((expense) => expense.category !== 'Merce buttata').reduce((sum, expense) => sum + expense.amount, 0);
       const wasteLoss = monthExpenses.filter((expense) => expense.category === 'Merce buttata').reduce((sum, expense) => sum + expense.amount, 0);
       return { month: month.toLocaleDateString(appLocale, { month: 'long', year: 'numeric' }), revenue, cost, expenses, wasteLoss, result: revenue - cost - expenses - wasteLoss };
@@ -2283,65 +2399,61 @@ export default function App() {
       doc.text(`${data.settings.shop_name} · ${translatedPeriod} · ${receiptDate.format(new Date())}`, rtl ? 285 : 12, 21, rtl ? { align: 'right' } : undefined);
     };
     pageHeading(rtl ? 'الميزانية الإدارية' : 'Bilancio gestionale');
+    const summaryCards: Array<[string, number]> = rtl
+      ? [['إيرادات المبيعات', reportRevenue], ['تكلفة البضائع المباعة', reportGoodsCost], ['المصروفات التشغيلية', reportOperatingExpenses], ['قيمة البضائع التالفة', reportWasteLoss], ['النتيجة الإدارية', reportOperatingResult]]
+      : [['Ricavi da vendite', reportRevenue], ['Costo della merce venduta', reportGoodsCost], ['Spese operative', reportOperatingExpenses], ['Valore merce buttata', reportWasteLoss], ['Risultato gestionale', reportOperatingResult]];
+    const drawSummaryCard = (label: string, value: number, x: number, y: number, width: number) => {
+      doc.setFillColor(246, 249, 246);
+      doc.setDrawColor(224, 230, 224);
+      doc.roundedRect(x, y, width, 27, 2, 2, 'FD');
+      doc.setFont(font, 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(105, 117, 107);
+      doc.text(label, rtl ? x + width - 4 : x + 4, y + 9, { maxWidth: width - 8, align: rtl ? 'right' : 'left' });
+      doc.setFont(font, 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(41, 53, 46);
+      doc.text(money.format(value), rtl ? x + width - 4 : x + 4, y + 21, { maxWidth: width - 8, align: rtl ? 'right' : 'left' });
+    };
+    const firstRowWidth = (273 - 16) / 3;
+    summaryCards.slice(0, 3).forEach(([label, amount], index) => drawSummaryCard(label, amount, 12 + index * (firstRowWidth + 8), 36, firstRowWidth));
+    const secondRowWidth = (273 - 8) / 2;
+    summaryCards.slice(3).forEach(([label, amount], index) => drawSummaryCard(label, amount, 12 + index * (secondRowWidth + 8), 68, secondRowWidth));
+    doc.setFont(font, 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(41, 53, 46);
+    doc.text(rtl ? 'تركيبة الميزانية' : 'Composizione del bilancio', rtl ? 145 : 12, 106, rtl ? { align: 'right' } : undefined);
+    doc.text(rtl ? 'قيمة المخزون' : 'Valore del magazzino', rtl ? 285 : 153, 106, rtl ? { align: 'right' } : undefined);
     autoTable(doc, {
-      startY: 36,
-      head: [rtl
-        ? ['قيمة المخزون', 'النتيجة', 'البضائع التالفة', 'المصروفات التشغيلية', 'تكلفة البضائع', 'إيرادات المبيعات']
-        : ['Ricavi vendite', 'Costo merce', 'Spese operative', 'Merce buttata', 'Risultato', 'Valore magazzino']],
-      body: [rtl
-        ? [money.format(stockCost), money.format(reportRevenue - reportGoodsCost - reportOperatingExpenses - reportWasteLoss), money.format(reportWasteLoss), money.format(reportOperatingExpenses), money.format(reportGoodsCost), money.format(reportRevenue)]
-        : [money.format(reportRevenue), money.format(reportGoodsCost), money.format(reportOperatingExpenses), money.format(reportWasteLoss), money.format(reportRevenue - reportGoodsCost - reportOperatingExpenses - reportWasteLoss), money.format(stockCost)]],
+      startY: 110,
+      margin: { left: 12, right: 153 },
+      head: [rtl ? ['القيمة', 'البند'] : ['Voce', 'Valore']],
+      body: rtl
+        ? [[money.format(reportRevenue), 'Ricavi da vendite'], [money.format(reportGoodsCost), 'Costo della merce venduta'], [money.format(reportOperatingExpenses), 'Spese operative'], [money.format(reportWasteLoss), 'Valore merce buttata'], [money.format(reportOperatingResult), 'Risultato gestionale']].map(([value, label]) => [String(value), localizedText(String(label), language)])
+        : [['Ricavi da vendite', money.format(reportRevenue)], ['Costo della merce venduta', money.format(reportGoodsCost)], ['Spese operative', money.format(reportOperatingExpenses)], ['Valore merce buttata', money.format(reportWasteLoss)], ['Risultato gestionale', money.format(reportOperatingResult)]],
       theme: 'grid',
-      styles: { font, fontSize: 9, cellPadding: 5, halign: rtl ? 'right' : 'center' },
-      headStyles: { fillColor: [56, 104, 78], font, halign: rtl ? 'right' : 'center' },
+      styles: { font, fontSize: 7, cellPadding: 2, halign: rtl ? 'right' : 'left' },
+      headStyles: { fillColor: [56, 104, 78], font, halign: rtl ? 'right' : 'left' },
     });
     autoTable(doc, {
-      startY: 67,
-      head: [rtl
-        ? ['النتيجة', 'البضائع التالفة', 'المصروفات التشغيلية', 'تكلفة البضائع', 'الإيرادات', 'الشهر']
-        : ['Mese', 'Ricavi', 'Costo merce', 'Spese operative', 'Merce buttata', 'Risultato']],
-      body: reportMonthly.map((month) => rtl
-        ? [money.format(month.result), money.format(month.wasteLoss), money.format(month.expenses), money.format(month.cost), money.format(month.revenue), month.month]
-        : [month.month, money.format(month.revenue), money.format(month.cost), money.format(month.expenses), money.format(month.wasteLoss), money.format(month.result)]),
-      theme: 'striped',
-      styles: { font, fontSize: 8, cellPadding: 3, halign: rtl ? 'right' : 'left' },
+      startY: 110,
+      margin: { left: 153, right: 12 },
+      head: [rtl ? ['القيمة', 'البند'] : ['Voce', 'Valore']],
+      body: rtl
+        ? [[money.format(stockCost), 'Valore a costo'], [money.format(stockRetail), 'Valore potenziale di vendita'], [String(data.products.filter((product) => product.stock > 0).length), 'Articoli in giacenza'], [money.format(stockRetail - stockCost), 'Margine potenziale']].map(([value, label]) => [String(value), localizedText(String(label), language)])
+        : [['Valore a costo', money.format(stockCost)], ['Valore potenziale di vendita', money.format(stockRetail)], ['Articoli in giacenza', String(data.products.filter((product) => product.stock > 0).length)], ['Margine potenziale', money.format(stockRetail - stockCost)]],
+      theme: 'grid',
+      styles: { font, fontSize: 7, cellPadding: 2, halign: rtl ? 'right' : 'left' },
       headStyles: { fillColor: [56, 104, 78], font, halign: rtl ? 'right' : 'left' },
-      didDrawPage: () => {
-        doc.setFont(font, 'normal');
-        doc.setFontSize(8);
-        doc.setTextColor(120, 130, 122);
-        doc.text(rtl
-          ? `${data.settings.shop_name} · الصفحة ${doc.getNumberOfPages()}`
-          : `${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`,
-        rtl ? 285 : 12, 202, rtl ? { align: 'right' } : undefined);
-      },
     });
     doc.addPage();
-    pageHeading(rtl ? 'تركيبة قيمة المبيعات' : 'Composizione del venduto');
-    const reportOperatingResult = reportRevenue - reportGoodsCost - reportOperatingExpenses - reportWasteLoss;
+    pageHeading(localizedText('Composizione del venduto', language));
     const pieParts = [
       { label: rtl ? 'تكلفة البضائع المباعة' : 'Acquisto merce venduta', value: reportGoodsCost, color: '#72bf6a' },
       { label: rtl ? 'المصروفات التشغيلية' : 'Spese operative', value: reportOperatingExpenses + reportWasteLoss, color: '#c17e4f' },
       { label: rtl ? 'هامش الربح' : 'Margine di profitto', value: Math.max(0, reportOperatingResult), color: '#658499' },
     ].filter((part) => part.value > 0);
     const pieTotal = pieParts.reduce((sum, part) => sum + part.value, 0);
-    const metricCards = rtl
-      ? [['إيرادات المبيعات', reportRevenue], ['تكلفة البضائع', reportGoodsCost], ['المصروفات التشغيلية', reportOperatingExpenses], ['البضائع التالفة', reportWasteLoss], ['النتيجة', reportOperatingResult]]
-      : [['Ricavi da vendite', reportRevenue], ['Acquisto merce venduta', reportGoodsCost], ['Spese operative', reportOperatingExpenses], ['Valore merce buttata', reportWasteLoss], ['Risultato gestionale', reportOperatingResult]];
-    metricCards.forEach(([label, amount], index) => {
-      const cardX = 12 + index * 55;
-      doc.setFillColor(246, 249, 246);
-      doc.setDrawColor(224, 230, 224);
-      doc.roundedRect(cardX, 37, 51, 31, 2, 2, 'FD');
-      doc.setTextColor(105, 117, 107);
-      doc.setFont(font, 'normal');
-      doc.setFontSize(6.5);
-      doc.text(String(label), cardX + 4, 46, { maxWidth: 43, align: rtl ? 'right' : 'left' });
-      doc.setTextColor(41, 53, 46);
-      doc.setFont(font, 'bold');
-      doc.setFontSize(8);
-      doc.text(money.format(Number(amount)), cardX + 4, 59, { maxWidth: 43, align: rtl ? 'right' : 'left' });
-    });
     const pieCanvas = document.createElement('canvas');
     pieCanvas.width = 480;
     pieCanvas.height = 480;
@@ -2385,6 +2497,29 @@ export default function App() {
       doc.setFontSize(8);
       const detail = `${money.format(part.value)} · ${pieTotal ? (part.value / pieTotal * 100).toFixed(1) : '0'}%`;
       doc.text(detail, rtl ? 105 : 162, y + 10, alignment);
+    });
+    doc.addPage();
+    pageHeading(localizedText('Dettaglio mensile · ultimi 6 mesi', language));
+    autoTable(doc, {
+      startY: 36,
+      head: [rtl
+        ? ['النتيجة', 'قيمة البضائع التالفة', 'المصروفات التشغيلية', 'تكلفة البضائع', 'إيرادات المبيعات', 'الشهر']
+        : ['Mese', 'Ricavi', 'Costo merce', 'Spese operative', 'Valore merce buttata', 'Risultato']],
+      body: reportMonthly.map((month) => rtl
+        ? [money.format(month.result), money.format(month.wasteLoss), money.format(month.expenses), money.format(month.cost), money.format(month.revenue), month.month]
+        : [month.month, money.format(month.revenue), money.format(month.cost), money.format(month.expenses), money.format(month.wasteLoss), money.format(month.result)]),
+      theme: 'striped',
+      styles: { font, fontSize: 8, cellPadding: 3, halign: rtl ? 'right' : 'left' },
+      headStyles: { fillColor: [56, 104, 78], font, halign: rtl ? 'right' : 'left' },
+      didDrawPage: () => {
+        doc.setFont(font, 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(120, 130, 122);
+        doc.text(rtl
+          ? `${data.settings.shop_name} · الصفحة ${doc.getNumberOfPages()}`
+          : `${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`,
+        rtl ? 285 : 12, 202, rtl ? { align: 'right' } : undefined);
+      },
     });
     doc.addPage();
     pageHeading(rtl ? 'تفاصيل المبيعات' : 'Dettaglio vendite');
@@ -2588,7 +2723,7 @@ export default function App() {
     const printer = target === 'thermal' ? data?.settings.receipt_printer_thermal : data?.settings.receipt_printer;
     if (printer) {
       void window.gestionale.printReceipt(target).catch((error: unknown) => notify(errorText(error)));
-    } else if (target === 'thermal') notify('Configura prima la stampante termica Bluetooth nelle impostazioni Dispositivi.');
+    } else if (target === 'thermal') notify('Configura prima la stampante termica USB nelle impostazioni Dispositivi.');
     else window.print();
   };
   const scanCameraCode = (code: string) => {
@@ -2651,7 +2786,7 @@ export default function App() {
     }
   };
 
-  if (locked) return <div className="lock-screen"><div className="lock-panel"><div className="language-choice" role="group" aria-label="Lingua"><button type="button" className={language === 'it' ? 'selected' : ''} aria-pressed={language === 'it'} onClick={() => setLanguage('it')}>ITALIANO</button><button type="button" className={language === 'ar' ? 'selected' : ''} aria-pressed={language === 'ar'} onClick={() => setLanguage('ar')}>العربية</button></div><div className="brand-mark"><Store size={23} /></div><p className="eyebrow">{language === 'ar' ? 'تسجيل الدخول' : 'ACCESSO AL GESTIONALE'}</p><h1>{data?.settings.shop_name ?? (language === 'ar' ? 'متجرك' : 'Il tuo supermercato')}</h1>{pinFallback ? <><p className="muted">{language === 'ar' ? 'أدخل رمز الأمان' : 'Inserisci il PIN di sicurezza'}</p><form onSubmit={unlock}><Field label={language === 'ar' ? 'رمز الأمان' : 'PIN di sicurezza'} type="password" value={pin} onChange={(event) => setPin(event.target.value)} autoFocus /><button className="button button-primary full-width"><LockKeyhole size={16} /> {language === 'ar' ? 'دخول' : 'Accedi'}</button></form><button className="text-button" type="button" onClick={() => { setPinFallback(false); setPin(''); }}>{language === 'ar' ? 'الدخول بالباركود' : 'Accedi con barcode'}</button></> : <><p className="muted">{language === 'ar' ? 'امسح الرمز الشريطي للموظف للدخول' : 'Scansiona il barcode del dipendente per accedere'}</p><form onSubmit={(event) => { event.preventDefault(); void unlockWithBarcode(loginBarcode); }}><Field label={language === 'ar' ? 'باركود الموظف' : 'Barcode dipendente'} value={loginBarcode} onChange={(event) => setLoginBarcode(event.target.value.trim())} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void unlockWithBarcode(loginBarcode); } }} autoFocus /><button className="button button-primary full-width"><Barcode size={16} /> {language === 'ar' ? 'تحقق من الرمز' : 'Verifica barcode'}</button></form>{hasPin && <button className="text-button" type="button" onClick={() => setPinFallback(true)}>{language === 'ar' ? 'استخدم رمز الأمان' : 'Usa il PIN'}</button>}</>}</div>{notice && <div className="toast">{notice}</div>}</div>;
+  if (locked) return <div className="lock-screen"><div className="lock-panel"><div className="language-choice" dir="ltr" role="group" aria-label="Lingua"><button type="button" className={language === 'it' ? 'selected' : ''} aria-pressed={language === 'it'} onClick={() => setLanguage('it')}>ITALIANO</button><button type="button" className={language === 'ar' ? 'selected' : ''} aria-pressed={language === 'ar'} onClick={() => setLanguage('ar')}>العربية</button></div><div className="brand-mark"><Store size={23} /></div><p className="eyebrow">{language === 'ar' ? 'تسجيل الدخول' : 'ACCESSO AL GESTIONALE'}</p><h1>{data?.settings.shop_name ?? (language === 'ar' ? 'متجرك' : 'Il tuo supermercato')}</h1>{pinFallback ? <><p className="muted">{language === 'ar' ? 'أدخل رمز الأمان' : 'Inserisci il PIN di sicurezza'}</p><form onSubmit={unlock}><Field label={language === 'ar' ? 'رمز الأمان' : 'PIN di sicurezza'} type="password" value={pin} onChange={(event) => setPin(event.target.value)} autoFocus /><button className="button button-primary full-width"><LockKeyhole size={16} /> {language === 'ar' ? 'دخول' : 'Accedi'}</button></form><button className="text-button" type="button" onClick={() => { setPinFallback(false); setPin(''); }}>{language === 'ar' ? 'الدخول بالباركود' : 'Accedi con barcode'}</button></> : <><p className="muted">{language === 'ar' ? 'امسح الرمز الشريطي للموظف للدخول' : 'Scansiona il barcode del dipendente per accedere'}</p><form onSubmit={(event) => { event.preventDefault(); void unlockWithBarcode(loginBarcode); }}><Field label={language === 'ar' ? 'باركود الموظف' : 'Barcode dipendente'} value={loginBarcode} onChange={(event) => setLoginBarcode(event.target.value.trim())} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void unlockWithBarcode(loginBarcode); } }} autoFocus /><button className="button button-primary full-width"><Barcode size={16} /> {language === 'ar' ? 'تحقق من الرمز' : 'Verifica barcode'}</button></form>{hasPin && <button className="text-button" type="button" onClick={() => setPinFallback(true)}>{language === 'ar' ? 'استخدم رمز الأمان' : 'Usa il PIN'}</button>}</>}</div>{notice && <div className="toast">{notice}</div>}</div>;
   if (data && !data.settings.setup_complete) return <AppLanguageContext.Provider value={language}><LocalizedNodes><main className="lock-screen setup-screen"><section className="lock-panel setup-panel"><div className="language-choice" role="group" aria-label="Lingua"><button type="button" className={language === 'it' ? 'selected' : ''} aria-pressed={language === 'it'} onClick={() => setLanguage('it')}>ITALIANO</button><button type="button" className={language === 'ar' ? 'selected' : ''} aria-pressed={language === 'ar'} onClick={() => setLanguage('ar')}>العربية</button></div><div className="brand-mark"><Store size={23} /></div><p className="eyebrow">CONFIGURAZIONE INIZIALE</p><h1>{setupStep === 'shop' ? 'Informazioni del negozio' : 'Account Proprietario'}</h1>{setupStep === 'shop' ? <form className="form-grid setup-form" onSubmit={(event) => void saveInitialStore(event)}><Field label="Nome negozio" value={setupShopName} onChange={(event) => setSetupShopName(event.target.value)} required /><Field label="Indirizzo" value={setupShopAddress} onChange={(event) => setSetupShopAddress(event.target.value)} required /><Field label="Telefono" type="tel" value={setupShopPhone} onChange={(event) => setSetupShopPhone(event.target.value)} required /><Field label="Email" type="email" value={setupShopEmail} onChange={(event) => setSetupShopEmail(event.target.value)} required /><Field label="Codice fiscale o partita IVA" value={setupShopTaxId} onChange={(event) => setSetupShopTaxId(event.target.value)} required /><div className="shop-logo-setting setup-logo-setting"><span className="field-label">Logo del negozio</span>{data.settings.shop_logo && <img src={data.settings.shop_logo} alt="Logo negozio" />}<button className="button button-outline" type="button" onClick={() => void chooseShopLogo()}><Store size={15} />{data.settings.shop_logo ? 'Sostituisci logo' : 'Scegli logo'}</button></div><button className="button button-primary full-width" disabled={!data.settings.shop_logo}><Check size={16} /> Continua</button></form> : setupOwnerDraft && <><p className="setup-owner-intro">Crea le credenziali e completa il profilo del proprietario.</p><EmployeeForm initial={setupOwnerDraft} save={saveEmployee} cancel={() => setSetupStep('shop')} notify={notify} /></>}</section></main></LocalizedNodes></AppLanguageContext.Provider>;
 
   if (!data) return <div className="loading-screen"><span className="loader" />{language === 'ar' ? 'جارٍ تحميل الأرشيف…' : 'Caricamento archivio…'}</div>;
@@ -2669,8 +2804,8 @@ export default function App() {
       <nav>
         {canAccess('home') && <button className={`nav-item${section === 'home' ? ' active' : ''}`} onClick={() => navigateTo('home')}><House size={18} /><span>Homepage</span></button>}
         {canAccess('inventory') && <>
-          <button aria-expanded={openSidebarMenu === 'inventory'} className={`nav-item${section === 'inventory' || section === 'expired-products' || section === 'inventory-history' || section === 'stock-movement' ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'inventory' ? null : 'inventory')}><Package size={18} /><span>{language === 'ar' ? 'المخزن' : 'Magazzino'}</span>{!isCashierRole(activeRole) && <ChevronDown className={`nav-chevron${openSidebarMenu === 'inventory' ? ' open' : ''}`} size={15} />}</button>
-          {openSidebarMenu === 'inventory' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'inventory' ? ' selected' : ''}`} onClick={() => navigateTo('inventory')}>{language === 'ar' ? 'المخزن' : 'Magazzino'}</button>{canAccess('inventory-history') && <button className={`sidebar-subitem${section === 'inventory-history' ? ' selected' : ''}`} onClick={() => navigateTo('inventory-history')}>{language === 'ar' ? 'سجل المخزن' : 'Storico Magazzino'}</button>}</div>}
+          <button aria-expanded={openSidebarMenu === 'inventory'} className={`nav-item${['inventory', 'expired-products', 'inventory-history', 'stock-movement', 'stock-distribution'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'inventory' ? null : 'inventory')}><Package size={18} /><span>{language === 'ar' ? 'المخزن' : 'Magazzino'}</span>{!isCashierRole(activeRole) && <ChevronDown className={`nav-chevron${openSidebarMenu === 'inventory' ? ' open' : ''}`} size={15} />}</button>
+          {openSidebarMenu === 'inventory' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'inventory' ? ' selected' : ''}`} onClick={() => navigateTo('inventory')}>{language === 'ar' ? 'المخزن' : 'Magazzino'}</button>{canAccess('inventory-history') && <><button className={`sidebar-subitem${section === 'inventory-history' ? ' selected' : ''}`} onClick={() => navigateTo('inventory-history')}>{language === 'ar' ? 'سجل المخزن' : 'Storico Magazzino'}</button><button className={`sidebar-subitem${section === 'stock-distribution' ? ' selected' : ''}`} onClick={() => navigateTo('stock-distribution')}>Distribuisci merce</button></>}</div>}
         </>}
         {nav.filter((item) => ['cash', 'sales'].includes(item.section) && canAccess(item.section)).map(({ section: target, label, icon: Icon }) => <button key={target} className={`nav-item${section === target ? ' active' : ''}`} onClick={() => navigateTo(target)}><Icon size={18} /><span>{label}</span>{target === 'cash' && <kbd>F2</kbd>}</button>)}
         {canAccess('statistics') && <>
@@ -2689,10 +2824,16 @@ export default function App() {
           <button aria-expanded={openSidebarMenu === 'offers'} className={`nav-item${['promotions', 'vouchers-create', 'vouchers-list'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'offers' ? null : 'offers')}><TrendingUp size={18} /><span>Offerta</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'offers' ? ' open' : ''}`} size={15} /></button>
           {openSidebarMenu === 'offers' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'promotions' ? ' selected' : ''}`} onClick={() => navigateTo('promotions')}>Promozioni</button><button className={`sidebar-subitem${section === 'vouchers-create' ? ' selected' : ''}`} onClick={() => { cancelVoucherPreview(); navigateTo('vouchers-create'); }}>Crea buoni sconto</button><button className={`sidebar-subitem${section === 'vouchers-list' ? ' selected' : ''}`} onClick={() => navigateTo('vouchers-list')}>Lista buoni sconto</button></div>}
         </>}
-        {(canAccess('promotions') || canAccess('employees')) && <div className="nav-label nav-label-extra">GESTIONE EXTRA</div>}
+        {canAccess('customer-list') && <>
+          <button aria-expanded={openSidebarMenu === 'sites'} className={`nav-item${['customer-list', 'loyalty-generate', 'loyalty-activate', 'loyalty-active'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'sites' ? null : 'sites')}><Users size={18} /><span>Clientela</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'sites' ? ' open' : ''}`} size={15} /></button>
+          {openSidebarMenu === 'sites' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'customer-list' ? ' selected' : ''}`} onClick={() => navigateTo('customer-list')}>Lista clienti</button><button className={`sidebar-subitem${section === 'loyalty-generate' ? ' selected' : ''}`} onClick={() => navigateTo('loyalty-generate')}>Sviluppa tessere</button><button className={`sidebar-subitem${section === 'loyalty-activate' ? ' selected' : ''}`} onClick={() => navigateTo('loyalty-activate')}>Attiva tessera</button><button className={`sidebar-subitem${section === 'loyalty-active' ? ' selected' : ''}`} onClick={() => navigateTo('loyalty-active')}>Tessere attive</button></div>}
+        </>}
+        {(canAccess('promotions') || canAccess('employees') || canAccess('customer-list')) && <div className="nav-label nav-label-extra">GESTIONE EXTRA</div>}
         {canAccess('employees') && <>
-          <button aria-expanded={openSidebarMenu === 'employees'} className={`nav-item${['employees', 'employee-create', 'payroll', 'employee-tracker', 'site-statistics', 'site-management', 'site-create', 'site-list'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'employees' ? null : 'employees')}><ClipboardList size={18} /><span>Dipendenti</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'employees' ? ' open' : ''}`} size={15} /></button>
-          {openSidebarMenu === 'employees' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => navigateTo('employees')}>Lista Dipendenti</button><button className={`sidebar-subitem${section === 'employee-create' ? ' selected' : ''}`} onClick={startEmployeeCreation}>Crea Dipendente</button><button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => navigateTo('payroll')}>Paga Stipendi</button><button className={`sidebar-subitem${section === 'employee-tracker' ? ' selected' : ''}`} onClick={() => navigateTo('employee-tracker')}>Tracker Dipendenti</button><button className={`sidebar-subitem site-menu-trigger${['site-statistics', 'site-management', 'site-create', 'site-list'].includes(section) ? ' selected' : ''}`} aria-expanded={siteMenuOpen} onClick={() => setSiteMenuOpen((current) => !current)}>Gestione sedi <ChevronDown className={`nav-chevron${siteMenuOpen ? ' open' : ''}`} size={14} /></button>{siteMenuOpen && <div className="site-submenu">{canAccess('site-statistics') && <button className={`sidebar-subitem${section === 'site-statistics' ? ' selected' : ''}`} onClick={() => navigateTo('site-statistics')}>Statistiche sedi</button>}{canAccess('site-management') && <button className={`sidebar-subitem${section === 'site-management' ? ' selected' : ''}`} onClick={() => navigateTo('site-management')}>Gestisci sedi</button>}{canAccess('site-create') && <button className={`sidebar-subitem${section === 'site-create' ? ' selected' : ''}`} onClick={() => { setSiteDraft({ name: '', address: '', phone: '' }); navigateTo('site-create'); }}>Aggiungi sede</button>}{canAccess('site-list') && <button className={`sidebar-subitem${section === 'site-list' ? ' selected' : ''}`} onClick={() => navigateTo('site-list')}>Lista sedi</button>}</div>}</div>}
+          <button aria-expanded={openSidebarMenu === 'employees'} className={`nav-item${['employees', 'employee-create', 'payroll', 'employee-tracker'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'employees' ? null : 'employees')}><ClipboardList size={18} /><span>Dipendenti</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'employees' ? ' open' : ''}`} size={15} /></button>
+          {openSidebarMenu === 'employees' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => navigateTo('employees')}>Lista Dipendenti</button><button className={`sidebar-subitem${section === 'employee-create' ? ' selected' : ''}`} onClick={startEmployeeCreation}>Crea Dipendente</button><button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => navigateTo('payroll')}>Paga Stipendi</button><button className={`sidebar-subitem${section === 'employee-tracker' ? ' selected' : ''}`} onClick={() => navigateTo('employee-tracker')}>Tracker Dipendenti</button></div>}
+          <button aria-expanded={siteMenuOpen} className={`nav-item${['site-statistics', 'site-management', 'site-create', 'site-list'].includes(section) ? ' active' : ''}`} onClick={() => setSiteMenuOpen((current) => !current)}><Store size={18} /><span>Gestione sedi</span><ChevronDown className={`nav-chevron${siteMenuOpen ? ' open' : ''}`} size={15} /></button>
+          {siteMenuOpen && <div className="sidebar-submenu">{canAccess('site-statistics') && <button className={`sidebar-subitem${section === 'site-statistics' ? ' selected' : ''}`} onClick={() => navigateTo('site-statistics')}>Statistiche sedi</button>}{canAccess('site-management') && <button className={`sidebar-subitem${section === 'site-management' ? ' selected' : ''}`} onClick={() => navigateTo('site-management')}>Gestisci sedi</button>}{canAccess('site-create') && <button className={`sidebar-subitem${section === 'site-create' ? ' selected' : ''}`} onClick={() => { setSiteDraft({ name: '', address: '', phone: '' }); navigateTo('site-create'); }}>Aggiungi sede</button>}{canAccess('site-list') && <button className={`sidebar-subitem${section === 'site-list' ? ' selected' : ''}`} onClick={() => navigateTo('site-list')}>Lista sedi</button>}</div>}
         </>}
       </nav>
       <div className="sidebar-bottom"><div className="sidebar-settings-row">{canAccess('settings') && <button className={`nav-item settings-link${section === 'settings' ? ' active' : ''}`} onClick={() => { setSettingsTab(null); setDeviceTab(null); navigateTo('settings'); }}><Settings size={18} /><span>Impostazioni</span></button>}<button className="nav-item sidebar-refresh" type="button" onClick={() => void refreshCurrentData()} disabled={refreshing} title="Aggiorna dati senza chiudere la pagina" aria-label="Aggiorna dati senza chiudere la pagina"><RefreshCw className={refreshing ? 'refreshing-icon' : ''} size={18} /></button></div><div className="user-card"><div className="user-avatar">{currentUser?.first_name.slice(0, 1).toUpperCase() ?? data.settings.shop_name.slice(0, 1).toUpperCase()}</div><div><strong>{currentUser ? `${currentUser.first_name} ${currentUser.last_name}`.trim() : 'Gestore'}</strong><small>{currentUser?.role ?? 'Account locale'}</small></div>{data.employees.length > 0 && <button className="icon-button small" title="Blocca e cambia utente" aria-label="Blocca e cambia utente" onClick={() => { trackActivity('Accesso', 'Uscita dal gestionale'); setSelectedProduct(null); setProductAuthorization(null); setStockProduct(null); setCurrentUser(null); setLocked(true); setLoginBarcode(''); setPin(''); }}><LockKeyhole size={15} /></button>}</div></div>
@@ -2717,10 +2858,25 @@ export default function App() {
         <div className="inventory-history-actions no-print"><SelectField label="Periodo" value={inventoryHistoryPeriod} onChange={setInventoryHistoryPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Da - A']} />{inventoryHistoryPeriod === 'Da - A' && <><Field label="Da" type="date" value={inventoryHistoryFrom} onChange={(event) => setInventoryHistoryFrom(event.target.value)} /><Field label="A" type="date" value={inventoryHistoryTo} onChange={(event) => setInventoryHistoryTo(event.target.value)} /></>}<SearchInput value={inventoryHistorySearch} onChange={setInventoryHistorySearch} placeholder="Cerca articolo, persona o nota…" /><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa</button></div>
         <Table headings={['Data e ora', 'Articolo', 'Movimento', 'Quantità', 'Persona', 'Nota']}><>{inventoryHistoryMovements.map((movement) => <tr key={movement.id}><td>{dateTimeText(new Date(movement.created_at))}</td><td className="cell-primary">{movement.product_name}</td><td><span className={`movement-badge ${movement.movement_type === 'Carico' ? 'movement-in' : 'movement-out'}`}>{movement.movement_type}</span></td><td>{quantityFormat.format(movement.quantity)}</td><td>{movement.person || '—'}</td><td>{localizedText(movement.note || '—', language)}</td></tr>)}</>{!inventoryHistoryMovements.length && <tr><td colSpan={6} className="empty-cell">Nessun movimento nel periodo selezionato.</td></tr>}</Table></div></div>}
 
+      {section === 'stock-distribution' && <div className="page-content accounting-page">
+        <div className="page-toolbar"><div><h2>Distribuzione merce tra sedi</h2><p>Trasferisci una quantità dalla giacenza di una sede a quella di un’altra.</p></div></div>
+        <form className="panel distribution-form" onSubmit={(event) => void distributeStock(event)}>
+          <SelectField label="Articolo" value={distributionProductId} onChange={setDistributionProductId} options={['', ...data.products.map((product) => String(product.id))]} labels={['Seleziona articolo', ...data.products.map((product) => `${product.name} · ${product.code}`)]} />
+          <SelectField label="Sede di partenza" value={distributionFromSiteId} onChange={(value) => { setDistributionFromSiteId(value); if (value === distributionToSiteId) setDistributionToSiteId(''); }} options={['', ...data.sites.map((site) => String(site.id))]} labels={['Seleziona sede', ...data.sites.map((site) => site.name)]} />
+          <SelectField label="Sede di destinazione" value={distributionToSiteId} onChange={setDistributionToSiteId} options={['', ...data.sites.filter((site) => String(site.id) !== distributionFromSiteId).map((site) => String(site.id))]} labels={['Seleziona sede', ...data.sites.filter((site) => String(site.id) !== distributionFromSiteId).map((site) => site.name)]} />
+          <Field label="Quantità" type="number" min="0.001" step="0.001" max={distributionProductId && distributionFromSiteId ? siteStockFor(Number(distributionProductId), Number(distributionFromSiteId)) : undefined} value={distributionQuantity} onChange={(event) => setDistributionQuantity(event.target.value)} required />
+          {distributionProductId && distributionFromSiteId && <p className="distribution-available">Disponibile nella sede di partenza: <strong>{quantityFormat.format(siteStockFor(Number(distributionProductId), Number(distributionFromSiteId)))}</strong></p>}
+          <div className="distribution-actions"><button className="button button-primary" disabled={!currentUser?.barcode || !distributionProductId || !distributionFromSiteId || !distributionToSiteId || !Number(distributionQuantity) || Number(distributionQuantity) > siteStockFor(Number(distributionProductId), Number(distributionFromSiteId))}><Package size={16} /> Conferma trasferimento</button></div>
+        </form>
+        <section className="panel site-inventory-panel"><div className="panel-heading"><div><h3>Giacenze per sede</h3><p>Quantità attualmente disponibili per ogni articolo.</p></div></div>
+          <div className="table-wrap"><table><thead><tr><th>Articolo</th>{data.sites.map((site) => <th key={site.id} className="align-right">{site.name}</th>)}</tr></thead><tbody>{data.products.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td>{data.sites.map((site) => <td key={site.id} className="align-right">{quantityFormat.format(siteStockFor(product.id, site.id))}</td>)}</tr>)}{!data.products.length && <tr><td colSpan={data.sites.length + 1} className="empty-cell">Nessun articolo registrato.</td></tr>}</tbody></table></div>
+        </section>
+      </div>}
+
       {section === 'cash' && <div className="page-content cash-content"><div className="cash-layout">
         <section className="cash-products">
           <div className="cash-search-row"><div className="search-field"><Barcode size={17} /><input id="scanner-field" placeholder="Cerca o scansiona un codice a barre…" value={scannerSearch} onChange={(e) => setScannerSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scanCode(scannerSearch); } }} /><button type="button" className="search-clear" aria-label="Cancella ricerca" disabled={!scannerSearch} onClick={() => setScannerSearch('')}><X size={15} /></button></div><button className="icon-button camera-button" title="Scansiona con fotocamera" onClick={() => setCamera(true)}><Camera size={18} /></button></div>
-          <div className="cash-product-grid">{data.products.filter((p) => (p.name.toLowerCase().includes(scannerSearch.toLowerCase()) || p.code.includes(scannerSearch)) && p.stock > 0).map((product) => { const remainingStock = Math.max(0, product.stock - (cart.find((item) => item.product_id === product.id)?.quantity ?? 0)); return <button className="cash-product" key={product.id} disabled={remainingStock === 0} onClick={() => addProductToCart(product)}><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="cash-product-bottom"><b>{money.format(product.sale_price)}{product.unit === 'KG' ? ' / kg' : product.unit === 'LITRO' ? ' / lit.' : ''}</b><small>{quantityFormat.format(remainingStock)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'lit.' : 'pz'}</small></span></button>; })}</div>
+          <div className="cash-product-grid">{data.products.filter((p) => (p.name.toLowerCase().includes(scannerSearch.toLowerCase()) || p.code.includes(scannerSearch)) && siteStockFor(p.id) > 0).map((product) => { const remainingStock = Math.max(0, siteStockFor(product.id) - (cart.find((item) => item.product_id === product.id)?.quantity ?? 0)); return <button className="cash-product" key={product.id} disabled={remainingStock === 0} onClick={() => addProductToCart(product)}><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="cash-product-bottom"><b>{money.format(product.sale_price)}{product.unit === 'KG' ? ' / kg' : product.unit === 'LITRO' ? ' / lit.' : ''}</b><small>{quantityFormat.format(remainingStock)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'lit.' : 'pz'}</small></span></button>; })}</div>
         </section>
         <aside className="cart-panel"><div className="cart-heading"><div className="cart-heading-title"><h2>CARRELLO <span>{quantityFormat.format(cart.reduce((sum, item) => sum + item.quantity, 0))}</span></h2></div><button className="icon-button" title="Svuota carrello" aria-label="Svuota carrello" disabled={!cart.length} onClick={() => { setCart([]); setManualPromotionId(undefined); setAutomaticPromotionId(undefined); }}><Trash2 size={17} /></button></div><div className="cart-lines">{cart.map((item) => <div className="cart-line" key={item.product_id}><div className="cart-line-name"><strong>{item.name}</strong><small>{quantityFormat.format(item.quantity)} {item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}</small></div><div className="quantity-control"><button onClick={() => changeQuantity(item.product_id, -1)} aria-label="Rimuovi uno"><Minus size={13} /></button><span>{quantityFormat.format(item.quantity)}</span><button onClick={() => changeQuantity(item.product_id, 1)} aria-label="Aggiungi uno"><Plus size={13} /></button></div><strong className="line-total">{money.format(item.quantity * item.unit_price)}</strong></div>)}{!cart.length && <div className="cart-empty"><ShoppingBasket size={25} /><span>Seleziona gli articoli<br />per iniziare una vendita</span></div>}</div><div className="receipt-summary"><div><span>Subtotale</span><span>{money.format(subtotal)}</span></div><div className="total-row"><strong>TOTALE</strong><strong>{money.format(subtotal)}</strong></div></div><button className="button button-primary checkout-button" disabled={!cart.length} onClick={() => setCheckoutOpen(true)}>Procedi al pagamento <span>→</span></button></aside>
       </div></div>}
@@ -2771,6 +2927,43 @@ export default function App() {
         </div>)}</div>
       </section></div>}
 
+      {section === 'customer-list' && <div className="page-content accounting-page">
+        <section className="panel client-form-panel"><div className="panel-heading"><div><h3>Registra un cliente</h3><p>Aggiungi i dati del cliente per poter attivare una tessera.</p></div></div>
+          <form className="client-form" onSubmit={(event) => void saveCustomer(event)}>
+            <Field label="Nome" value={customerFirstName} onChange={(event) => setCustomerFirstName(event.target.value)} required />
+            <Field label="Cognome" value={customerLastName} onChange={(event) => setCustomerLastName(event.target.value)} required />
+            <Field label="Telefono" type="tel" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} required />
+            <Field label="Email" type="email" value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} required />
+            <Field label="Indirizzo" value={customerAddress} onChange={(event) => setCustomerAddress(event.target.value)} />
+            <button className="button button-primary"><Plus size={16} /> Registra cliente</button>
+          </form>
+        </section>
+        <section className="panel client-list-panel"><div className="panel-heading"><div><h3>Lista clienti</h3><p>{data.customers.length} clienti registrati</p></div></div>
+          <Table headings={['Nome', 'Cognome', 'Telefono', 'Email', 'Indirizzo']}>{data.customers.map((customer) => <tr key={customer.id}><td className="cell-primary">{customer.first_name}</td><td>{customer.last_name}</td><td>{customer.phone}</td><td>{customer.email}</td><td>{customer.address || '—'}</td></tr>)}{!data.customers.length && <tr><td colSpan={5} className="empty-cell">Nessun cliente registrato.</td></tr>}</Table>
+        </section>
+      </div>}
+      {section === 'loyalty-generate' && <div className="page-content accounting-page">
+        <section className="panel loyalty-panel"><div className="panel-heading"><div><h3>Sviluppa tessere</h3><p>Genera tessere barcode da assegnare ai clienti.</p></div></div>
+          <form className="loyalty-form" onSubmit={(event) => void generateLoyaltyCards(event)}><Field label="Quantità di tessere" type="number" min="1" max="5000" step="1" value={loyaltyQuantity} onChange={(event) => setLoyaltyQuantity(event.target.value)} required /><Field label="Sconto (%)" type="number" min="0" max="100" step="1" value={loyaltyDiscount} onChange={(event) => setLoyaltyDiscount(event.target.value)} required /><button className="button button-primary"><Barcode size={16} /> Genera tessere</button></form>
+        </section>
+        <section className="panel loyalty-panel"><div className="panel-heading"><div><h3>Tessere da attivare</h3><p>Stampa o elimina le tessere non ancora assegnate.</p></div></div>
+          <div className="table-wrap"><table><thead><tr><th>Codice</th><th>Barcode</th><th>Sconto</th><th>Creata il</th><th>Azione</th></tr></thead><tbody>{data.loyaltyCards.filter((card) => card.status === 'Sviluppata').map((card) => <tr key={card.id}><td className="mono">{card.code}</td><td><BarcodeImage value={card.barcode} /></td><td>{card.discount_percentage}%</td><td>{dateTimeText(new Date(card.created_at))}</td><td><button className="button button-danger" onClick={() => void window.gestionale.deleteLoyaltyCard(card.id).then(refresh).catch((error: unknown) => notify(errorText(error)))}><Trash2 size={14} /> Elimina</button></td></tr>)}{!data.loyaltyCards.some((card) => card.status === 'Sviluppata') && <tr><td colSpan={5} className="empty-cell">Nessuna tessera da attivare.</td></tr>}</tbody></table></div>
+        </section>
+      </div>}
+      {section === 'loyalty-activate' && <div className="page-content settings-page"><section className="settings-panel loyalty-activation-panel">
+        <div className="settings-title"><h2>Attiva tessera</h2><p>Associa una tessera sviluppata a un cliente registrato.</p></div>
+        <form className="loyalty-form" onSubmit={(event) => void activateLoyaltyCard(event)}>
+          <SelectField label="Tessera" value={activateCardId} onChange={setActivateCardId} options={['', ...data.loyaltyCards.filter((card) => card.status === 'Sviluppata').map((card) => String(card.id))]} labels={['Seleziona tessera', ...data.loyaltyCards.filter((card) => card.status === 'Sviluppata').map((card) => `${card.code} · ${card.discount_percentage}%`)]} />
+          <SelectField label="Cliente" value={activateCustomerId} onChange={setActivateCustomerId} options={['', ...data.customers.map((customer) => String(customer.id))]} labels={['Seleziona cliente', ...data.customers.map((customer) => `${customer.first_name} ${customer.last_name} · ${customer.phone}`)]} />
+          <button className="button button-primary" disabled={!activateCardId || !activateCustomerId}><Check size={16} /> Attiva tessera</button>
+        </form>
+      </section></div>}
+      {section === 'loyalty-active' && <div className="page-content accounting-page">
+        <section className="panel loyalty-panel"><div className="panel-heading"><div><h3>Tessere attive</h3><p>{data.loyaltyCards.filter((card) => card.status === 'Attiva').length} tessere associate ai clienti</p></div></div>
+          <Table headings={['Cliente', 'Codice', 'Barcode', 'Sconto', 'Punti', 'Attivata il']}>{data.loyaltyCards.filter((card) => card.status === 'Attiva').map((card) => <tr key={card.id}><td className="cell-primary">{card.customer_name || '—'}</td><td className="mono">{card.code}</td><td><BarcodeImage value={card.barcode} /></td><td>{card.discount_percentage}%</td><td>{card.points}</td><td>{card.activated_at ? dateTimeText(new Date(card.activated_at)) : '—'}</td></tr>)}{!data.loyaltyCards.some((card) => card.status === 'Attiva') && <tr><td colSpan={6} className="empty-cell">Nessuna tessera attiva.</td></tr>}</Table>
+        </section>
+      </div>}
+
       {section === 'employees' && <div className="page-content employee-page">
         <div className="page-toolbar employee-toolbar"><button className="button button-outline" onClick={() => void exportEmployeeContracts()}><ArrowDownToLine size={16} /> Scarica contratti</button><SearchInput value={employeeSearch} onChange={setEmployeeSearch} placeholder="Cerca dipendente, ruolo o sede…" /><button className="button button-outline" onClick={() => void exportEmployeeList()}><ArrowDownToLine size={16} /> Scarica report</button></div>
         <div className="employee-card-grid">{employeeList.map((employee) => <button className="employee-card" key={employee.id} onClick={() => setEmployeeDetails(employee)} aria-label={`Apri informazioni di ${employee.first_name} ${employee.last_name}`}><img className="employee-list-photo" src={employee.photo_data} alt={`Foto di ${employee.first_name} ${employee.last_name}`} /><span><small>Nome</small><strong>{employee.first_name}</strong></span><span><small>Cognome</small><strong>{employee.last_name}</strong></span><span><small>Ruolo</small><strong>{employee.role}</strong></span><span><small>Sede</small><strong>{employee.operational_site}</strong></span></button>)}{!employeeList.length && <Empty icon={ClipboardList} title={data.employees.length ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente registrato.'} detail="" />}</div>
@@ -2795,9 +2988,10 @@ export default function App() {
         </div>
       </div>}
       {section === 'employee-create' && employeeDraft && <div className="page-content settings-page"><section className="settings-panel employee-create-panel"><EmployeeForm initial={employeeDraft} save={saveEmployee} cancel={() => { setEmployeeDraft(null); navigateTo('employees'); }} notify={notify} canDelete={canAccess('employees')} sites={data.sites.map((site) => site.name)} onDelete={async () => { const employee = data.employees.find((item) => item.id === employeeDraft.id); if (employee) await deleteEmployee(employee); }} /></section></div>}
-      {section === 'payroll' && <div className="page-content">
+      {section === 'payroll' && <div className="page-content payroll-page">
+        <div className="payroll-page-heading"><div><p className="eyebrow">GESTIONE DEL PERSONALE</p><h2>Pagamenti stipendi</h2><p>Controlla lo stato mensile e scarica le ricevute dei pagamenti.</p></div><div className="payroll-summary-chip"><Banknote size={19} /><div><strong>{data.payrollPayments.filter((payment) => payment.pay_month === payrollMonth).length}/{data.employees.length}</strong><span>stipendi pagati</span></div></div></div>
         <div className="panel payroll-toolbar"><Field label="Mese di competenza" type="month" value={payrollMonth} onChange={(event) => setPayrollMonth(event.target.value)} /><Field label="Data di pagamento" type="date" value={payrollDate} onChange={(event) => setPayrollDate(event.target.value)} /><button className="button button-primary" onClick={() => void payAllEmployees()}><Banknote size={15} /> Paga tutti gli stipendi</button><button className="button button-outline" onClick={() => { const payments = data.payrollPayments.filter((payment) => payment.pay_month === payrollMonth); void exportPayrollZip(payments).catch((error: unknown) => notify(errorText(error))); }}><ArrowDownToLine size={15} /> Scarica ricevute del mese</button></div>
-        <Table headings={['Dipendente', 'Ruolo', 'Stipendio', 'Metodo', 'Stato', 'Azione']}><>{data.employees.map((employee) => { const payment = data.payrollPayments.find((item) => item.employee_id === employee.id && item.pay_month === payrollMonth); return <tr key={employee.id}><td className="cell-primary">{employee.first_name} {employee.last_name}</td><td>{employee.role}</td><td>{money.format(employee.salary)}</td><td>{employee.payment_method}</td><td><span className={`stock-badge${payment ? '' : ' low'}`}>{payment ? `Pagato il ${formatLocalDate(payment.payment_date)}` : 'Da pagare'}</span></td><td>{payment ? <button className="button button-outline" onClick={() => savePdf(createSalaryPdf(employee, payment.payment_date, payment.pay_month, payment.amount), `Stipendio-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}-${payment.payment_date}.pdf`)}><ArrowDownToLine size={14} /> Ricevuta</button> : <button className="button button-primary" onClick={() => void payEmployee(employee)}><Check size={14} /> Paga</button>}</td></tr>; })}</>{!data.employees.length && <tr><td colSpan={6} className="empty-cell">Nessun dipendente registrato.</td></tr>}</Table>
+        <section className="panel payroll-table-panel"><Table headings={['Dipendente', 'Ruolo', 'Stipendio', 'Metodo', 'Stato', 'Azione']}><>{data.employees.map((employee) => { const payment = data.payrollPayments.find((item) => item.employee_id === employee.id && item.pay_month === payrollMonth); return <tr key={employee.id}><td className="cell-primary">{employee.first_name} {employee.last_name}</td><td>{employee.role}</td><td>{money.format(employee.salary)}</td><td>{employee.payment_method}</td><td><span className={`stock-badge${payment ? '' : ' low'}`}>{payment ? `Pagato il ${formatLocalDate(payment.payment_date)}` : 'Da pagare'}</span></td><td>{payment ? <button className="button button-outline" onClick={() => savePdf(createSalaryPdf(employee, payment.payment_date, payment.pay_month, payment.amount), `Stipendio-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}-${payment.payment_date}.pdf`)}><ArrowDownToLine size={14} /> Ricevuta</button> : <button className="button button-primary" onClick={() => void payEmployee(employee)}><Check size={14} /> Paga</button>}</td></tr>; })}</>{!data.employees.length && <tr><td colSpan={6} className="empty-cell">Nessun dipendente registrato.</td></tr>}</Table></section>
       </div>}
       {section === 'expenses' && <div className="page-content accounting-page">
         <section className="panel expense-entry-panel"><div className="panel-heading"><div><h3>Registra una spesa</h3><p>Inserisci descrizione, categoria, importo e data.</p></div></div>
@@ -2820,22 +3014,22 @@ export default function App() {
         <div className="page-toolbar balance-toolbar no-print">
           <button className="button button-primary balance-download" onClick={() => { setReportExportType('balance'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Scarica bilancio</button>
           <div className="balance-periods" role="group" aria-label="Filtra bilancio per periodo">
-            {(['Ultimi 3 mesi', 'Ultimi 6 mesi', 'Ultimo anno'] as const).map((period) => <button key={period} className={`status-filter${balancePeriod === period ? ' active' : ''}`} aria-pressed={balancePeriod === period} onClick={() => setBalancePeriod(period)}>{period}</button>)}
+            {(['Ultimo mese', 'Ultimi 3 mesi', 'Ultimi 6 mesi', 'Ultimo anno'] as const).map((period) => <button key={period} className={`status-filter${balancePeriod === period ? ' active' : ''}`} aria-pressed={balancePeriod === period} onClick={() => setBalancePeriod(period)}>{period}</button>)}
           </div>
         </div>
         <div className="metric-grid accounting-balance-metrics">
           <Metric icon={Banknote} label="Ricavi da vendite" value={money.format(balanceRevenue)} detail={balancePeriod} />
           <Metric icon={Package} label="Costo della merce venduta" value={money.format(balanceGoodsCost)} detail={balancePeriod} />
           <Metric icon={ArrowDownToLine} label="Spese operative" value={money.format(balanceOperatingExpenses)} detail={balancePeriod} />
-          <Metric icon={Trash2} label="Valore merce buttata" value={money.format(balanceWasteLoss)} detail={balancePeriod} />
-          <Metric icon={TrendingUp} label="Risultato gestionale" value={money.format(balanceOperatingResult)} detail="Ricavi meno costi e spese" />
+          <Metric className="balance-wide-card" icon={Trash2} label="Valore merce buttata" value={money.format(balanceWasteLoss)} detail={balancePeriod} />
+          <Metric className="balance-wide-card" icon={TrendingUp} label="Risultato gestionale" value={money.format(balanceOperatingResult)} detail="Ricavi meno costi e spese" />
         </div>
         <div className="analytics-grid">
           <section className="panel"><div className="panel-heading"><div><h3>Composizione del bilancio</h3><p>{balancePeriod}</p></div></div><div className="balance-breakdown"><Detail label="Ricavi netti" value={money.format(balanceRevenue)} /><Detail label="Costo del venduto" value={`− ${money.format(balanceGoodsCost)}`} /><Detail label="Margine lordo" value={money.format(balanceRevenue - balanceGoodsCost)} /><Detail label="Spese operative" value={`− ${money.format(balanceOperatingExpenses)}`} /><Detail label="Valore merce buttata" value={`− ${money.format(balanceWasteLoss)}`} /><Detail label="Risultato gestionale" value={money.format(balanceOperatingResult)} /></div></section>
           <section className="panel"><div className="panel-heading"><div><h3>Valore del magazzino</h3><p>Valorizzazione della giacenza attuale</p></div></div><div className="balance-breakdown"><Detail label="Valore a costo" value={money.format(stockCost)} /><Detail label="Valore potenziale di vendita" value={money.format(stockRetail)} /><Detail label="Articoli in giacenza" value={`${data.products.filter((product) => product.stock > 0).length}`} /><Detail label="Margine potenziale" value={money.format(stockRetail - stockCost)} /></div></section>
         </div>
         <section className="panel balance-pie-panel"><div className="panel-heading"><div><h3>Composizione del venduto</h3><p>{balancePeriod}</p></div></div><div className="balance-pie-layout"><div className="balance-pie-wrap"><ResponsiveContainer width="100%" height={260}><PieChart><Pie data={balancePieParts} dataKey="value" nameKey="name" innerRadius={66} outerRadius={100} paddingAngle={3} label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`} labelLine={false}>{balancePieParts.map((part, index) => <Cell key={part.name} fill={colors[index % colors.length]} />)}</Pie><Tooltip formatter={(value) => money.format(Number(value))} /></PieChart></ResponsiveContainer><div className="balance-pie-center"><span>Valore merce venduta</span><strong>{money.format(balanceRevenue)}</strong></div></div><div className="balance-pie-legend">{balancePieParts.map((part, index) => <div key={part.name}><span className="payment-dot" style={{ backgroundColor: colors[index % colors.length] }} /><span>{part.name}</span><strong>{money.format(part.value)} · {balancePieTotal > 0 ? `${(part.value / balancePieTotal * 100).toFixed(1)}%` : '0%'}</strong></div>)}</div></div></section>
-        <section className="panel balance-monthly-panel"><div className="panel-heading"><div><h3>Dettaglio mensile · {balancePeriod.toLowerCase()}</h3><p>Ricavi, costo merce, spese operative, merce buttata e risultato</p></div></div><div className="table-wrap"><table><thead><tr><th>Mese</th><th className="align-right">Ricavi</th><th className="align-right">Costo merce</th><th className="align-right">Spese operative</th><th className="align-right">Valore merce buttata</th><th className="align-right">Risultato</th></tr></thead><tbody>{balanceMonthly.map((month) => <tr key={month.mese}><td className="cell-primary">{month.mese}</td><td className="align-right">{money.format(month.vendite)}</td><td className="align-right">{money.format(month.costiMerce)}</td><td className="align-right">{money.format(month.speseOperative)}</td><td className="align-right">{money.format(month.merceButtata)}</td><td className="align-right cell-primary">{money.format(month.risultato)}</td></tr>)}</tbody></table></div></section>
+        <section className="panel balance-monthly-panel"><div className="panel-heading"><div><h3>Dettaglio mensile · ultimi 6 mesi</h3><p>Ricavi, costo merce, spese operative, merce buttata e risultato</p></div></div><div className="table-wrap"><table><thead><tr><th>Mese</th><th className="align-right">Ricavi</th><th className="align-right">Costo merce</th><th className="align-right">Spese operative</th><th className="align-right">Valore merce buttata</th><th className="align-right">Risultato</th></tr></thead><tbody>{balanceMonthly.slice(-6).map((month) => <tr key={month.mese}><td className="cell-primary">{month.mese}</td><td className="align-right">{money.format(month.vendite)}</td><td className="align-right">{money.format(month.costiMerce)}</td><td className="align-right">{money.format(month.speseOperative)}</td><td className="align-right">{money.format(month.merceButtata)}</td><td className="align-right cell-primary">{money.format(month.risultato)}</td></tr>)}</tbody></table></div></section>
       </div>}
 
       {(section === 'vouchers-create' || section === 'vouchers-list') && <div className="page-content settings-page"><section className="settings-panel">
@@ -2869,7 +3063,7 @@ export default function App() {
       {section === 'statistics' && <div className="page-content">
         <div className="statistics-periods" role="group" aria-label="Filtra statistiche per periodo">{statisticsPeriods.map((period) => <button key={period} className={`status-filter${statisticsPeriod === period ? ' active' : ''}`} aria-pressed={statisticsPeriod === period} onClick={() => setStatisticsPeriod(period)}>{period}</button>)}</div>
         <section className="panel product-sales-panel"><div className="panel-heading"><div><h3>Prodotti più e meno venduti</h3></div></div><Table headings={['Posizione', 'Prodotto', 'Quantità venduta', 'Ricavi']}><>{(showAllProductRanking ? productSalesRanking : productSalesRanking.slice(0, 4)).map((product, index) => <tr key={product.id}><td>{index + 1}</td><td className="cell-primary">{product.name}</td><td>{quantityFormat.format(product.quantitySold)} {product.unit === 'PEZZO' ? 'pz' : product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : ''}</td><td>{money.format(product.revenue)}</td></tr>)}</>{!productSalesRanking.length && <tr><td colSpan={4} className="empty-cell">Nessun prodotto registrato.</td></tr>}</Table>{productSalesRanking.length > 4 && <button className="button button-quiet ranking-expand" type="button" aria-expanded={showAllProductRanking} onClick={() => setShowAllProductRanking((current) => !current)}>{showAllProductRanking ? 'Mostra meno' : 'Vedi tutti'}</button>}</section>
-        <div className="metric-grid stats-metrics"><Metric icon={Banknote} label="Vendite" value={money.format(soldTotal)} detail="Incassi registrati nel periodo" /><Metric icon={CreditCard} label="Acquisto merce venduta" value={money.format(soldCost)} detail="Costo degli articoli venduti" /><Metric icon={Trash2} label="Valore merce buttata" value={money.format(statisticsWasteLoss)} detail="Valore merce buttata nel periodo" /><Metric icon={TrendingUp} label="Netto stimato" value={money.format(estimatedNet)} detail="Ricavi meno costo del venduto e spese" /><Metric icon={ShoppingBasket} label="Quantità vendite" value={`${soldUnits.toLocaleString(appLocale)} di ${totalTrackedUnits.toLocaleString(appLocale)}`} detail="Articoli venduti rispetto a quelli ancora in magazzino" action={<button className="text-button metric-action" onClick={() => setUnsoldListOpen(true)}>Vedi lista</button>} /></div>
+        <div className="metric-grid stats-metrics"><Metric icon={Banknote} label="Vendite" value={money.format(soldTotal)} detail="Incassi registrati nel periodo" /><Metric icon={CreditCard} label="Acquisto merce venduta" value={money.format(soldCost)} detail="Costo degli articoli venduti" /><Metric icon={TrendingUp} label="Netto stimato" value={money.format(estimatedNet)} detail="Ricavi meno costo del venduto e spese" /><Metric className="stats-wide-card" icon={Trash2} label="Valore merce buttata" value={money.format(statisticsWasteLoss)} detail="Valore merce buttata nel periodo" /><Metric className="stats-wide-card" icon={ShoppingBasket} label="Quantità vendite" value={`${soldUnits.toLocaleString(appLocale)} ${language === 'ar' ? 'من' : 'di'} ${totalTrackedUnits.toLocaleString(appLocale)}`} valueDir="ltr" detail="Articoli venduti rispetto a quelli ancora in magazzino" action={<button className="text-button metric-action" onClick={() => setUnsoldListOpen(true)}>{language === 'ar' ? 'عرض القائمة' : 'Vedi lista'}</button>} /></div>
         <div className="metric-grid inventory-values"><Metric icon={Package} label="Valore vendita in magazzino" value={money.format(stockRetail)} detail="Valore al prezzo di vendita" compact /><Metric icon={Archive} label="Valore acquisto in magazzino" value={money.format(stockCost)} detail="Costo delle scorte attuali" compact /><Metric icon={TrendingUp} label="Netto potenziale" value={money.format(stockRetail - stockCost)} detail="Margine potenziale delle scorte" compact /></div>
         <div className="analytics-grid"><section className="panel calendar-panel"><div className="panel-heading"><div><h3>Calendario vendite</h3><p>Incasso per giorno</p></div><div className="month-controls"><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}>‹</button><strong>{calendarMonth.toLocaleDateString(appLocale, { month: 'long', year: 'numeric' })}</strong><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}>›</button></div></div><div className="calendar-grid">{['L', 'M', 'M', 'G', 'V', 'S', 'D'].map((day, index) => <span className="calendar-weekday" key={`${day}${index}`}>{day}</span>)}{calendarDays().map((day, index) => { const date = day ? new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day) : null; const revenue = date ? statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()).reduce((sum, sale) => sum + sale.total, 0) : 0; return <div key={index} className={`calendar-day${revenue ? ' has-sales' : ''}${date?.toDateString() === new Date().toDateString() ? ' today' : ''}`}>{day && <><span>{day}</span>{revenue > 0 && <small>{money.format(revenue)}</small>}</>}</div>; })}</div></section><section className="panel chart-panel"><div className="panel-heading"><div><h3>Vendite giornaliere</h3><p>Ultimi sette giorni nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><BarChart data={chartDays} margin={{ top: 14, right: 8, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="giorno" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value}${language === 'ar' ? ' EGP' : '€'}`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Bar dataKey="totale" fill="var(--green)" radius={[4, 4, 0, 0]} maxBarSize={34} /></BarChart></ResponsiveContainer></section></div>
         <div className="analytics-grid statistics-extra"><section className="panel chart-panel"><div className="panel-heading"><div><h3>Andamento mensile</h3><p>Incasso per mese nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><LineChart data={monthlySales} margin={{ top: 14, right: 12, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="mese" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value}${language === 'ar' ? ' EGP' : '€'}`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Line type="monotone" dataKey="totale" stroke="var(--green)" strokeWidth={3} dot={{ fill: 'var(--green)', r: 4 }} /></LineChart></ResponsiveContainer></section><section className="panel payment-panel"><div className="panel-heading"><div><h3>Pagamenti per metodo</h3><p>Totale incassato nel periodo</p></div></div><div className="payment-totals">{Object.entries(paymentTotals).length ? Object.entries(paymentTotals).map(([method, amount], index) => <div key={method}><span className="payment-dot" style={{ backgroundColor: colors[index % colors.length] }} /><span>{method}</span><strong>{money.format(amount)}</strong></div>) : <span className="muted">Nessun pagamento nel periodo selezionato.</span>}</div></section></div>
@@ -2880,7 +3074,7 @@ export default function App() {
         {settingsTab === 'Nome negozio' && <><div className="settings-title"><h2>Info negozio</h2><p>Nome e logo del negozio per il menu e la barra superiore.</p></div><form className="settings-form" onSubmit={saveStoreName}><Field label="Nome attività" value={shopName} onChange={(e) => setShopName(e.target.value)} required /><div className="receipt-preview"><Store size={17} /><span>{shopName || 'Nome negozio'}</span><small>Anteprima intestazione scontrino</small></div><div className="shop-logo-setting"><span className="field-label">Logo del negozio</span>{data.settings.shop_logo && <img src={data.settings.shop_logo} alt="Logo attuale" />}<button className="button button-outline" type="button" onClick={() => void chooseShopLogo()}><Store size={15} /> {data.settings.shop_logo ? 'Sostituisci logo' : 'Scegli logo'}</button></div><button className="button button-primary"><Check size={16} /> Salva nome</button></form></>}
         {settingsTab === 'Sicurezza' && <><div className="settings-title"><h2>Accesso e sicurezza</h2><p>All’avvio viene richiesto il barcode di un dipendente; puoi mantenere il PIN come alternativa.</p></div><div className="security-status"><div className="security-icon"><ShieldCheck size={20} /></div><div><strong>{hasPin ? 'PIN alternativo attivo' : 'Nessun PIN alternativo configurato'}</strong><span>{hasPin ? 'Puoi usare il PIN dalla schermata di accesso.' : 'Configura un PIN da 4 a 8 cifre come alternativa al barcode.'}</span></div></div><form className="settings-form" onSubmit={async (event) => { event.preventDefault(); try { await window.gestionale.setPin(newPin); setHasPin(true); setNewPin(''); notify('PIN aggiornato'); } catch (error) { notify(errorText(error)); } }}><Field label={hasPin ? 'Nuovo PIN (4–8 cifre)' : 'PIN (4–8 cifre)'} type="password" inputMode="numeric" minLength={4} maxLength={8} pattern="[0-9]{4,8}" value={newPin} onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))} required /><button className="button button-primary"><LockKeyhole size={16} />{hasPin ? 'Aggiorna PIN' : 'Attiva PIN'}</button></form></>}
         {settingsTab === 'Archivio dati' && <><div className="settings-title"><h2>Archivio locale</h2><p>Database SQLite e copie giornaliere dei dati.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Archivio locale attivo</div><div className="database-card"><div className="security-icon"><Archive size={20} /></div><div><strong>Database SQLite</strong><span className="database-path">{data.settings.database_file}</span></div><span className="stock-badge">Attivo</span></div><div className="settings-form"><label className="field"><span>Cartella esportazioni giornaliere</span><div className="folder-input"><input value={archiveFolder} readOnly /><button className="button button-outline" type="button" onClick={() => void chooseFolder()}>Scegli cartella</button></div></label><p className="help-copy">Ogni giorno a mezzanotte vengono aggiornati file TXT e PDF nelle cartelle Magazzino, Cassa, Vendite e Statistiche.</p></div></>}
-        {settingsTab === 'Dispositivi' && (deviceTab === null ? <><div className="settings-title"><h2>Dispositivi</h2><p>Seleziona un dispositivo per configurarlo.</p></div><nav className="settings-nav device-menu"><button onClick={() => setDeviceTab('Lettore barcode')}><Barcode size={17} />Lettore di codici a barre</button><button onClick={() => setDeviceTab('Stampante scontrini')}><Printer size={17} />Stampante scontrini</button></nav></> : deviceTab === 'Lettore barcode' ? <><div className="settings-title"><h2>Lettore di codici a barre</h2><p>Configura il lettore collegato al computer.</p></div><div className="device-setting"><div className="device-heading"><div className="security-icon"><Barcode size={20} /></div><div><strong>Lettore di codici a barre</strong><span>{data.settings.barcode_scanner_detected ? 'Rilevato: è stata acquisita almeno una scansione su questo computer.' : 'In attesa della prima lettura del lettore USB/HID.'}</span></div><button className={`toggle-button${data.settings.barcode_scanner_enabled ? ' enabled' : ''}`} type="button" role="switch" aria-checked={data.settings.barcode_scanner_enabled} onClick={() => void toggleBarcodeScanner()}>{data.settings.barcode_scanner_enabled ? 'Attivo' : 'Disattivo'}</button></div><p className="help-copy">I lettori USB che si comportano come tastiera vengono riconosciuti automaticamente quando inviano un codice. La preferenza resta salvata tra gli avvii.</p></div></> : <><div className="settings-title"><h2>Stampante scontrini</h2><p>Collega una stampante rilevata dal sistema.</p></div><div className="device-setting"><div className="device-printer-row"><SelectField label="Stampante collegata" value={data.settings.receipt_printer} onChange={(value) => void saveReceiptPrinter(value)} options={['', ...printers.map((printer) => printer.name)]} labels={['Seleziona stampante', ...printers.map((printer) => printer.displayName || printer.name)]} /><button className="button button-outline" type="button" onClick={() => void window.gestionale.getPrinters().then(setPrinters).catch((error: unknown) => notify(errorText(error)))}><Printer size={15} /> Rileva stampanti</button></div>{!printers.length && <p className="help-copy">Nessuna stampante rilevata. Verifica che sia collegata e installata nel sistema.</p>}{data.settings.receipt_printer && !printers.some((printer) => printer.name === data.settings.receipt_printer) && <p className="help-copy">La stampante salvata non è attualmente disponibile: selezionane una nuova.</p>}</div></>)}
+        {settingsTab === 'Dispositivi' && (deviceTab === null ? <><div className="settings-title"><h2>Dispositivi</h2><p>Seleziona un dispositivo per configurarlo.</p></div><nav className="settings-nav device-menu"><button onClick={() => setDeviceTab('Lettore barcode')}><Barcode size={17} />Lettore di codici a barre</button><button onClick={() => setDeviceTab('Stampante scontrini')}><Printer size={17} />Stampante scontrini</button>{printers.map((printer) => <button className="printer-menu-entry" key={printer.name} aria-current={data.settings.receipt_printer === printer.name ? 'true' : undefined} onClick={() => void saveReceiptPrinter(printer.name)}><Printer size={17} />{printer.displayName || printer.name}</button>)}</nav></> : deviceTab === 'Lettore barcode' ? <><div className="settings-title"><h2>Lettore di codici a barre</h2><p>Configura il lettore collegato al computer.</p></div><div className="device-setting"><div className="device-heading"><div className="security-icon"><Barcode size={20} /></div><div><strong>Lettore di codici a barre</strong><span>{data.settings.barcode_scanner_detected ? 'Rilevato: è stata acquisita almeno una scansione su questo computer.' : 'In attesa della prima lettura del lettore USB/HID.'}</span></div><button className={`toggle-button${data.settings.barcode_scanner_enabled ? ' enabled' : ''}`} type="button" role="switch" aria-checked={data.settings.barcode_scanner_enabled} onClick={() => void toggleBarcodeScanner()}>{data.settings.barcode_scanner_enabled ? 'Attivo' : 'Disattivo'}</button></div><p className="help-copy">I lettori USB che si comportano come tastiera vengono riconosciuti automaticamente quando inviano un codice. La preferenza resta salvata tra gli avvii.</p></div></> : <><div className="settings-title"><h2>Stampante scontrini</h2><p>Collega una stampante rilevata dal sistema.</p></div><div className="device-setting"><div className="device-printer-row"><SelectField label="Stampante collegata" value={data.settings.receipt_printer} onChange={(value) => void saveReceiptPrinter(value)} options={['', ...printers.map((printer) => printer.name)]} labels={['Seleziona stampante', ...printers.map((printer) => printer.displayName || printer.name)]} /><button className="button button-outline" type="button" onClick={() => void window.gestionale.getPrinters().then(setPrinters).catch((error: unknown) => notify(errorText(error)))}><Printer size={15} /> Rileva stampanti</button></div>{!printers.length && <p className="help-copy">Nessuna stampante rilevata. Verifica che sia collegata e installata nel sistema.</p>}{data.settings.receipt_printer && !printers.some((printer) => printer.name === data.settings.receipt_printer) && <p className="help-copy">La stampante salvata non è attualmente disponibile: selezionane una nuova.</p>}</div></>)}
         {settingsTab === "Tema dell'app" && <><div className="settings-title"><h2>Tema dell'app</h2><p>Scegli i colori dell’interfaccia. La selezione viene salvata su questo dispositivo.</p></div><div className="theme-options" role="group" aria-label="Temi dell'app">{appThemes.map((theme) => <button key={theme.id} className={`theme-option${appTheme === theme.id ? ' selected' : ''}`} type="button" aria-pressed={appTheme === theme.id} onClick={() => setAppTheme(theme.id)}><span className="theme-swatch" style={{ backgroundColor: theme.color }} /><span>{theme.label}</span>{appTheme === theme.id && <Check size={15} />}</button>)}</div><div className="settings-title homepage-image-title"><h2>Immagine homepage</h2><p>Scegli un’immagine salvata nel gestionale per la pagina iniziale.</p></div><div className="shop-logo-setting">{data.settings.home_image && <img src={data.settings.home_image} alt="Immagine homepage attuale" />}<button className="button button-outline" type="button" onClick={() => void chooseHomepageImage()}><House size={15} />{data.settings.home_image ? 'Sostituisci immagine' : 'Scegli immagine'}</button></div></>}
         {settingsTab === 'Operativo' && <><div className="settings-title"><h2>Stato operativo</h2><p>Stato corrente del gestionale.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Operativo</div></>}
       </section>}</div></div>}
@@ -2928,7 +3122,7 @@ export default function App() {
       <button className="button button-primary full-width" onClick={() => void checkout()}><Check size={17} /> Conferma e stampa scontrino</button>
       <button className="button button-outline full-width" type="button" onClick={() => { setCheckoutOpen(false); setCart([]); setManualPromotionId(undefined); setAutomaticPromotionId(undefined); setVoucherCode(''); setVoucherMessage(''); setVoucherDiscountPercentage(0); }}><X size={16} /> Annulla</button>
     </div></Modal>}
-    {receipt && <Modal title={`Scontrino #${receipt.receipt_no}`} close={() => setReceipt(null)}><div className="receipt-print" id="receipt-print"><div className="receipt-shop"><span>{data.settings.shop_name}</span>{data.settings.shop_logo && <img src={data.settings.shop_logo} alt="Logo negozio" />}</div><div className="receipt-spacer" /><div className="receipt-datetime"><span>{receiptDate.format(new Date(receipt.created_at))}</span><span>{receiptTime.format(new Date(receipt.created_at))}</span></div><div>Numero scontrino: {receipt.receipt_no}</div><div className="receipt-dash" /><div className="receipt-head"><span>Articolo</span><span>Qtà</span><span>Prezzo</span></div>{receipt.items.map((item, index) => <div className="receipt-item" key={`${item.code}-${index}`}><span>{item.name}</span><span>{receiptQuantity.format(item.quantity)}{item.unit === 'KG' ? ' kg' : item.unit === 'LITRO' ? ' L' : ''}</span><span>{money.format(item.unit_price * item.quantity)}</span></div>)}<div className="receipt-dash" /><div className="receipt-total"><strong>TOTALE</strong><strong>{money.format(receipt.total)}</strong></div><div className="receipt-payment-savings"><span>Pagamento: {receipt.payment_method}</span>{receipt.discount > 0 && <span>Risparmio: {money.format(receipt.discount)}</span>}</div><div className="receipt-dash" /><div className="receipt-spacer" /><svg id="receipt-barcode" /><div className="receipt-spacer" /><div className="receipt-thanks">Grazie per averci scelto!</div></div><div className="receipt-actions"><button className="button button-primary full-width" onClick={() => printReceipt('regular')}><Printer size={16} /> Stampa scontrino</button>{data.settings.receipt_printer_thermal && <button className="button button-outline full-width" onClick={() => printReceipt('thermal')}><Printer size={16} /> Stampa su termica Bluetooth</button>}</div></Modal>}
+    {receipt && <Modal title={`Scontrino #${receipt.receipt_no}`} close={() => setReceipt(null)}><div className="receipt-print" id="receipt-print"><div className="receipt-shop"><span>{data.settings.shop_name}</span></div><div className="receipt-spacer" /><div className="receipt-datetime"><span>{receiptDate.format(new Date(receipt.created_at))}</span><span>{receiptTime.format(new Date(receipt.created_at))}</span></div><div>Numero scontrino: {receipt.receipt_no}</div><div className="receipt-dash" /><div className="receipt-head"><span>Articolo</span><span>Qtà</span><span>Prezzo</span></div>{receipt.items.map((item, index) => <div className="receipt-item" key={`${item.code}-${index}`}><span>{item.name}</span><span>{receiptQuantity.format(item.quantity)}{item.unit === 'KG' ? ' kg' : item.unit === 'LITRO' ? ' L' : ''}</span><span>{money.format(item.unit_price * item.quantity)}</span></div>)}<div className="receipt-dash" /><div className="receipt-total"><strong>TOTALE</strong><strong>{money.format(receipt.total)}</strong></div><div className="receipt-payment-savings"><span>Pagamento: {receipt.payment_method}</span>{receipt.discount > 0 && <span>Risparmio: {money.format(receipt.discount)}</span>}</div><div className="receipt-dash" /><div className="receipt-spacer" /><svg id="receipt-barcode" /><div className="receipt-spacer" /><div className="receipt-thanks">Grazie per averci scelto!</div></div><div className="receipt-actions"><button className="button button-primary full-width" onClick={() => printReceipt('regular')}><Printer size={16} /> Stampa scontrino</button>{data.settings.receipt_printer_thermal && <button className="button button-outline full-width" onClick={() => printReceipt('thermal')}><Printer size={16} /> Stampa su termica USB</button>}</div></Modal>}
     {saleAdjustment !== null && <Modal title="Modifica vendita completata" close={() => setSaleAdjustment(null)}><div className="sale-adjustment-message"><p>{saleAdjustment > 0 ? `Il cliente deve pagare ancora ${money.format(saleAdjustment)}.` : saleAdjustment < 0 ? `Devi rimborsare al cliente ${money.format(Math.abs(saleAdjustment))}.` : 'Non è necessario effettuare un rimborso o un pagamento aggiuntivo.'}</p><button className="button button-primary" onClick={() => setSaleAdjustment(null)}>Ok</button></div></Modal>}
     {saleAction && <Modal title={`Verifica dipendente · scontrino #${saleAction.sale.receipt_no}`} close={() => { setSaleAction(null); setSaleEmployeeBarcode(''); }}><form className="sale-authorization" onSubmit={(event) => { event.preventDefault(); void authorizeSaleAction(); }}>
       <p>Scansiona o inserisci il barcode di riconoscimento del dipendente per {saleAction.action === 'edit' ? 'modificare' : 'eliminare'} questo scontrino.</p>
@@ -2954,9 +3148,9 @@ export default function App() {
   </div></LocalizedNodes></AppDynamicNamesContext.Provider></AppLanguageContext.Provider>;
 }
 
-function Metric({ icon: Icon, label, value, detail, compact = false, action }: { icon: typeof House; label: string; value: string; detail: string; compact?: boolean; action?: ReactNode }) {
+function Metric({ icon: Icon, label, value, detail, compact = false, action, className = '', valueDir }: { icon: typeof House; label: string; value: string; detail: string; compact?: boolean; action?: ReactNode; className?: string; valueDir?: 'ltr' | 'rtl' }) {
   const language = useContext(AppLanguageContext);
-  return <section className={`metric-card${compact ? ' compact' : ''}`}><div className="metric-card-top"><div className="metric-icon"><Icon size={18} /></div>{action}</div><span className="metric-label">{localizedText(label, language)}</span><strong>{value}</strong><small>{localizedText(detail, language)}</small></section>;
+  return <section className={`metric-card${compact ? ' compact' : ''}${className ? ` ${className}` : ''}`}><div className="metric-card-top"><div className="metric-icon"><Icon size={18} /></div>{action}</div><span className="metric-label">{localizedText(label, language)}</span><strong dir={valueDir}>{value}</strong><small>{localizedText(detail, language)}</small></section>;
 }
 function SectionHeading({ icon: Icon, title, detail, action }: { icon: typeof House; title: string; detail: string; action: ReactNode }) {
   const language = useContext(AppLanguageContext);
@@ -2990,7 +3184,7 @@ function ThermalPrinterField() {
   useEffect(() => {
     void refreshThermalPrinters();
   }, []);
-  return <div className="thermal-printer-field"><label className="field"><span>{localizedText('Stampante termica per scontrini Bluetooth', language)}</span><select value={printer} onChange={(event) => { const value = event.target.value; setPrinter(value); void window.gestionale.saveSetting('receipt_printer_thermal', value).catch(() => setPrinter('')); }}><option value="">{localizedText('Seleziona stampante', language)}</option>{printers.map((item) => <option key={item.name} value={item.name}>{item.displayName || item.name}</option>)}</select></label><button className="button button-outline" type="button" onClick={() => void refreshThermalPrinters()}>{localizedText('Rileva stampanti', language)}</button></div>;
+  return <div className="thermal-printer-field"><label className="field"><span>{localizedText('Stampante termica per scontrini USB', language)}</span><select value={printer} onChange={(event) => { const value = event.target.value; setPrinter(value); void window.gestionale.saveSetting('receipt_printer_thermal', value).catch(() => setPrinter('')); }}><option value="">{localizedText('Seleziona stampante', language)}</option>{printers.map((item) => <option key={item.name} value={item.name}>{item.displayName || item.name}</option>)}</select></label><button className="button button-outline" type="button" onClick={() => void refreshThermalPrinters()}>{localizedText('Rileva stampanti', language)}</button></div>;
 }
 function Detail({ label, value }: { label: string; value: string }) { const language = useContext(AppLanguageContext); return <div className="detail-row"><span>{localizedText(label, language)}</span><strong>{value}</strong></div>; }
 function Empty({ icon: Icon, title, detail }: { icon: typeof House; title: string; detail: string }) { const language = useContext(AppLanguageContext); return <div className="empty-state"><Icon size={28} /><strong>{localizedText(title, language)}</strong><span>{localizedText(detail, language)}</span></div>; }

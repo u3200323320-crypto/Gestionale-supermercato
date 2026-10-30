@@ -152,6 +152,9 @@ function state() {
     products: (database.prepare('SELECT * FROM products ORDER BY name').all() as Array<Omit<Product, 'expiry_enabled'> & { expiry_enabled: number }>).map((product) => ({ ...product, expiry_enabled: Boolean(product.expiry_enabled) })),
     sales: allSales(),
     stockMovements: database.prepare('SELECT * FROM stock_movements ORDER BY created_at DESC, id DESC').all(),
+    siteStocks: database.prepare(`SELECT inventory.product_id, inventory.site_id, sites.name AS site_name, inventory.stock
+      FROM site_inventory inventory JOIN sites ON sites.id = inventory.site_id
+      ORDER BY sites.name, inventory.product_id`).all(),
     expenses: database.prepare('SELECT * FROM expenses ORDER BY expense_date DESC, id DESC').all() as Expense[],
     promotions: database.prepare('SELECT * FROM promotions ORDER BY starts_at DESC').all(),
     voucherBatches: allVoucherBatches(),
@@ -161,6 +164,11 @@ function state() {
       FROM payroll_payments payments JOIN employees ON employees.id = payments.employee_id
       ORDER BY payments.pay_month DESC, employees.last_name, employees.first_name`).all() as PayrollPayment[],
     sites: database.prepare('SELECT * FROM sites ORDER BY name').all() as Site[],
+    customers: database.prepare('SELECT * FROM customers ORDER BY last_name, first_name').all(),
+    loyaltyCards: database.prepare(`SELECT cards.*, CASE WHEN customers.id IS NULL THEN NULL
+      ELSE TRIM(customers.first_name || ' ' || customers.last_name) END AS customer_name
+      FROM loyalty_cards cards LEFT JOIN customers ON customers.id = cards.customer_id
+      ORDER BY cards.created_at DESC, cards.id DESC`).all(),
     settings: {
       shop_name: setting('shop_name', 'Il tuo supermercato'),
       shop_address: setting('shop_address'),
@@ -220,6 +228,12 @@ function initDatabase(): void {
       movement_type TEXT NOT NULL CHECK(movement_type IN ('Carico', 'Scarico')),
       quantity REAL NOT NULL, created_at TEXT NOT NULL, person TEXT NOT NULL DEFAULT '',
       destination TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', site TEXT NOT NULL DEFAULT 'Sede principale'
+    );
+    CREATE TABLE IF NOT EXISTS site_inventory (
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      stock REAL NOT NULL DEFAULT 0 CHECK(stock >= 0),
+      PRIMARY KEY(product_id, site_id)
     );
     CREATE TABLE IF NOT EXISTS employee_activity (
       id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL, employee_name TEXT NOT NULL,
@@ -312,6 +326,9 @@ function initDatabase(): void {
   database.prepare("INSERT OR IGNORE INTO sites (name, address, phone, created_at) VALUES ('Sede principale', '', '', ?)").run(new Date().toISOString());
   database.prepare(`INSERT OR IGNORE INTO sites (name, address, phone, created_at)
     SELECT DISTINCT operational_site, '', '', ? FROM employees WHERE TRIM(operational_site) != ''`).run(new Date().toISOString());
+  database.prepare(`INSERT OR IGNORE INTO site_inventory (product_id, site_id, stock)
+    SELECT products.id, sites.id, products.stock FROM products
+    JOIN sites ON sites.name = 'Sede principale'`).run();
   database.prepare("UPDATE expenses SET site = 'Sede principale' WHERE site IN ('Negozio', 'Non assegnata', '')").run();
   const promotionColumns = database.prepare('PRAGMA table_info(promotions)').all() as Array<{ name: string }>;
   for (const [column, definition] of [
@@ -361,6 +378,9 @@ function initDatabase(): void {
     const insert = database.prepare('INSERT INTO products (code, name, category, sale_price, purchase_price, stock, low_stock_threshold) VALUES (@code, @name, @category, @sale_price, @purchase_price, @stock, @low_stock_threshold)');
     database.transaction(() => seedProducts.forEach((product) => insert.run(product)))();
   }
+  database.prepare(`INSERT OR IGNORE INTO site_inventory (product_id, site_id, stock)
+    SELECT products.id, sites.id, products.stock FROM products
+    JOIN sites ON sites.name = 'Sede principale'`).run();
   removeExpiredRecords();
 }
 
@@ -372,18 +392,42 @@ function receiptNumber(): string {
   throw new Error('Impossibile generare un numero scontrino univoco.');
 }
 
-function replaceItems(saleId: number, items: SaleItem[]): void {
+function siteInventory(productId: number, siteId: number): number {
+  const row = database.prepare('SELECT stock FROM site_inventory WHERE product_id = ? AND site_id = ?')
+    .get(productId, siteId) as { stock: number } | undefined;
+  return row?.stock ?? 0;
+}
+
+function adjustSiteInventory(productId: number, siteId: number, delta: number): void {
+  const next = siteInventory(productId, siteId) + delta;
+  if (next < -0.000001) throw new Error('La quantità richiesta supera la giacenza disponibile in questa sede.');
+  database.prepare(`INSERT INTO site_inventory (product_id, site_id, stock) VALUES (?, ?, ?)
+    ON CONFLICT(product_id, site_id) DO UPDATE SET stock = excluded.stock`).run(productId, siteId, Math.max(0, next));
+  database.prepare(`UPDATE products SET stock = (SELECT COALESCE(SUM(stock), 0)
+    FROM site_inventory WHERE product_id = ?) WHERE id = ?`).run(productId, productId);
+}
+
+function siteIdByName(name: string): number {
+  const site = database.prepare('SELECT id FROM sites WHERE name = ?').get(name) as { id: number } | undefined;
+  if (site) return site.id;
+  const mainSite = database.prepare("SELECT id FROM sites WHERE name = 'Sede principale'").get() as { id: number } | undefined;
+  if (!mainSite) throw new Error('Sede principale non trovata.');
+  return mainSite.id;
+}
+
+function replaceItems(saleId: number, items: SaleItem[], siteId: number): void {
   const oldItems = saleItems(saleId);
-  const adjustStock = database.prepare('UPDATE products SET stock = stock + ? WHERE id = ?');
-  oldItems.forEach((item) => adjustStock.run(item.quantity, item.product_id));
+  oldItems.forEach((item) => adjustSiteInventory(item.product_id, siteId, item.quantity));
   database.prepare('DELETE FROM sale_items WHERE sale_id = ?').run(saleId);
   const addItem = database.prepare(`INSERT INTO sale_items (sale_id, product_id, name, code, unit, quantity, unit_price, purchase_price)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
   for (const item of items) {
     if (!Number.isFinite(item.quantity) || item.quantity <= 0 || !Number.isFinite(item.unit_price) || item.unit_price < 0) throw new Error('Quantità o prezzo non validi.');
-    const product = database.prepare('SELECT stock FROM products WHERE id = ?').get(item.product_id) as { stock: number } | undefined;
-    if (!product || product.stock < item.quantity) throw new Error(`Scorta insufficiente per ${item.name}.`);
-    adjustStock.run(-item.quantity, item.product_id);
+    if (!database.prepare('SELECT 1 FROM products WHERE id = ?').get(item.product_id)
+      || siteInventory(item.product_id, siteId) < item.quantity) {
+      throw new Error(`Scorta insufficiente per ${item.name} in questa sede.`);
+    }
+    adjustSiteInventory(item.product_id, siteId, -item.quantity);
     addItem.run(saleId, item.product_id, item.name, item.code, item.unit ?? 'PEZZO', item.quantity, item.unit_price, item.purchase_price);
   }
 }
@@ -626,23 +670,40 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       || (product.expiry_enabled && (!product.expiry_date || !/^\d{4}-\d{2}-\d{2}$/.test(product.expiry_date) || !expiryDate || Number.isNaN(expiryDate.getTime()) || localDate(expiryDate) !== product.expiry_date))) {
       throw new Error('Controlla i dati dell’articolo e la data di scadenza.');
     }
-    database.prepare(`INSERT INTO products (code, name, unit, category, sale_price, purchase_price, stock, low_stock_threshold, expiry_enabled, expiry_date)
-      VALUES (@code, @name, @unit, @category, @sale_price, @purchase_price, @stock, @low_stock_threshold, @expiry_enabled, @expiry_date)
-      ON CONFLICT(code) DO UPDATE SET name=excluded.name, category=excluded.category, sale_price=excluded.sale_price,
-      unit=excluded.unit, purchase_price=excluded.purchase_price, stock=excluded.stock, low_stock_threshold=excluded.low_stock_threshold,
-      expiry_enabled=excluded.expiry_enabled, expiry_date=excluded.expiry_date`).run({
-      ...product,
-      unit: product.unit ?? 'PEZZO',
-      expiry_enabled: product.expiry_enabled ? 1 : 0,
-      expiry_date: product.expiry_enabled ? product.expiry_date : null,
-    });
+    database.transaction(() => {
+      const mainSiteId = siteIdByName('Sede principale');
+      const existing = database.prepare('SELECT id FROM products WHERE code = ?').get(product.code.trim()) as { id: number } | undefined;
+      const otherSiteStock = existing
+        ? (database.prepare('SELECT COALESCE(SUM(stock), 0) AS stock FROM site_inventory WHERE product_id = ? AND site_id != ?')
+          .get(existing.id, mainSiteId) as { stock: number }).stock
+        : 0;
+      if (product.stock < otherSiteStock) throw new Error('La giacenza totale non può essere inferiore alle quantità già assegnate alle altre sedi.');
+      database.prepare(`INSERT INTO products (code, name, unit, category, sale_price, purchase_price, stock, low_stock_threshold, expiry_enabled, expiry_date)
+        VALUES (@code, @name, @unit, @category, @sale_price, @purchase_price, @stock, @low_stock_threshold, @expiry_enabled, @expiry_date)
+        ON CONFLICT(code) DO UPDATE SET name=excluded.name, category=excluded.category, sale_price=excluded.sale_price,
+        unit=excluded.unit, purchase_price=excluded.purchase_price, stock=excluded.stock, low_stock_threshold=excluded.low_stock_threshold,
+        expiry_enabled=excluded.expiry_enabled, expiry_date=excluded.expiry_date`).run({
+        ...product,
+        code: product.code.trim(),
+        unit: product.unit ?? 'PEZZO',
+        expiry_enabled: product.expiry_enabled ? 1 : 0,
+        expiry_date: product.expiry_enabled ? product.expiry_date : null,
+      });
+      const saved = database.prepare('SELECT id FROM products WHERE code = ?').get(product.code.trim()) as { id: number };
+      const mainStock = product.stock - otherSiteStock;
+      database.prepare(`INSERT INTO site_inventory (product_id, site_id, stock) VALUES (?, ?, ?)
+        ON CONFLICT(product_id, site_id) DO UPDATE SET stock = excluded.stock`).run(saved.id, mainSiteId, mainStock);
+    })();
   });
   ipcMain.handle('product:delete', (_event, productId: number) => {
     if (!Number.isInteger(productId) || productId < 1) throw new Error('Articolo non valido.');
     const product = database.prepare('SELECT name, stock FROM products WHERE id = ?').get(productId) as { name: string; stock: number } | undefined;
     if (!product) throw new Error('Articolo non trovato.');
     database.transaction(() => {
-      if (product.stock > 0) recordStockMovement(productId, product.name, 'Scarico', product.stock, 'Articolo eliminato dal magazzino');
+      const quantities = database.prepare(`SELECT sites.name AS site_name, site_inventory.stock
+        FROM site_inventory JOIN sites ON sites.id = site_inventory.site_id
+        WHERE product_id = ? AND stock > 0`).all(productId) as Array<{ site_name: string; stock: number }>;
+      quantities.forEach(({ site_name, stock }) => recordStockMovement(productId, product.name, 'Scarico', stock, 'Articolo eliminato dal magazzino', '', '', site_name));
       database.prepare('DELETE FROM products WHERE id = ?').run(productId);
     })();
   });
@@ -654,12 +715,16 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     if (!product) throw new Error('Articolo non trovato o non scaduto.');
     if (product.stock <= 0) throw new Error('L’articolo scaduto non ha giacenza da smaltire.');
     database.transaction(() => {
-      database.prepare('UPDATE products SET stock = 0 WHERE id = ?').run(productId);
-      recordStockMovement(productId, product.name, 'Scarico', product.stock, 'Smaltimento prodotto scaduto');
+      const quantities = database.prepare('SELECT site_id, stock FROM site_inventory WHERE product_id = ? AND stock > 0').all(productId) as Array<{ site_id: number; stock: number }>;
+      quantities.forEach(({ site_id, stock }) => {
+        adjustSiteInventory(productId, site_id, -stock);
+        const site = database.prepare('SELECT name FROM sites WHERE id = ?').get(site_id) as { name: string };
+        recordStockMovement(productId, product.name, 'Scarico', stock, 'Smaltimento prodotto scaduto', '', '', site.name);
+      });
       database.prepare(`INSERT INTO expenses (description, category, amount, expense_date, created_at, site)
         VALUES (?, 'Merce buttata', ?, ?, ?, 'Negozio')`).run(
         `Perdita merce scaduta: ${product.name}`,
-        product.stock * product.purchase_price,
+        quantities.reduce((total, { stock }) => total + stock, 0) * product.purchase_price,
         localDate(new Date()),
         new Date().toISOString(),
       );
@@ -669,8 +734,17 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     if (!Number.isInteger(productId) || productId < 1 || !Number.isFinite(stock) || stock < 0) {
       throw new Error('La nuova giacenza non è valida.');
     }
-    const result = database.prepare('UPDATE products SET stock = ? WHERE id = ?').run(stock, productId);
-    if (result.changes === 0) throw new Error('Articolo non trovato.');
+    database.transaction(() => {
+      const product = database.prepare('SELECT id FROM products WHERE id = ?').get(productId) as { id: number } | undefined;
+      if (!product) throw new Error('Articolo non trovato.');
+      const mainSiteId = siteIdByName('Sede principale');
+      const otherStock = (database.prepare('SELECT COALESCE(SUM(stock), 0) AS stock FROM site_inventory WHERE product_id = ? AND site_id != ?')
+        .get(productId, mainSiteId) as { stock: number }).stock;
+      if (stock < otherStock) throw new Error('La giacenza totale non può essere inferiore alle quantità già assegnate alle altre sedi.');
+      database.prepare(`INSERT INTO site_inventory (product_id, site_id, stock) VALUES (?, ?, ?)
+        ON CONFLICT(product_id, site_id) DO UPDATE SET stock = excluded.stock`).run(productId, mainSiteId, stock - otherStock);
+      database.prepare('UPDATE products SET stock = ? WHERE id = ?').run(stock, productId);
+    })();
   });
   ipcMain.handle('product:move-stock', (_event, movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; employee_barcode: string; destination?: string; note: string }) => {
     if (!Number.isInteger(movement.productId) || movement.productId < 1 || !['Carico', 'Scarico'].includes(movement.type)
@@ -681,14 +755,17 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       throw new Error('I dati del movimento di magazzino non sono validi.');
     }
     database.transaction(() => {
-      const product = database.prepare('SELECT name, stock FROM products WHERE id = ?').get(movement.productId) as { name: string; stock: number } | undefined;
+      const product = database.prepare('SELECT name FROM products WHERE id = ?').get(movement.productId) as { name: string } | undefined;
       if (!product) throw new Error('Articolo non trovato.');
       const employee = database.prepare('SELECT first_name, last_name, operational_site FROM employees WHERE barcode = ?')
         .get(movement.employee_barcode.trim()) as { first_name: string; last_name: string; operational_site: string } | undefined;
       if (!employee) throw new Error('Barcode personale non riconosciuto. Scansiona il badge di un dipendente registrato.');
-      if (movement.type === 'Scarico' && product.stock < movement.quantity) throw new Error('La quantità da scaricare supera la giacenza disponibile.');
       const delta = movement.type === 'Carico' ? movement.quantity : -movement.quantity;
-      database.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(delta, movement.productId);
+      const siteId = siteIdByName(employee.operational_site);
+      if (movement.type === 'Scarico' && siteInventory(movement.productId, siteId) < movement.quantity) {
+        throw new Error('La quantità da scaricare supera la giacenza disponibile in questa sede.');
+      }
+      adjustSiteInventory(movement.productId, siteId, delta);
       recordStockMovement(
         movement.productId,
         product.name,
@@ -699,6 +776,35 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         movement.type === 'Scarico' ? movement.destination?.trim() ?? '' : '',
         employee.operational_site,
       );
+    })();
+  });
+  ipcMain.handle('product:transfer-stock', (_event, movement: {
+    productId: number; fromSiteId: number; toSiteId: number; quantity: number; employee_barcode: string;
+  }) => {
+    if (!movement || !Number.isInteger(movement.productId) || movement.productId < 1
+      || !Number.isInteger(movement.fromSiteId) || !Number.isInteger(movement.toSiteId)
+      || movement.fromSiteId === movement.toSiteId || !Number.isFinite(movement.quantity) || movement.quantity <= 0
+      || typeof movement.employee_barcode !== 'string' || !movement.employee_barcode.trim()) {
+      throw new Error('Seleziona prodotto, sedi diverse e una quantità valida.');
+    }
+    database.transaction(() => {
+      const product = database.prepare('SELECT name FROM products WHERE id = ?').get(movement.productId) as { name: string } | undefined;
+      if (!product) throw new Error('Articolo non trovato.');
+      const fromSite = database.prepare('SELECT name FROM sites WHERE id = ?').get(movement.fromSiteId) as { name: string } | undefined;
+      const toSite = database.prepare('SELECT name FROM sites WHERE id = ?').get(movement.toSiteId) as { name: string } | undefined;
+      if (!fromSite || !toSite) throw new Error('Sede di partenza o di destinazione non trovata.');
+      const employee = database.prepare('SELECT first_name, last_name FROM employees WHERE barcode = ?')
+        .get(movement.employee_barcode.trim()) as { first_name: string; last_name: string } | undefined;
+      if (!employee) throw new Error('Barcode personale non riconosciuto. Scansiona il badge di un dipendente registrato.');
+      if (siteInventory(movement.productId, movement.fromSiteId) < movement.quantity) {
+        throw new Error('La quantità da trasferire supera la giacenza disponibile nella sede di partenza.');
+      }
+      adjustSiteInventory(movement.productId, movement.fromSiteId, -movement.quantity);
+      adjustSiteInventory(movement.productId, movement.toSiteId, movement.quantity);
+      const person = `${employee.first_name} ${employee.last_name}`.trim();
+      const note = `Trasferimento da ${fromSite.name} a ${toSite.name}`;
+      recordStockMovement(movement.productId, product.name, 'Scarico', movement.quantity, note, person, toSite.name, fromSite.name);
+      recordStockMovement(movement.productId, product.name, 'Carico', movement.quantity, note, person, fromSite.name, toSite.name);
     })();
   });
   ipcMain.handle('sale:checkout', (_event, sale: CheckoutInput) => {
@@ -732,7 +838,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       const receiptNo = receiptNumber();
       const result = database.prepare('INSERT INTO sales (receipt_no, created_at, payment_method, discount, gross_total, total, site) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .run(receiptNo, new Date().toISOString(), sale.payment_method, discount, grossTotal, amountPaid, site);
-      replaceItems(Number(result.lastInsertRowid), items);
+      replaceItems(Number(result.lastInsertRowid), items, siteIdByName(site));
       items.forEach((item) => recordStockMovement(
         item.product_id,
         item.name,
@@ -772,8 +878,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         const current = nextQuantities.get(item.product_id);
         nextQuantities.set(item.product_id, { quantity: (current?.quantity ?? 0) + item.quantity, name: item.name });
       });
-      replaceItems(sale.id, sale.items);
       const receipt = database.prepare('SELECT receipt_no, site FROM sales WHERE id = ?').get(sale.id) as { receipt_no: string; site: string } | undefined;
+      if (!receipt) throw new Error('Scontrino non trovato.');
+      replaceItems(sale.id, sale.items, siteIdByName(receipt.site));
       new Set([...previousQuantities.keys(), ...nextQuantities.keys()]).forEach((productId) => {
         const previous = previousQuantities.get(productId);
         const next = nextQuantities.get(productId);
@@ -804,8 +911,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       const receipt = database.prepare('SELECT receipt_no, site FROM sales WHERE id = ?').get(id) as { receipt_no: string; site: string } | undefined;
       if (!receipt) throw new Error('Scontrino non trovato.');
       const employee = employeeForLogin(employeeBarcode);
+      const siteId = siteIdByName(receipt.site);
       saleItems(id).forEach((item) => {
-        database.prepare('UPDATE products SET stock=stock+? WHERE id=?').run(item.quantity, item.product_id);
+        adjustSiteInventory(item.product_id, siteId, item.quantity);
         recordStockMovement(
           item.product_id,
           item.name,
@@ -964,6 +1072,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       (SELECT COUNT(*) FROM expenses WHERE site = ?) +
       (SELECT COUNT(*) FROM stock_movements WHERE site = ?) AS count`).get(site.name, site.name, site.name, site.name) as { count: number };
     if (used.count > 0) throw new Error('La sede contiene dipendenti, vendite o spese e non può essere eliminata.');
+    const stock = (database.prepare('SELECT COALESCE(SUM(stock), 0) AS quantity FROM site_inventory WHERE site_id = ?')
+      .get(siteId) as { quantity: number }).quantity;
+    if (stock > 0) throw new Error('Trasferisci prima tutte le giacenze della sede prima di eliminarla.');
     database.prepare('DELETE FROM sites WHERE id = ?').run(siteId);
   });
   ipcMain.handle('employee:save', (_event, employee: EmployeeInput) => {
