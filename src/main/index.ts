@@ -1028,7 +1028,6 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         ? (database.prepare('SELECT operational_site FROM employees WHERE id = ?').get(employee.id) as { operational_site: string }).operational_site
         : centralSiteName;
       const site = database.prepare('SELECT name FROM sites WHERE name = ?').get(employeeSite) ? employeeSite : centralSiteName;
-      if (site === centralSiteName) throw new Error('Il Magazzino centrale non è una sede di vendita. Trasferisci prima la merce a una sede operativa.');
       const voucher = voucherCode ? findValidVoucher(voucherCode) : undefined;
       if (voucherCode && !voucher) throw new Error('Buono sconto non valido, scaduto o già utilizzato.');
       const voucherDiscount = voucher

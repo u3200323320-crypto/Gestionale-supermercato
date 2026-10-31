@@ -1711,10 +1711,6 @@ export default function App() {
     setSaleAddOpen(false);
   };
   const addProductToCart = (product: Product, target: 'cash' | 'sale-edit' = 'cash') => {
-    if (target === 'cash' && activeSiteName === centralSiteName) {
-      notify('Il Magazzino centrale non è una sede di vendita. Trasferisci prima la merce a una sede operativa.');
-      return;
-    }
     if (product.unit === 'KG' || product.unit === 'LITRO') {
       setMeasuredProduct(product);
       setMeasuredTarget(target);
@@ -1925,11 +1921,6 @@ export default function App() {
     setCart((current) => current.map((item) => item.product_id === id ? { ...item, quantity: Math.max(0, roundQuantity(item.quantity + amount * step)) } : item).filter((item) => item.quantity > 0));
   };
   const checkout = async () => {
-    if (activeSiteName === centralSiteName) {
-      notify('Il Magazzino centrale non è una sede di vendita. Trasferisci prima la merce a una sede operativa.');
-      setCheckoutOpen(false);
-      return;
-    }
     try {
       const sale = await window.gestionale.checkout({
         items: cart,
@@ -2445,8 +2436,8 @@ export default function App() {
     statisticsStart.setFullYear(oldestSale.getFullYear(), oldestSale.getMonth(), 1);
   }
   const statisticsSales = statisticsPeriod === 'Tutti'
-    ? data?.sales.filter((sale) => sale.site !== centralSiteName) ?? []
-    : data?.sales.filter((sale) => sale.site !== centralSiteName && new Date(sale.created_at) >= statisticsStart) ?? [];
+    ? data?.sales ?? []
+    : data?.sales.filter((sale) => new Date(sale.created_at) >= statisticsStart) ?? [];
   const statisticsExpenses = (data?.expenses ?? []).filter((expense) =>
     expense.expense_date <= todayKey && (statisticsPeriod === 'Tutti' || expense.expense_date >= localDateKey(statisticsStart)));
   const statisticsWasteLoss = statisticsExpenses.filter((expense) => expense.category === 'Merce buttata').reduce((sum, expense) => sum + expense.amount, 0);
@@ -2750,13 +2741,12 @@ export default function App() {
     return saleDate >= rangeStart;
   };
   const salesList = data?.sales.filter((sale) =>
-  sale.site !== centralSiteName
-    && sale.receipt_no.includes(saleSearch)
+    sale.receipt_no.includes(saleSearch)
     && (salesCategory === 'Tutte' || sale.items.some((item) => data.products.some((product) => product.id === item.product_id && product.category === salesCategory)))
     && matchesSalesPeriod(sale.created_at)
   ) ?? [];
   const saleMatch = saleManagementSearch.trim()
-    ? data?.sales.find((sale) => sale.site !== centralSiteName && sale.receipt_no === saleManagementSearch.trim())
+    ? data?.sales.find((sale) => sale.receipt_no === saleManagementSearch.trim())
     : undefined;
   const siteStatsMatchesDate = (value: string) => {
     if (siteStatsPeriod === 'Da - A') {
@@ -2773,7 +2763,7 @@ export default function App() {
     else start.setMonth(start.getMonth() - (siteStatsPeriod === 'Ultimo mese' ? 1 : siteStatsPeriod === 'Ultimi 3 mesi' ? 3 : 6));
     return new Date(value.length === 10 ? `${value}T12:00:00` : value) >= start;
   };
-  const siteStatistics = (data?.sites ?? []).filter((site) => site.name !== centralSiteName).map((site) => {
+  const siteStatistics = (data?.sites ?? []).map((site) => {
     const sales = (data?.sales ?? []).filter((sale) => sale.site === site.name && siteStatsMatchesDate(sale.created_at));
     const expenses = (data?.expenses ?? []).filter((expense) => expense.site === site.name && siteStatsMatchesDate(expense.expense_date));
     const movements = (data?.stockMovements ?? []).filter((movement) => movement.site === site.name && siteStatsMatchesDate(movement.created_at));
@@ -3040,7 +3030,6 @@ export default function App() {
         </section>
       </div>}
 
-      {section === 'cash' && activeSiteName === centralSiteName && <div className="page-content cash-warehouse-notice"><Empty icon={Package} title="Magazzino centrale" detail="Da questa sede non si effettuano vendite. Distribuisci la merce a una sede operativa per iniziare." /></div>}
       {section === 'cash' && <div className="page-content cash-content"><div className="cash-layout">
         <section className="cash-products">
           <div className="cash-search-row"><div className="search-field"><Barcode size={17} /><input id="scanner-field" placeholder="Cerca o scansiona un codice a barre…" value={scannerSearch} onChange={(e) => setScannerSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scanCode(scannerSearch); } }} /><button type="button" className="search-clear" aria-label="Cancella ricerca" disabled={!scannerSearch} onClick={() => setScannerSearch('')}><X size={15} /></button></div><button className="icon-button camera-button" title="Scansiona con fotocamera" onClick={() => setCamera(true)}><Camera size={18} /></button></div>
@@ -3325,7 +3314,7 @@ function SearchInput({ value, onChange, placeholder, numericOnly = false }: { va
 }
 function SelectField({ label, value, onChange, options, labels, preserveLabels = false }: { label: string; value: string; onChange: (value: string) => void; options: string[]; labels?: string[]; preserveLabels?: boolean }) {
   const language = useContext(AppLanguageContext);
-  const visibleOptions = label === 'Sede' && options[0] === 'Tutte' ? options.filter((option) => option !== centralSiteName) : options;
+  const visibleOptions = options;
   return <label className="field"><span>{localizedText(label, language)}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{visibleOptions.map((option) => { const index = options.indexOf(option); const display = labels?.[index] ?? option; return <option key={`${option}-${index}`} value={option}>{preserveLabels && labels?.[index] ? display : localizedText(display, language)}</option>; })}</select></label>;
 }
 function ThermalPrinterField() {

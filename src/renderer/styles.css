@@ -818,9 +818,6 @@ body svg text { fill: #000 !important; }
 .homepage-media-frame img, .homepage-media-frame video { display: block; width: 100%; height: 100%; object-fit: cover; }
 .homepage-media-size { display: block; margin-top: 6px; font-size: 9px; }
 .homepage-media-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.cash-warehouse-notice { margin-bottom: 0; padding-bottom: 15px; }
-.cash-warehouse-notice + .cash-content .cash-layout { display: none; }
-
 @media (max-width: 1120px) {
   .expiry-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .employee-toolbar { grid-template-columns: minmax(0, 1fr) auto; }
