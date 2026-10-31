@@ -183,7 +183,7 @@ export interface AppState {
   employees: Employee[];
   employeeActivities: EmployeeActivity[];
   payrollPayments: PayrollPayment[];
-  settings: { shop_name: string; shop_logo?: string; home_image?: string; shop_address: string; shop_phone: string; shop_email: string; shop_tax_id: string; setup_complete: boolean; archive_folder: string; database_file: string; receipt_printer: string; receipt_printer_thermal: string; barcode_scanner_enabled: boolean; barcode_scanner_detected: boolean };
+  settings: { shop_name: string; shop_logo?: string; home_image?: string; home_video?: string; shop_address: string; shop_phone: string; shop_email: string; shop_tax_id: string; setup_complete: boolean; archive_folder: string; database_file: string; receipt_printer: string; receipt_printer_thermal: string; barcode_scanner_enabled: boolean; barcode_scanner_detected: boolean };
   stockMovements: StockMovement[];
   siteStocks: SiteStock[];
   expenses: Expense[];
@@ -211,14 +211,15 @@ declare global {
     getState: () => Promise<AppState>;
     onSalesExpired: (callback: () => void) => () => void;
     hasPin: () => Promise<boolean>;
-    verifyPin: (pin: string) => Promise<boolean>;
+    verifyPin: (pin: string) => Promise<AuthenticatedEmployee | null>;
     verifyEmployeeBarcode: (barcode: string) => Promise<boolean>;
     loginEmployee: (barcode: string) => Promise<AuthenticatedEmployee | null>;
+    logout: () => Promise<void>;
     setPin: (pin: string) => Promise<void>;
     saveProduct: (product: ProductInput) => Promise<void>;
     updateStock: (productId: number, stock: number) => Promise<void>;
     moveStock: (movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; employee_barcode: string; destination?: string; note: string }) => Promise<void>;
-    transferStock: (movement: { productId: number; fromSiteId: number; toSiteId: number; quantity: number; employee_barcode: string }) => Promise<void>;
+    transferStock: (movement: { fromSiteId: number; toSiteId: number; items: Array<{ productId: number; quantity: number }>; employee_barcode: string }) => Promise<void>;
     checkout: (sale: CheckoutInput) => Promise<Sale>;
     validateVoucher: (code: string) => Promise<VoucherValidation>;
     savePromotion: (promotion: PromotionInput) => Promise<void>;
@@ -244,12 +245,14 @@ declare global {
     activateLoyaltyCard: (input: { card_id: number; customer_id: number }) => Promise<void>;
     deleteLoyaltyCard: (id: number) => Promise<void>;
     saveExpense: (expense: Pick<Expense, 'description' | 'category' | 'amount' | 'expense_date' | 'site' | 'receipt_data'>) => Promise<void>;
+    openExpenseReceipt: (id: number) => Promise<void>;
     deleteExpense: (id: number) => Promise<void>;
     saveSite: (site: SiteInput, requesterBarcode: string) => Promise<void>;
     deleteSite: (siteId: number, requesterBarcode: string) => Promise<void>;
     chooseArchiveFolder: () => Promise<string | null>;
     chooseShopLogo: () => Promise<string | null>;
     chooseHomepageImage: () => Promise<string | null>;
+    chooseHomepageVideo: () => Promise<string | null>;
   }
 }
 }
