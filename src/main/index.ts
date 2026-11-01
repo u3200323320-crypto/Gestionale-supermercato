@@ -8,14 +8,22 @@ import { pathToFileURL } from 'node:url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
 import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, Employee, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, Sale, SaleItem, Site, SiteInput, SiteStock, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
+import { deleteSite, MAIN_SITE_NAME, migrateSites, saveSite, WAREHOUSE_SITE_NAME } from './site-service';
+
+declare const __APP_VARIANT__: 'management' | 'pos';
 
 let database: Database.Database;
 let mainWindow: BrowserWindow;
 let databaseFile = '';
 let salesRetentionInterval: NodeJS.Timeout | undefined;
-const centralSiteName = 'Magazzino centrale';
+const mainSiteName = MAIN_SITE_NAME;
+const warehouseSiteName = WAREHOUSE_SITE_NAME;
 const authenticatedSessions = new Map<number, AuthenticatedEmployee>();
 const saleActionAuthorizations = new Map<number, { barcode: string; expiresAt: number }>();
+
+if (__APP_VARIANT__ === 'pos') {
+  app.setPath('userData', join(app.getPath('appData'), 'gestionale-supermercato-pos'));
+}
 
 function localDate(date: Date): string {
   const year = date.getFullYear();
@@ -117,7 +125,7 @@ function employeeForLogin(value: unknown): AuthenticatedEmployee | null {
 function requireSession(senderId: number, allowedRoles?: string[]): AuthenticatedEmployee {
   const session = authenticatedSessions.get(senderId);
   if (!session || !session.id) throw new Error('Sessione non autenticata. Accedi nuovamente con il badge dipendente.');
-  if (allowedRoles && !allowedRoles.includes(normalizedEmployeeRole(session.role))) {
+  if (allowedRoles && normalizedEmployeeRole(session.role) !== 'proprietario' && !allowedRoles.includes(normalizedEmployeeRole(session.role))) {
     throw new Error('Il tuo ruolo non ha i permessi per eseguire questa operazione.');
   }
   return session;
@@ -320,7 +328,7 @@ function initDatabase(): void {
     CREATE TABLE IF NOT EXISTS sales (
       id INTEGER PRIMARY KEY AUTOINCREMENT, receipt_no TEXT NOT NULL UNIQUE,
       created_at TEXT NOT NULL, payment_method TEXT NOT NULL, discount REAL NOT NULL DEFAULT 0,
-      total REAL NOT NULL DEFAULT 0, site TEXT NOT NULL DEFAULT '${centralSiteName}'
+      total REAL NOT NULL DEFAULT 0, site TEXT NOT NULL DEFAULT '${mainSiteName}'
     );
     CREATE TABLE IF NOT EXISTS sale_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
@@ -338,13 +346,14 @@ function initDatabase(): void {
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sites (
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, address TEXT NOT NULL DEFAULT '',
-      phone TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
+      phone TEXT NOT NULL DEFAULT '', site_type TEXT NOT NULL DEFAULT 'store' CHECK(site_type IN ('store', 'warehouse')),
+      recognition_code TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS stock_movements (
       id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, product_name TEXT NOT NULL,
       movement_type TEXT NOT NULL CHECK(movement_type IN ('Carico', 'Scarico')),
       quantity REAL NOT NULL, created_at TEXT NOT NULL, person TEXT NOT NULL DEFAULT '',
-      destination TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', site TEXT NOT NULL DEFAULT '${centralSiteName}'
+      destination TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', site TEXT NOT NULL DEFAULT '${warehouseSiteName}'
     );
     CREATE TABLE IF NOT EXISTS site_inventory (
       product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -397,6 +406,13 @@ function initDatabase(): void {
       UNIQUE(employee_id, pay_month)
     );
   `);
+  const siteColumns = database.prepare('PRAGMA table_info(sites)').all() as Array<{ name: string }>;
+  if (!siteColumns.some((column) => column.name === 'site_type')) {
+    database.exec("ALTER TABLE sites ADD COLUMN site_type TEXT NOT NULL DEFAULT 'store'");
+  }
+  if (!siteColumns.some((column) => column.name === 'recognition_code')) {
+    database.exec("ALTER TABLE sites ADD COLUMN recognition_code TEXT NOT NULL DEFAULT ''");
+  }
   const employeeColumns = database.prepare('PRAGMA table_info(employees)').all() as Array<{ name: string }>;
   if (!employeeColumns.some((column) => column.name === 'payment_method')) {
     database.exec("ALTER TABLE employees ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'Contanti'");
@@ -414,7 +430,7 @@ function initDatabase(): void {
     database.exec("ALTER TABLE stock_movements ADD COLUMN destination TEXT NOT NULL DEFAULT ''");
   }
   if (!stockMovementColumns.some((column) => column.name === 'site')) {
-    database.exec(`ALTER TABLE stock_movements ADD COLUMN site TEXT NOT NULL DEFAULT '${centralSiteName}'`);
+    database.exec(`ALTER TABLE stock_movements ADD COLUMN site TEXT NOT NULL DEFAULT '${warehouseSiteName}'`);
   }
   const loyaltyCardColumns = database.prepare('PRAGMA table_info(loyalty_cards)').all() as Array<{ name: string }>;
   if (!loyaltyCardColumns.some((column) => column.name === 'barcode')) {
@@ -424,7 +440,7 @@ function initDatabase(): void {
   database.exec('CREATE UNIQUE INDEX IF NOT EXISTS loyalty_cards_barcode_unique ON loyalty_cards(barcode)');
   const saleColumns = database.prepare('PRAGMA table_info(sales)').all() as Array<{ name: string }>;
   if (!saleColumns.some((column) => column.name === 'site')) {
-    database.exec(`ALTER TABLE sales ADD COLUMN site TEXT NOT NULL DEFAULT '${centralSiteName}'`);
+    database.exec(`ALTER TABLE sales ADD COLUMN site TEXT NOT NULL DEFAULT '${mainSiteName}'`);
   }
   if (!saleColumns.some((column) => column.name === 'gross_total')) {
     database.exec('ALTER TABLE sales ADD COLUMN gross_total REAL NOT NULL DEFAULT 0');
@@ -440,36 +456,7 @@ function initDatabase(): void {
   if (!expenseColumns.some((column) => column.name === 'receipt_data')) {
     database.exec("ALTER TABLE expenses ADD COLUMN receipt_data TEXT NOT NULL DEFAULT ''");
   }
-  const legacyCentral = database.prepare("SELECT id FROM sites WHERE name = 'Sede principale'").get() as { id: number } | undefined;
-  const currentCentral = database.prepare('SELECT id FROM sites WHERE name = ?').get(centralSiteName) as { id: number } | undefined;
-  if (legacyCentral && currentCentral) {
-    database.transaction(() => {
-      database.prepare(`INSERT INTO site_inventory (product_id, site_id, stock)
-        SELECT product_id, ?, stock FROM site_inventory WHERE site_id = ?
-        ON CONFLICT(product_id, site_id) DO UPDATE SET stock = site_inventory.stock + excluded.stock`).run(currentCentral.id, legacyCentral.id);
-      database.prepare('UPDATE employees SET operational_site = ? WHERE operational_site = ?').run(centralSiteName, 'Sede principale');
-      database.prepare('UPDATE sales SET site = ? WHERE site = ?').run(centralSiteName, 'Sede principale');
-      database.prepare('UPDATE expenses SET site = ? WHERE site = ?').run(centralSiteName, 'Sede principale');
-      database.prepare('UPDATE stock_movements SET site = ? WHERE site = ?').run(centralSiteName, 'Sede principale');
-      database.prepare('UPDATE stock_movements SET destination = ? WHERE destination = ?').run(centralSiteName, 'Sede principale');
-      database.prepare('DELETE FROM site_inventory WHERE site_id = ?').run(legacyCentral.id);
-      database.prepare('DELETE FROM sites WHERE id = ?').run(legacyCentral.id);
-    })();
-  } else if (legacyCentral) {
-    database.prepare('UPDATE sites SET name = ? WHERE id = ?').run(centralSiteName, legacyCentral.id);
-    database.prepare('UPDATE employees SET operational_site = ? WHERE operational_site = ?').run(centralSiteName, 'Sede principale');
-    database.prepare('UPDATE sales SET site = ? WHERE site = ?').run(centralSiteName, 'Sede principale');
-    database.prepare('UPDATE expenses SET site = ? WHERE site = ?').run(centralSiteName, 'Sede principale');
-    database.prepare('UPDATE stock_movements SET site = ? WHERE site = ?').run(centralSiteName, 'Sede principale');
-    database.prepare('UPDATE stock_movements SET destination = ? WHERE destination = ?').run(centralSiteName, 'Sede principale');
-  }
-  database.prepare('INSERT OR IGNORE INTO sites (name, address, phone, created_at) VALUES (?, ?, ?, ?)').run(centralSiteName, '', '', new Date().toISOString());
-  database.prepare(`INSERT OR IGNORE INTO sites (name, address, phone, created_at)
-    SELECT DISTINCT operational_site, '', '', ? FROM employees WHERE TRIM(operational_site) != ''`).run(new Date().toISOString());
-  database.prepare(`INSERT OR IGNORE INTO site_inventory (product_id, site_id, stock)
-    SELECT products.id, sites.id, products.stock FROM products
-    JOIN sites ON sites.name = '${centralSiteName}'`).run();
-  database.prepare("UPDATE expenses SET site = ? WHERE site IN ('Negozio', 'Non assegnata', '')").run(centralSiteName);
+  migrateSites(database);
   const promotionColumns = database.prepare('PRAGMA table_info(promotions)').all() as Array<{ name: string }>;
   for (const [column, definition] of [
     ['discount_type', "TEXT NOT NULL DEFAULT 'percentage'"],
@@ -520,7 +507,7 @@ function initDatabase(): void {
   }
   database.prepare(`INSERT OR IGNORE INTO site_inventory (product_id, site_id, stock)
     SELECT products.id, sites.id, products.stock FROM products
-    JOIN sites ON sites.name = '${centralSiteName}'`).run();
+    JOIN sites ON sites.name = '${mainSiteName}'`).run();
   database.prepare(`UPDATE products SET stock = (SELECT COALESCE(SUM(stock), 0)
     FROM site_inventory WHERE site_inventory.product_id = products.id)`).run();
   removeExpiredRecords();
@@ -552,8 +539,8 @@ function adjustSiteInventory(productId: number, siteId: number, delta: number): 
 function siteIdByName(name: string): number {
   const site = database.prepare('SELECT id FROM sites WHERE name = ?').get(name) as { id: number } | undefined;
   if (site) return site.id;
-  const mainSite = database.prepare('SELECT id FROM sites WHERE name = ?').get(centralSiteName) as { id: number } | undefined;
-  if (!mainSite) throw new Error('Magazzino centrale non trovato.');
+  const mainSite = database.prepare('SELECT id FROM sites WHERE name = ?').get(mainSiteName) as { id: number } | undefined;
+  if (!mainSite) throw new Error('Punto vendita principale non trovato.');
   return mainSite.id;
 }
 
@@ -574,7 +561,7 @@ function replaceItems(saleId: number, items: SaleItem[], siteId: number): void {
   }
 }
 
-function recordStockMovement(productId: number, productName: string, type: 'Carico' | 'Scarico', quantity: number, note: string, person = '', destination = '', site = centralSiteName): void {
+function recordStockMovement(productId: number, productName: string, type: 'Carico' | 'Scarico', quantity: number, note: string, person = '', destination = '', site = warehouseSiteName): void {
   database.prepare(`INSERT INTO stock_movements (product_id, product_name, movement_type, quantity, created_at, person, destination, note, site)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(productId, productName, type, quantity, new Date().toISOString(), person, destination, note, site);
 }
@@ -798,8 +785,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       authenticatedSessions.delete(event.sender.id);
       return null;
     }
-    const candidates = database.prepare(`SELECT id, first_name, last_name, role, barcode, operational_site
-      FROM employees WHERE operational_site != ? ORDER BY id`).all(centralSiteName) as Array<AuthenticatedEmployee & { operational_site: string }>;
+    const candidates = database.prepare(`SELECT employees.id, employees.first_name, employees.last_name, employees.role, employees.barcode, employees.operational_site
+      FROM employees JOIN sites ON sites.name = employees.operational_site
+      WHERE sites.site_type = 'store' ORDER BY employees.id`).all() as Array<AuthenticatedEmployee & { operational_site: string }>;
     const fallbackEmployee = candidates.find((employee) => normalizedEmployeeRole(employee.role) === 'cassiere');
     if (!fallbackEmployee) throw new Error('Il PIN è valido, ma non esiste un dipendente di cassa assegnato a una sede operativa.');
     const authenticatedEmployee: AuthenticatedEmployee = {
@@ -851,11 +839,11 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       throw new Error('Controlla i dati dell’articolo e la data di scadenza.');
     }
     database.transaction(() => {
-      const mainSiteId = siteIdByName(centralSiteName);
+      const warehouseSiteId = siteIdByName(warehouseSiteName);
       const existing = database.prepare('SELECT id FROM products WHERE code = ?').get(product.code.trim()) as { id: number } | undefined;
       const otherSiteStock = existing
         ? (database.prepare('SELECT COALESCE(SUM(stock), 0) AS stock FROM site_inventory WHERE product_id = ? AND site_id != ?')
-          .get(existing.id, mainSiteId) as { stock: number }).stock
+          .get(existing.id, warehouseSiteId) as { stock: number }).stock
         : 0;
       if (product.stock < otherSiteStock) throw new Error('La giacenza totale non può essere inferiore alle quantità già assegnate alle altre sedi.');
       database.prepare(`INSERT INTO products (code, name, unit, category, sale_price, purchase_price, stock, low_stock_threshold, expiry_enabled, expiry_date)
@@ -872,7 +860,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       const saved = database.prepare('SELECT id FROM products WHERE code = ?').get(product.code.trim()) as { id: number };
       const mainStock = product.stock - otherSiteStock;
       database.prepare(`INSERT INTO site_inventory (product_id, site_id, stock) VALUES (?, ?, ?)
-        ON CONFLICT(product_id, site_id) DO UPDATE SET stock = excluded.stock`).run(saved.id, mainSiteId, mainStock);
+        ON CONFLICT(product_id, site_id) DO UPDATE SET stock = excluded.stock`).run(saved.id, warehouseSiteId, mainStock);
     })();
   });
   ipcMain.handle('product:delete', (event, productId: number) => {
@@ -904,11 +892,12 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         recordStockMovement(productId, product.name, 'Scarico', stock, 'Smaltimento prodotto scaduto', '', '', site.name);
       });
       database.prepare(`INSERT INTO expenses (description, category, amount, expense_date, created_at, site)
-        VALUES (?, 'Merce buttata', ?, ?, ?, 'Negozio')`).run(
+        VALUES (?, 'Merce buttata', ?, ?, ?, ?)`).run(
         `Perdita merce scaduta: ${product.name}`,
         quantities.reduce((total, { stock }) => total + stock, 0) * product.purchase_price,
         localDate(new Date()),
         new Date().toISOString(),
+        mainSiteName,
       );
     })();
   });
@@ -920,12 +909,12 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     database.transaction(() => {
       const product = database.prepare('SELECT id FROM products WHERE id = ?').get(productId) as { id: number } | undefined;
       if (!product) throw new Error('Articolo non trovato.');
-      const mainSiteId = siteIdByName(centralSiteName);
+      const warehouseSiteId = siteIdByName(warehouseSiteName);
       const otherStock = (database.prepare('SELECT COALESCE(SUM(stock), 0) AS stock FROM site_inventory WHERE product_id = ? AND site_id != ?')
-        .get(productId, mainSiteId) as { stock: number }).stock;
+        .get(productId, warehouseSiteId) as { stock: number }).stock;
       if (stock < otherStock) throw new Error('La giacenza totale non può essere inferiore alle quantità già assegnate alle altre sedi.');
       database.prepare(`INSERT INTO site_inventory (product_id, site_id, stock) VALUES (?, ?, ?)
-        ON CONFLICT(product_id, site_id) DO UPDATE SET stock = excluded.stock`).run(productId, mainSiteId, stock - otherStock);
+        ON CONFLICT(product_id, site_id) DO UPDATE SET stock = excluded.stock`).run(productId, warehouseSiteId, stock - otherStock);
       database.prepare('UPDATE products SET stock = ? WHERE id = ?').run(stock, productId);
     })();
   });
@@ -977,10 +966,10 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       throw new Error('Seleziona sedi diverse e almeno un articolo con quantità valida.');
     }
     database.transaction(() => {
-      const fromSite = database.prepare('SELECT name FROM sites WHERE id = ?').get(movement.fromSiteId) as { name: string } | undefined;
-      const toSite = database.prepare('SELECT name FROM sites WHERE id = ?').get(movement.toSiteId) as { name: string } | undefined;
+      const fromSite = database.prepare('SELECT name, site_type FROM sites WHERE id = ?').get(movement.fromSiteId) as { name: string; site_type: 'store' | 'warehouse' } | undefined;
+      const toSite = database.prepare('SELECT name, site_type FROM sites WHERE id = ?').get(movement.toSiteId) as { name: string; site_type: 'store' | 'warehouse' } | undefined;
       if (!fromSite || !toSite) throw new Error('Sede di partenza o di destinazione non trovata.');
-      if (fromSite.name !== 'Magazzino centrale') throw new Error('La sede di partenza deve essere il Magazzino centrale.');
+      if (fromSite.site_type !== 'warehouse') throw new Error(`La sede di partenza deve essere ${warehouseSiteName}.`);
       const employee = database.prepare('SELECT first_name, last_name, role FROM employees WHERE barcode = ?')
         .get(movement.employee_barcode.trim()) as { first_name: string; last_name: string; role: string } | undefined;
       if (!employee) throw new Error('Barcode personale non riconosciuto. Scansiona il badge di un dipendente registrato.');
@@ -992,7 +981,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         const product = database.prepare('SELECT name FROM products WHERE id = ?').get(item.productId) as { name: string } | undefined;
         if (!product) throw new Error('Articolo non trovato.');
         if (siteInventory(item.productId, movement.fromSiteId) < item.quantity) {
-          throw new Error(`Quantità insufficiente per ${product.name} nel Magazzino centrale.`);
+          throw new Error(`Quantità insufficiente per ${product.name} nel ${warehouseSiteName}.`);
         }
         adjustSiteInventory(item.productId, movement.fromSiteId, -item.quantity);
         adjustSiteInventory(item.productId, movement.toSiteId, item.quantity);
@@ -1026,8 +1015,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       const employee = employeeForLogin(session.barcode);
       const employeeSite = employee
         ? (database.prepare('SELECT operational_site FROM employees WHERE id = ?').get(employee.id) as { operational_site: string }).operational_site
-        : centralSiteName;
-      const site = database.prepare('SELECT name FROM sites WHERE name = ?').get(employeeSite) ? employeeSite : centralSiteName;
+        : mainSiteName;
+      const site = database.prepare('SELECT name, site_type FROM sites WHERE name = ?').get(employeeSite) as { name: string; site_type: 'store' | 'warehouse' } | undefined;
+      if (!site || site.site_type !== 'store') throw new Error('La sede Magazzino non è abilitata alla registrazione delle vendite.');
       const voucher = voucherCode ? findValidVoucher(voucherCode) : undefined;
       if (voucherCode && !voucher) throw new Error('Buono sconto non valido, scaduto o già utilizzato.');
       const voucherDiscount = voucher
@@ -1037,8 +1027,8 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       const amountPaid = Math.max(0, grossTotal - discount);
       const receiptNo = receiptNumber();
       const result = database.prepare('INSERT INTO sales (receipt_no, created_at, payment_method, discount, gross_total, total, site) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(receiptNo, new Date().toISOString(), sale.payment_method, discount, grossTotal, amountPaid, site);
-      replaceItems(Number(result.lastInsertRowid), items, siteIdByName(site));
+        .run(receiptNo, new Date().toISOString(), sale.payment_method, discount, grossTotal, amountPaid, site.name);
+      replaceItems(Number(result.lastInsertRowid), items, siteIdByName(site.name));
       items.forEach((item) => recordStockMovement(
         item.product_id,
         item.name,
@@ -1046,8 +1036,8 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         item.quantity,
         `Vendita #${receiptNo}`,
         employee ? `${employee.first_name} ${employee.last_name}`.trim() : '',
-        site,
-        site,
+        site.name,
+        site.name,
       ));
       if (voucher) {
         database.prepare('DELETE FROM vouchers WHERE id = ?').run(voucher.id);
@@ -1108,7 +1098,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
             `Modifica vendita #${receipt?.receipt_no ?? sale.id}`,
             employee ? `${employee.first_name} ${employee.last_name}`.trim() : '',
             '',
-            receipt?.site ?? centralSiteName,
+            receipt?.site ?? mainSiteName,
           );
         }
       });
@@ -1138,7 +1128,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
           `Vendita #${receipt?.receipt_no ?? id} eliminata`,
           employee ? `${employee.first_name} ${employee.last_name}`.trim() : '',
           '',
-          receipt?.site ?? centralSiteName,
+          receipt?.site ?? mainSiteName,
         );
       });
       database.prepare('DELETE FROM sales WHERE id=?').run(id);
@@ -1294,54 +1284,14 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     if (session.barcode !== requesterBarcode?.trim()) throw new Error('La sessione non corrisponde al proprietario che gestisce le sedi.');
     const requester = employeeForLogin(requesterBarcode);
     if (!requester || normalizedEmployeeRole(requester.role) !== 'proprietario') throw new Error('Solo il Proprietario può gestire le sedi.');
-    if (!input || typeof input.name !== 'string' || !input.name.trim() || input.name.trim().length > 80
-      || typeof input.address !== 'string' || input.address.length > 200
-      || typeof input.phone !== 'string' || input.phone.length > 40
-      || (input.id !== undefined && (!Number.isInteger(input.id) || input.id < 1))) throw new Error('I dati della sede non sono validi.');
-    const name = input.name.trim();
-    try {
-      if (input.id !== undefined) {
-        const existing = database.prepare('SELECT name FROM sites WHERE id = ?').get(input.id) as { name: string } | undefined;
-        if (!existing) throw new Error('Sede non trovata.');
-        if (existing.name === centralSiteName && name !== existing.name) throw new Error('Il nome del Magazzino centrale non può essere modificato.');
-        database.transaction(() => {
-          database.prepare('UPDATE sites SET name = ?, address = ?, phone = ? WHERE id = ?').run(name, input.address.trim(), input.phone.trim(), input.id);
-          if (existing.name !== name) {
-            database.prepare('UPDATE employees SET operational_site = ? WHERE operational_site = ?').run(name, existing.name);
-            database.prepare('UPDATE sales SET site = ? WHERE site = ?').run(name, existing.name);
-            database.prepare('UPDATE expenses SET site = ? WHERE site = ?').run(name, existing.name);
-            database.prepare('UPDATE stock_movements SET site = ? WHERE site = ?').run(name, existing.name);
-            database.prepare('UPDATE stock_movements SET destination = ? WHERE destination = ?').run(name, existing.name);
-          }
-        })();
-      } else {
-        database.prepare('INSERT INTO sites (name, address, phone, created_at) VALUES (?, ?, ?, ?)')
-          .run(name, input.address.trim(), input.phone.trim(), new Date().toISOString());
-      }
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('UNIQUE constraint failed: sites.name')) throw new Error('Esiste già una sede con questo nome.');
-      throw error;
-    }
+    saveSite(database, input);
   });
   ipcMain.handle('site:delete', (event, siteId: number, requesterBarcode: string) => {
     const session = requireSession(event.sender.id, ['proprietario']);
     if (session.barcode !== requesterBarcode?.trim()) throw new Error('La sessione non corrisponde al proprietario che gestisce le sedi.');
     const requester = employeeForLogin(requesterBarcode);
     if (!requester || normalizedEmployeeRole(requester.role) !== 'proprietario') throw new Error('Solo il Proprietario può gestire le sedi.');
-    if (!Number.isInteger(siteId) || siteId < 1) throw new Error('Sede non valida.');
-    const site = database.prepare('SELECT name FROM sites WHERE id = ?').get(siteId) as { name: string } | undefined;
-    if (!site) throw new Error('Sede non trovata.');
-    if (site.name === centralSiteName) throw new Error('Il Magazzino centrale non può essere eliminato.');
-    const used = database.prepare(`SELECT
-      (SELECT COUNT(*) FROM employees WHERE operational_site = ?) +
-      (SELECT COUNT(*) FROM sales WHERE site = ?) +
-      (SELECT COUNT(*) FROM expenses WHERE site = ?) +
-      (SELECT COUNT(*) FROM stock_movements WHERE site = ?) AS count`).get(site.name, site.name, site.name, site.name) as { count: number };
-    if (used.count > 0) throw new Error('La sede contiene dipendenti, vendite o spese e non può essere eliminata.');
-    const stock = (database.prepare('SELECT COALESCE(SUM(stock), 0) AS quantity FROM site_inventory WHERE site_id = ?')
-      .get(siteId) as { quantity: number }).quantity;
-    if (stock > 0) throw new Error('Trasferisci prima tutte le giacenze della sede prima di eliminarla.');
-    database.prepare('DELETE FROM sites WHERE id = ?').run(siteId);
+    deleteSite(database, siteId);
   });
   ipcMain.handle('employee:save', (event, employee: EmployeeInput) => {
     const requiredText: Array<keyof EmployeeInput> = [

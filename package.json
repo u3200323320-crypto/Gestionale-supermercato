@@ -9,7 +9,9 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit",
-    "dist:win": "electron-vite build && electron-builder --win nsis --publish never"
+    "dist:win": "node build/build-windows.cjs management",
+    "dist:win:pos": "node build/build-windows.cjs pos",
+    "dist:win:all": "node build/build-windows.cjs all"
   },
   "dependencies": {
     "@fontsource/dm-sans": "^5.2.6",

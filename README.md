@@ -11,18 +11,25 @@ npm ci
 npm run dev
 ```
 
-Per creare manualmente l'installer Windows:
+Per creare manualmente l'installer Windows della gestione:
 
 ```sh
 npm run dist:win
 ```
 
-Il file `Gestione-Supermercato-Setup-<versione>.exe` viene generato nella cartella `release`.
+Per creare l'installer della cassa o entrambi gli installer:
+
+```sh
+npm run dist:win:pos
+npm run dist:win:all
+```
+
+Gli installer vengono generati nelle cartelle `release/management` e `release/pos`. La versione POS mostra solo Cassa e Modifica o Elimina e usa un database locale separato, senza sincronizzazione con la gestione.
 La prima installazione attende tre minuti per completare la configurazione iniziale; gli aggiornamenti successivi non includono questa attesa.
 
 ## Dati e dispositivi
 
-Il database SQLite viene salvato nella cartella dati utente di Windows e conserva prodotti, date di scadenza attivate, movimenti di magazzino, vendite, scontrini, promozioni e impostazioni. La sezione Magazzino include le pagine per il catalogo, lo storico dei carichi e scarichi e la registrazione di nuovi movimenti. Al primo avvio aggiornato, le vendite già archiviate vengono importate nello storico senza alterare le giacenze. La sezione Impostazioni > Archivio dati permette di scegliere dove salvare i report giornalieri in PDF, suddivisi in cartelle per Magazzino, Cassa, Vendite, Promozioni e Statistiche. I vecchi file TXT con nome data nelle cartelle di backup vengono rimossi quando il backup giornaliero viene aggiornato. Dopo aver configurato la cartella, per modificarla è richiesta una conferma aggiuntiva. Il backup viene eseguito a mezzanotte; se il gestionale è chiuso, recupera i giorni mancanti al successivo avvio.
+Il database SQLite della gestione viene salvato nella cartella dati utente di Windows e conserva prodotti, date di scadenza attivate, movimenti di magazzino, vendite, scontrini, promozioni e impostazioni. La cassa usa un archivio locale distinto e, per il momento, non comunica con la gestione. Ogni sede dispone di un codice di riconoscimento di 10 caratteri minuscoli alfanumerici. La sezione Magazzino include le pagine per il catalogo, lo storico dei carichi e scarichi e la registrazione di nuovi movimenti. Al primo avvio aggiornato, le vendite già archiviate vengono importate nello storico senza alterare le giacenze. La sezione Impostazioni > Archivio dati permette di scegliere dove salvare i report giornalieri in PDF, suddivisi in cartelle per Magazzino, Cassa, Vendite, Promozioni e Statistiche. I vecchi file TXT con nome data nelle cartelle di backup vengono rimossi quando il backup giornaliero viene aggiornato. Dopo aver configurato la cartella, per modificarla è richiesta una conferma aggiuntiva. Il backup viene eseguito a mezzanotte; se il gestionale è chiuso, recupera i giorni mancanti al successivo avvio.
 
 La sezione Dipendenti permette di registrare dati anagrafici e contrattuali, foto del dipendente e dei documenti e il contratto PDF. La password iniziale viene salvata come hash nel database locale; la lista è ricercabile ed esportabile in PDF, con una scheda per dipendente che include foto e dati anagrafici e contrattuali. Il Tracker Dipendenti registra gli accessi alle sezioni e le principali operazioni effettuate; consente di filtrare per periodo e dipendente, scaricare il registro e stamparlo. I buoni sconto generati includono un codice composto dal nome del negozio e da 10 cifre casuali, con il barcode corrispondente. I gruppi di buoni possono essere modificati o eliminati dalla lista.
 
