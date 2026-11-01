@@ -338,7 +338,8 @@ const appThemes = [
   { id: 'blue', label: 'Blu', color: '#42A4F6' },
 ] as const;
 type AppTheme = typeof appThemes[number]['id'];
-const centralSiteName = 'Magazzino centrale';
+const mainSiteName = 'Punto vendita principale';
+const warehouseSiteName = 'Magazzino';
 type PromotionMinimum = 'none' | 'spend' | 'kilograms' | 'pieces';
 const nav: { section: Section; label: string; icon: typeof House }[] = [
   { section: 'home', label: 'Homepage', icon: House }, { section: 'inventory', label: 'Magazzino', icon: Package },
@@ -360,10 +361,9 @@ function normalizedRole(role: string): string {
   return role.trim().toLocaleLowerCase('it-IT').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 function canAccessSection(role: string, section: Section): boolean {
+  if (normalizedRole(role) === 'proprietario') return true;
   if (['customer-list', 'loyalty-generate', 'loyalty-activate', 'loyalty-active'].includes(section)) return false;
   switch (normalizedRole(role)) {
-    case 'proprietario':
-      return true;
     case 'cassiere':
       return section === 'cash' || section === 'sale-management' || section === 'settings';
     case 'direttore':
@@ -508,7 +508,7 @@ function BarcodeImage({ value }: { value: string }) {
   return <svg className="barcode-image" ref={barcode} role="img" aria-label={`Barcode ${value}`} />;
 }
 
-function EmployeeForm({ initial, save, cancel, notify, canDelete = false, onDelete, sites = [centralSiteName] }: { initial: EmployeeInput; save: (employee: EmployeeInput) => Promise<void>; cancel: () => void; notify: (message: string) => void; canDelete?: boolean; onDelete?: () => Promise<void>; sites?: string[] }) {
+function EmployeeForm({ initial, save, cancel, notify, canDelete = false, onDelete, sites = [mainSiteName] }: { initial: EmployeeInput; save: (employee: EmployeeInput) => Promise<void>; cancel: () => void; notify: (message: string) => void; canDelete?: boolean; onDelete?: () => Promise<void>; sites?: string[] }) {
   const [employee, setEmployee] = useState(initial);
   const [roleOptions, setRoleOptions] = useState<string[]>(() => {
     try {
@@ -758,7 +758,7 @@ export default function App() {
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseDate, setExpenseDate] = useState(localDateKey());
   const [expenseReceiptData, setExpenseReceiptData] = useState('');
-  const [expenseSite, setExpenseSite] = useState(centralSiteName);
+  const [expenseSite, setExpenseSite] = useState(mainSiteName);
   const [siteDraft, setSiteDraft] = useState<SiteInput | null>(null);
   const [siteStatsPeriod, setSiteStatsPeriod] = useState('Ultimi 6 mesi');
   const [siteStatsFrom, setSiteStatsFrom] = useState(localDateKey());
@@ -819,9 +819,11 @@ export default function App() {
     }
   };
   const activeRole = currentUser?.role ?? (data && data.employees.length === 0 ? 'Proprietario' : 'cassiere');
-  const activeSiteName = data?.employees.find((employee) => employee.id === currentUser?.id)?.operational_site ?? centralSiteName;
+  const activeSiteName = data?.employees.find((employee) => employee.id === currentUser?.id)?.operational_site ?? mainSiteName;
+  const activeSiteType = data?.sites.find((site) => site.name === activeSiteName)?.site_type;
+  const salesDisabled = activeSiteType === 'warehouse';
   const activeSiteId = data?.sites.find((site) => site.name === activeSiteName)?.id;
-  const distributionFromSite = data?.sites.find((site) => site.name === centralSiteName);
+  const distributionFromSite = data?.sites.find((site) => site.site_type === 'warehouse');
   const distributionFromSiteId = distributionFromSite ? String(distributionFromSite.id) : '';
   const siteStockFor = (productId: number, siteId = activeSiteId) =>
     data?.siteStocks.find((item) => item.product_id === productId && item.site_id === siteId)?.stock ?? 0;
@@ -836,15 +838,16 @@ export default function App() {
     }).catch((error: unknown) => notify(`Impossibile registrare l’attività: ${errorText(error)}`));
   };
   const navigateTo = (target: Section) => {
-    if (!locked && data && !canAccess(target)) {
+    const nextTarget = target === 'site-management' ? 'site-list' : target;
+    if (!locked && data && !canAccess(nextTarget)) {
       notify('Non hai i permessi per accedere a questa sezione.');
       return;
     }
-    if (target !== section) trackActivity(sectionNames[target] ?? nav.find((item) => item.section === target)?.label ?? target, 'Apertura sezione');
-    setSection(target);
-    if (target !== 'sale-management') setSaleManagementSearch('');
+    if (nextTarget !== section) trackActivity(sectionNames[nextTarget] ?? nav.find((item) => item.section === nextTarget)?.label ?? nextTarget, 'Apertura sezione');
+    setSection(nextTarget);
+    if (nextTarget !== 'sale-management') setSaleManagementSearch('');
     setOpenSidebarMenu(null);
-    if (target === 'employee-tracker') void refresh();
+    if (nextTarget === 'employee-tracker') void refresh();
   };
   const downloadEmployeeBadge = async (employee: Employee) => {
     const canvas = document.createElement('canvas');
@@ -894,7 +897,7 @@ export default function App() {
       for (const [key, value] of settings) await window.gestionale.saveSetting(key, value);
       const next = await refresh();
       setShopName(next.settings.shop_name);
-      setSetupOwnerDraft({ ...newEmployeeDraft(next.employees), role: 'Proprietario', operational_site: centralSiteName });
+      setSetupOwnerDraft({ ...newEmployeeDraft(next.employees), role: 'Proprietario', operational_site: mainSiteName });
       setSetupStep('owner');
     } catch (error) { notify(errorText(error)); }
   };
@@ -997,7 +1000,7 @@ export default function App() {
       await window.gestionale.saveSite(siteDraft, currentUser.barcode);
       await refresh();
       setSiteDraft(null);
-      setSection('site-management');
+      setSection('site-list');
       notify('Sede salvata.');
     } catch (error) { notify(errorText(error)); }
   };
@@ -1711,6 +1714,10 @@ export default function App() {
     setSaleAddOpen(false);
   };
   const addProductToCart = (product: Product, target: 'cash' | 'sale-edit' = 'cash') => {
+    if (target === 'cash' && salesDisabled) {
+      notify('La sede Magazzino non può registrare vendite.');
+      return;
+    }
     if (product.unit === 'KG' || product.unit === 'LITRO') {
       setMeasuredProduct(product);
       setMeasuredTarget(target);
@@ -1921,6 +1928,10 @@ export default function App() {
     setCart((current) => current.map((item) => item.product_id === id ? { ...item, quantity: Math.max(0, roundQuantity(item.quantity + amount * step)) } : item).filter((item) => item.quantity > 0));
   };
   const checkout = async () => {
+    if (salesDisabled) {
+      notify('La sede Magazzino non può registrare vendite.');
+      return;
+    }
     try {
       const sale = await window.gestionale.checkout({
         items: cart,
@@ -2040,8 +2051,8 @@ export default function App() {
         doc.text(value, x, 51, rtl ? { align: 'right' } : undefined);
       });
       const reportHeaders = rtl
-        ? ['رقم الإيصال', 'التاريخ والوقت', 'المنتجات', 'الدفع', 'سعر الشراء', 'سعر البيع', 'الربح', 'الخصم', 'الإجمالي']
-        : ['Scontrino', 'Data e ora', 'Articoli', 'Pagamento', 'Prezzo acquisto', 'Prezzo vendita', 'Profitto', 'Sconto', 'Totale'];
+        ? ['رقم الإيصال', 'التاريخ والوقت', 'الشخص', 'المنتجات', 'الدفع', 'سعر الشراء', 'سعر البيع', 'الربح', 'الخصم', 'الإجمالي']
+        : ['Scontrino', 'Data e ora', 'Persona', 'Articoli', 'Pagamento', 'Prezzo acquisto', 'Prezzo vendita', 'Profitto', 'Sconto', 'Totale'];
       autoTable(doc, {
         startY: 64,
         head: [rtl ? [...reportHeaders].reverse() : reportHeaders],
@@ -2049,12 +2060,12 @@ export default function App() {
           const purchasePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.purchase_price, 0);
           const salePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
           const totalQuantity = sale.items.reduce((sum, item) => sum + item.quantity, 0);
-          const row = [sale.receipt_no, dateTimeText(new Date(sale.created_at)), quantityFormat.format(totalQuantity), rtl ? localizedText(sale.payment_method, language) : sale.payment_method, money.format(purchasePrice), money.format(salePrice), money.format(sale.total - purchasePrice), money.format(sale.discount), money.format(sale.total)];
+          const row = [sale.receipt_no, dateTimeText(new Date(sale.created_at)), sale.person || '—', quantityFormat.format(totalQuantity), rtl ? localizedText(sale.payment_method, language) : sale.payment_method, money.format(purchasePrice), money.format(salePrice), money.format(sale.total - purchasePrice), money.format(sale.discount), money.format(sale.total)];
           return rtl ? row.reverse() : row;
         }),
         showHead: 'firstPage',
         theme: 'striped',
-        styles: { font: rtl ? 'DejaVuSans' : 'helvetica', fontSize: rtl ? 5.5 : 6.5, cellPadding: 2, overflow: 'linebreak', textColor: [49, 60, 53], lineColor: [224, 230, 224], halign: rtl ? 'right' : 'left' },
+        styles: { font: rtl ? 'DejaVuSans' : 'helvetica', fontSize: rtl ? 5.25 : 6, cellPadding: 2, overflow: 'linebreak', textColor: [49, 60, 53], lineColor: [224, 230, 224], halign: rtl ? 'right' : 'left' },
         headStyles: { fillColor: [56, 104, 78], textColor: [255, 255, 255], fontStyle: 'bold', halign: rtl ? 'right' : 'left' },
         alternateRowStyles: { fillColor: [244, 247, 244] },
         margin: { left: 8, right: 8, bottom: 14 },
@@ -2072,6 +2083,24 @@ export default function App() {
     } catch (error) {
       notify(errorText(error));
     }
+  };
+  const exportInventoryCsv = () => {
+    if (!data) return;
+    const escapeCell = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
+    const rows: Array<Array<string | number>> = [
+      ['Articolo', 'Codice', 'Categoria', 'Prezzo vendita', 'Prezzo acquisto', 'Giacenza', 'Soglia minima', 'Data scadenza'],
+      ...data.products.map((item) => [
+        item.name, item.code, item.category, item.sale_price, item.purchase_price, item.stock,
+        item.low_stock_threshold, item.expiry_enabled ? item.expiry_date ?? '' : '',
+      ]),
+    ];
+    const csv = `\uFEFF${rows.map((row) => row.map(escapeCell).join(';')).join('\r\n')}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `magazzino-${todayKey}.csv`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const exportInventoryReport = async () => {
     if (!data) return;
@@ -2166,15 +2195,14 @@ export default function App() {
         ['Netto', reportMoney(stockSaleValue - stockValue)],
       ];
       summary.forEach(([label, value], index) => {
-        const x = rtl ? 198 - index * 48 : 11 + index * 48;
+        const column = index % 2;
+        const row = Math.floor(index / 2);
+        const x = rtl ? 198 - column * 96 : 11 + column * 96;
+        const text = rtl ? `${value} ${label}` : `${label}: ${value}`;
         if (rtl) {
-          doc.setR2L(false);
-          doc.text(label, x, summaryY + 11, { maxWidth: 37, align: 'right' });
-          doc.text(value, x, summaryY + 24, { maxWidth: 37, align: 'right' });
-          doc.setR2L(true);
+          doc.text(text, x, summaryY + 10 + row * 12, { maxWidth: 90, align: 'right' });
         } else {
-          doc.text(label, x, summaryY + 11, { maxWidth: 37 });
-          doc.text(value, x, summaryY + 24, { maxWidth: 37 });
+          doc.text(text, x, summaryY + 10 + row * 12, { maxWidth: 90 });
         }
       });
       doc.save(rtl ? `تقرير-المخزون-${todayKey}.pdf` : `report-magazzino-${todayKey}.pdf`);
@@ -2249,15 +2277,16 @@ export default function App() {
       const rtl = language === 'ar';
       const sales = data.sales.filter((sale) => !respectTimeFilters || matchesSalesPeriod(sale.created_at));
       const headers = rtl
-        ? ['رقم الإيصال', 'التاريخ والوقت', 'طريقة الدفع', 'المنتجات', 'الكمية الإجمالية', 'الإجمالي قبل الخصم', 'الخصم', 'الإجمالي بعد الخصم']
-        : ['N° scontrino', 'Data e ora', 'Met. di pagamento', 'Articoli', 'Quantità totale', 'Totale lordo', 'Sconto', 'Totale netto'];
+        ? ['رقم الإيصال', 'التاريخ والوقت', 'الشخص', 'طريقة الدفع', 'المنتجات', 'الكمية الإجمالية', 'الإجمالي قبل الخصم', 'الخصم', 'الإجمالي بعد الخصم']
+        : ['N° scontrino', 'Data e ora', 'Persona', 'Met. di pagamento', 'Articoli', 'Quantità totale', 'Totale lordo', 'Sconto', 'Totale netto'];
       const xmlText = (value: string) => value
         .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
         .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-      const columnNames = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+      const columnNames = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
       const rows = sales.map((sale) => [
         sale.receipt_no,
         dateTimeText(new Date(sale.created_at)),
+        sale.person || '—',
         rtl ? localizedText(sale.payment_method, language) : sale.payment_method,
         sale.items.map((item) => `${item.name} (${quantityFormat.format(item.quantity)} ${item.unit === 'KG' ? rtl ? 'كغ' : 'kg' : item.unit === 'LITRO' ? rtl ? 'لتر' : 'lit.' : rtl ? 'قطعة' : 'pz'})`).join(', '),
         Math.round(sale.items.reduce((sum, item) => sum + item.quantity, 0)),
@@ -2271,9 +2300,9 @@ export default function App() {
         if (typeof value === 'number') return `<c r="${ref}"${styleAttribute}><v>${Number.isFinite(value) ? value : 0}</v></c>`;
         return `<c r="${ref}"${styleAttribute} t="inlineStr"><is><t xml:space="preserve">${xmlText(value)}</t></is></c>`;
       };
-      const headerRow = `<row r="1" ht="30" customHeight="1">${headers.map((header, index) => makeCell(index, 1, header, rtl && index >= 5 ? 6 : 1)).join('')}</row>`;
+      const headerRow = `<row r="1" ht="30" customHeight="1">${headers.map((header, index) => makeCell(index, 1, header, rtl && index >= 6 ? 6 : 1)).join('')}</row>`;
       const bodyRows = rows.map((row, rowIndex) => `<row r="${rowIndex + 2}">${row.map((value, columnIndex) =>
-        makeCell(columnIndex, rowIndex + 2, value, columnIndex === 4 ? rtl ? 4 : 5 : rtl ? columnIndex >= 5 ? 2 : 4 : columnIndex >= 5 ? 2 : undefined)
+        makeCell(columnIndex, rowIndex + 2, value, columnIndex === 5 ? rtl ? 4 : 5 : rtl ? columnIndex >= 6 ? 2 : 4 : columnIndex >= 6 ? 2 : undefined)
       ).join('')}</row>`).join('');
       const sheetAlignment = rtl
         ? '<alignment horizontal="right" readingOrder="2" vertical="center" wrapText="1"/>'
@@ -2287,7 +2316,7 @@ export default function App() {
       zip.folder('xl')?.file('workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${rtl ? 'المبيعات' : 'Vendite'}" sheetId="1" r:id="rId1"/></sheets></workbook>`);
       zip.folder('xl')?.folder('_rels')?.file('workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
       zip.folder('xl')?.file('styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="#,##0.###"/><numFmt numFmtId="165" formatCode="${currencyNumberFormat}"/></numFmts><fonts count="3"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font><font><b/><sz val="14"/><color rgb="FF000000"/><name val="Aptos"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF38684E"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="7"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">${sheetAlignment}</xf><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"${numberAlignment}>${numberAlignmentXml}</xf><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"${numberAlignment}>${numberAlignmentXml}</xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1">${sheetAlignment}</xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf></cellXfs></styleSheet>`);
-      zip.folder('xl')?.folder('worksheets')?.file('sheet1.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:H${rows.length + 1}"/><sheetViews><sheetView workbookViewId="0"${rtl ? ' rightToLeft="1"' : ''}><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="19" customWidth="1"/><col min="2" max="2" width="22" customWidth="1"/><col min="3" max="3" width="24" customWidth="1"/><col min="4" max="4" width="60" customWidth="1"/><col min="5" max="5" width="18" customWidth="1"/><col min="6" max="8" width="18" customWidth="1"/></cols><sheetData>${headerRow}${bodyRows}</sheetData></worksheet>`);
+      zip.folder('xl')?.folder('worksheets')?.file('sheet1.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:I${rows.length + 1}"/><sheetViews><sheetView workbookViewId="0"${rtl ? ' rightToLeft="1"' : ''}><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols><col min="1" max="1" width="19" customWidth="1"/><col min="2" max="2" width="22" customWidth="1"/><col min="3" max="4" width="24" customWidth="1"/><col min="5" max="5" width="60" customWidth="1"/><col min="6" max="9" width="18" customWidth="1"/></cols><sheetData>${headerRow}${bodyRows}</sheetData></worksheet>`);
       const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -2474,11 +2503,13 @@ export default function App() {
   const chartDays = Array.from({ length: 7 }, (_, index) => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - 6 + index); const sales = statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()); return { giorno: date.toLocaleDateString(appLocale, { weekday: 'short' }), totale: sales.reduce((sum, sale) => sum + sale.total, 0) }; });
   const downloadFinancialBalance = async (respectTimeFilters: boolean) => {
     if (!data) return;
-    const doc = new jsPDF({ orientation: 'landscape' });
+    const doc = new jsPDF({ orientation: 'portrait' });
     const rtl = language === 'ar';
     const font = rtl ? 'DejaVuSans' : 'helvetica';
     if (rtl) await addArabicPdfFont(doc);
     doc.setR2L(rtl);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
     const reportSales = respectTimeFilters ? balanceSales : data.sales;
     const reportExpenses = respectTimeFilters ? balanceExpenses : data.expenses;
     const reportRevenue = reportSales.reduce((sum, sale) => sum + sale.total, 0);
@@ -2504,15 +2535,15 @@ export default function App() {
       return { month: month.toLocaleDateString(appLocale, { month: 'long', year: 'numeric' }), revenue, cost, expenses, wasteLoss, result: revenue - cost - expenses - wasteLoss };
     });
     const pageHeading = (title: string) => {
-      doc.setFillColor(47, 91, 66);
-      doc.rect(0, 0, 297, 28, 'F');
-      doc.setTextColor(255, 255, 255);
+      doc.setFillColor(226, 234, 226);
+      doc.rect(0, 0, pageWidth, 28, 'F');
+      doc.setTextColor(0, 0, 0);
       doc.setFont(font, 'bold');
       doc.setFontSize(13);
-      doc.text(title, rtl ? 285 : 12, 13, rtl ? { align: 'right' } : undefined);
+      doc.text(title, rtl ? pageWidth - 12 : 12, 13, rtl ? { align: 'right' } : undefined);
       doc.setFont(font, 'normal');
       doc.setFontSize(8);
-      doc.text(`${data.settings.shop_name} · ${translatedPeriod} · ${receiptDate.format(new Date())}`, rtl ? 285 : 12, 21, rtl ? { align: 'right' } : undefined);
+      doc.text(`${data.settings.shop_name} · ${translatedPeriod} · ${receiptDate.format(new Date())}`, rtl ? pageWidth - 12 : 12, 21, rtl ? { align: 'right' } : undefined);
     };
     pageHeading(rtl ? 'الميزانية الإدارية' : 'Bilancio gestionale');
     const summaryCards: Array<[string, number]> = rtl
@@ -2521,103 +2552,52 @@ export default function App() {
     const drawSummaryCard = (label: string, value: number, x: number, y: number, width: number) => {
       doc.setFillColor(246, 249, 246);
       doc.setDrawColor(224, 230, 224);
-      doc.roundedRect(x, y, width, 27, 2, 2, 'FD');
+      doc.roundedRect(x, y, width, 22, 2, 2, 'FD');
       doc.setFont(font, 'normal');
-      doc.setFontSize(7);
-      doc.setTextColor(105, 117, 107);
-      doc.text(label, rtl ? x + width - 4 : x + 4, y + 9, { maxWidth: width - 8, align: rtl ? 'right' : 'left' });
+      doc.setFontSize(6.5);
+      doc.setTextColor(0, 0, 0);
+      doc.text(label, rtl ? x + width - 4 : x + 4, y + 8, { maxWidth: width - 8, align: rtl ? 'right' : 'left' });
       doc.setFont(font, 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(41, 53, 46);
-      doc.text(money.format(value), rtl ? x + width - 4 : x + 4, y + 21, { maxWidth: width - 8, align: rtl ? 'right' : 'left' });
-    };
-    const firstRowWidth = (273 - 16) / 3;
-    summaryCards.slice(0, 3).forEach(([label, amount], index) => drawSummaryCard(label, amount, 12 + index * (firstRowWidth + 8), 36, firstRowWidth));
-    const secondRowWidth = (273 - 8) / 2;
-    summaryCards.slice(3).forEach(([label, amount], index) => drawSummaryCard(label, amount, 12 + index * (secondRowWidth + 8), 68, secondRowWidth));
-    doc.setFont(font, 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(41, 53, 46);
-    doc.text(rtl ? 'تركيبة الميزانية' : 'Composizione del bilancio', rtl ? 145 : 12, 106, rtl ? { align: 'right' } : undefined);
-    doc.text(rtl ? 'قيمة المخزون' : 'Valore del magazzino', rtl ? 285 : 153, 106, rtl ? { align: 'right' } : undefined);
-    autoTable(doc, {
-      startY: 110,
-      margin: { left: 12, right: 153 },
-      head: [rtl ? ['القيمة', 'البند'] : ['Voce', 'Valore']],
-      body: rtl
-        ? [[money.format(reportRevenue), 'Ricavi da vendite'], [money.format(reportGoodsCost), 'Costo della merce venduta'], [money.format(reportOperatingExpenses), 'Spese operative'], [money.format(reportWasteLoss), 'Valore merce buttata'], [money.format(reportOperatingResult), 'Risultato gestionale']].map(([value, label]) => [String(value), localizedText(String(label), language)])
-        : [['Ricavi da vendite', money.format(reportRevenue)], ['Costo della merce venduta', money.format(reportGoodsCost)], ['Spese operative', money.format(reportOperatingExpenses)], ['Valore merce buttata', money.format(reportWasteLoss)], ['Risultato gestionale', money.format(reportOperatingResult)]],
-      theme: 'grid',
-      styles: { font, fontSize: 7, cellPadding: 2, halign: rtl ? 'right' : 'left' },
-      headStyles: { fillColor: [56, 104, 78], font, halign: rtl ? 'right' : 'left' },
-    });
-    autoTable(doc, {
-      startY: 110,
-      margin: { left: 153, right: 12 },
-      head: [rtl ? ['القيمة', 'البند'] : ['Voce', 'Valore']],
-      body: rtl
-        ? [[money.format(stockCost), 'Valore a costo'], [money.format(stockRetail), 'Valore potenziale di vendita'], [String(data.products.filter((product) => product.stock > 0).length), 'Articoli in giacenza'], [money.format(stockRetail - stockCost), 'Margine potenziale']].map(([value, label]) => [String(value), localizedText(String(label), language)])
-        : [['Valore a costo', money.format(stockCost)], ['Valore potenziale di vendita', money.format(stockRetail)], ['Articoli in giacenza', String(data.products.filter((product) => product.stock > 0).length)], ['Margine potenziale', money.format(stockRetail - stockCost)]],
-      theme: 'grid',
-      styles: { font, fontSize: 7, cellPadding: 2, halign: rtl ? 'right' : 'left' },
-      headStyles: { fillColor: [56, 104, 78], font, halign: rtl ? 'right' : 'left' },
-    });
-    doc.addPage();
-    pageHeading(localizedText('Composizione del venduto', language));
-    const pieParts = [
-      { label: rtl ? 'تكلفة البضائع المباعة' : 'Acquisto merce venduta', value: reportGoodsCost, color: '#72bf6a' },
-      { label: rtl ? 'المصروفات التشغيلية' : 'Spese operative', value: reportOperatingExpenses + reportWasteLoss, color: '#c17e4f' },
-      { label: rtl ? 'هامش الربح' : 'Margine di profitto', value: Math.max(0, reportOperatingResult), color: '#658499' },
-    ].filter((part) => part.value > 0);
-    const pieTotal = pieParts.reduce((sum, part) => sum + part.value, 0);
-    const pieCanvas = document.createElement('canvas');
-    pieCanvas.width = 480;
-    pieCanvas.height = 480;
-    const pieContext = pieCanvas.getContext('2d');
-    if (!pieContext) throw new Error('Impossibile creare il grafico del bilancio.');
-    let pieAngle = -Math.PI / 2;
-    pieParts.forEach((part) => {
-      const nextAngle = pieAngle + part.value / Math.max(1, pieTotal) * Math.PI * 2;
-      pieContext.beginPath();
-      pieContext.moveTo(240, 240);
-      pieContext.arc(240, 240, 220, pieAngle, nextAngle);
-      pieContext.closePath();
-      pieContext.fillStyle = part.color;
-      pieContext.fill();
-      pieAngle = nextAngle;
-    });
-    pieContext.beginPath();
-    pieContext.arc(240, 240, 135, 0, Math.PI * 2);
-    pieContext.fillStyle = '#ffffff';
-    pieContext.fill();
-    doc.addImage(pieCanvas.toDataURL('image/png'), 'PNG', rtl ? 174 : 28, 79, 96, 96);
-    doc.setFont(font, 'normal');
-    doc.setTextColor(105, 117, 107);
-    doc.setFontSize(7);
-    doc.text(rtl ? 'قيمة المبيعات' : 'Valore merce venduta', rtl ? 222 : 76, 122, { align: 'center' });
-    doc.setFont(font, 'bold');
-    doc.setTextColor(41, 53, 46);
-    doc.setFontSize(9);
-    doc.text(money.format(reportRevenue), rtl ? 222 : 76, 133, { align: 'center' });
-    pieParts.forEach((part, index) => {
-      const y = 98 + index * 27;
-      doc.setFillColor(part.color);
-      doc.circle(rtl ? 112 : 154, y - 2, 2.4, 'F');
-      doc.setFont(font, 'normal');
-      doc.setTextColor(76, 88, 78);
-      doc.setFontSize(9);
-      const alignment = rtl ? { align: 'right' as const } : undefined;
-      doc.text(part.label, rtl ? 105 : 162, y, alignment);
-      doc.setFont(font, 'bold');
-      doc.setTextColor(41, 53, 46);
       doc.setFontSize(8);
-      const detail = `${money.format(part.value)} · ${pieTotal ? (part.value / pieTotal * 100).toFixed(1) : '0'}%`;
-      doc.text(detail, rtl ? 105 : 162, y + 10, alignment);
+      doc.setTextColor(0, 0, 0);
+      doc.text(money.format(value), rtl ? x + width - 4 : x + 4, y + 17, { maxWidth: width - 8, align: rtl ? 'right' : 'left' });
+    };
+    const summaryWidth = (pageWidth - 32) / 2;
+    summaryCards.forEach(([label, amount], index) => {
+      drawSummaryCard(label, amount, 12 + (index % 2) * (summaryWidth + 8), 36 + Math.floor(index / 2) * 25, summaryWidth);
     });
-    doc.addPage();
-    pageHeading(localizedText('Dettaglio mensile · ultimi 6 mesi', language));
+    const balanceRows = [
+      ['Composizione del bilancio', 'Ricavi da vendite', money.format(reportRevenue)],
+      ['Composizione del bilancio', 'Costo della merce venduta', money.format(reportGoodsCost)],
+      ['Composizione del bilancio', 'Spese operative', money.format(reportOperatingExpenses)],
+      ['Composizione del bilancio', 'Valore merce buttata', money.format(reportWasteLoss)],
+      ['Composizione del bilancio', 'Risultato gestionale', money.format(reportOperatingResult)],
+      ['Valore del magazzino', 'Valore a costo', money.format(stockCost)],
+      ['Valore del magazzino', 'Valore potenziale di vendita', money.format(stockRetail)],
+      ['Valore del magazzino', 'Articoli in giacenza', String(data.products.filter((product) => product.stock > 0).length)],
+      ['Valore del magazzino', 'Margine potenziale', money.format(stockRetail - stockCost)],
+      ['Composizione del venduto', 'Acquisto merce venduta', money.format(reportGoodsCost)],
+      ['Composizione del venduto', 'Spese e perdite', money.format(reportOperatingExpenses + reportWasteLoss)],
+      ['Composizione del venduto', 'Margine gestionale', money.format(reportOperatingResult)],
+    ];
     autoTable(doc, {
-      startY: 36,
+      startY: 116,
+      head: [rtl ? ['القيمة', 'البند', 'القسم'] : ['Sezione', 'Voce', 'Valore']],
+      body: balanceRows.map((row) => rtl ? [row[2], localizedText(row[1], language), localizedText(row[0], language)] : row),
+      theme: 'striped',
+      styles: { font, fontSize: 6.5, cellPadding: 1.5, textColor: [0, 0, 0], halign: rtl ? 'right' : 'left' },
+      headStyles: { fillColor: [226, 234, 226], textColor: [0, 0, 0], font, halign: rtl ? 'right' : 'left' },
+      alternateRowStyles: { fillColor: [248, 249, 248] },
+      margin: { left: 12, right: 12, bottom: 14 },
+    });
+    let sectionY = ((doc as jsPDF & { lastAutoTable?: AutoTableTable }).lastAutoTable?.finalY ?? 116) + 8;
+    doc.setFont(font, 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(0, 0, 0);
+    doc.text(localizedText('Dettaglio mensile · ultimi 6 mesi', language), rtl ? pageWidth - 12 : 12, sectionY, rtl ? { align: 'right' } : undefined);
+    autoTable(doc, {
+      startY: sectionY + 4,
+      margin: { left: 12, right: 12, bottom: 14 },
       head: [rtl
         ? ['النتيجة', 'قيمة البضائع التالفة', 'المصروفات التشغيلية', 'تكلفة البضائع', 'إيرادات المبيعات', 'الشهر']
         : ['Mese', 'Ricavi', 'Costo merce', 'Spese operative', 'Valore merce buttata', 'Risultato']],
@@ -2625,48 +2605,30 @@ export default function App() {
         ? [money.format(month.result), money.format(month.wasteLoss), money.format(month.expenses), money.format(month.cost), money.format(month.revenue), month.month]
         : [month.month, money.format(month.revenue), money.format(month.cost), money.format(month.expenses), money.format(month.wasteLoss), money.format(month.result)]),
       theme: 'striped',
-      styles: { font, fontSize: 8, cellPadding: 3, halign: rtl ? 'right' : 'left' },
-      headStyles: { fillColor: [56, 104, 78], font, halign: rtl ? 'right' : 'left' },
+      styles: { font, fontSize: 6.5, cellPadding: 1.5, textColor: [0, 0, 0], halign: rtl ? 'right' : 'left' },
+      headStyles: { fillColor: [226, 234, 226], textColor: [0, 0, 0], font, halign: rtl ? 'right' : 'left' },
       didDrawPage: () => {
         doc.setFont(font, 'normal');
-        doc.setFontSize(8);
-        doc.setTextColor(120, 130, 122);
+        doc.setFontSize(7);
+        doc.setTextColor(0, 0, 0);
         doc.text(rtl
           ? `${data.settings.shop_name} · الصفحة ${doc.getNumberOfPages()}`
           : `${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`,
-        rtl ? 285 : 12, 202, rtl ? { align: 'right' } : undefined);
+        rtl ? pageWidth - 12 : 12, pageHeight - 7, rtl ? { align: 'right' } : undefined);
       },
     });
-    doc.addPage();
-    pageHeading(rtl ? 'تفاصيل المبيعات' : 'Dettaglio vendite');
+    sectionY = ((doc as jsPDF & { lastAutoTable?: AutoTableTable }).lastAutoTable?.finalY ?? sectionY) + 8;
+    if (sectionY > pageHeight - 25) {
+      doc.addPage();
+      sectionY = 18;
+    }
+    doc.setFont(font, 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(0, 0, 0);
+    doc.text(localizedText('Dettaglio spese operative', language), rtl ? pageWidth - 12 : 12, sectionY, rtl ? { align: 'right' } : undefined);
     autoTable(doc, {
-      startY: 36,
-      head: [rtl
-        ? ['الربح', 'إجمالي البيع', 'تكلفة البضائع', 'المنتجات', 'التاريخ والوقت', 'الإيصال']
-        : ['Scontrino', 'Data e ora', 'Articoli', 'Costo merce', 'Totale vendita', 'Profitto']],
-      body: reportSales.map((sale) => {
-        const cost = sale.items.reduce((sum, item) => sum + item.quantity * item.purchase_price, 0);
-        const items = sale.items.map((item) => `${item.name} × ${quantityFormat.format(item.quantity)}`).join(', ');
-        const row = [sale.receipt_no, dateTimeText(new Date(sale.created_at)), items, money.format(cost), money.format(sale.total), money.format(sale.total - cost)];
-        return rtl ? row.reverse() : row;
-      }),
-      theme: 'striped',
-      styles: { font, fontSize: rtl ? 6.5 : 7.5, cellPadding: 2, overflow: 'linebreak', halign: rtl ? 'right' : 'left' },
-      headStyles: { fillColor: [56, 104, 78], font, halign: rtl ? 'right' : 'left' },
-      didDrawPage: () => {
-        doc.setFont(font, 'normal');
-        doc.setFontSize(8);
-        doc.setTextColor(120, 130, 122);
-        doc.text(rtl
-          ? `${data.settings.shop_name} · الصفحة ${doc.getNumberOfPages()}`
-          : `${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`,
-        rtl ? 285 : 12, 202, rtl ? { align: 'right' } : undefined);
-      },
-    });
-    doc.addPage();
-    pageHeading(rtl ? 'تفاصيل المصروفات التشغيلية' : 'Dettaglio spese operative');
-    autoTable(doc, {
-      startY: 36,
+      startY: sectionY + 4,
+      margin: { left: 12, right: 12, bottom: 14 },
       head: [rtl ? ['المبلغ', 'الفئة', 'الوصف', 'التاريخ'] : ['Data', 'Descrizione', 'Categoria', 'Importo']],
       body: reportExpenses.map((expense) => {
         const row = [
@@ -2678,16 +2640,16 @@ export default function App() {
         return rtl ? row.reverse() : row;
       }),
       theme: 'striped',
-      styles: { font, fontSize: 8, cellPadding: 3, overflow: 'linebreak', halign: rtl ? 'right' : 'left' },
-      headStyles: { fillColor: [56, 104, 78], font, halign: rtl ? 'right' : 'left' },
+      styles: { font, fontSize: 7, cellPadding: 2, overflow: 'linebreak', textColor: [0, 0, 0], halign: rtl ? 'right' : 'left' },
+      headStyles: { fillColor: [226, 234, 226], textColor: [0, 0, 0], font, halign: rtl ? 'right' : 'left' },
       didDrawPage: () => {
         doc.setFont(font, 'normal');
-        doc.setFontSize(8);
-        doc.setTextColor(120, 130, 122);
+        doc.setFontSize(7);
+        doc.setTextColor(0, 0, 0);
         doc.text(rtl
           ? `${data.settings.shop_name} · الصفحة ${doc.getNumberOfPages()}`
           : `${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`,
-        rtl ? 285 : 12, 202, rtl ? { align: 'right' } : undefined);
+        rtl ? pageWidth - 12 : 12, pageHeight - 7, rtl ? { align: 'right' } : undefined);
       },
     });
     doc.save(filename);
@@ -2980,7 +2942,7 @@ export default function App() {
           <button aria-expanded={openSidebarMenu === 'employees'} className={`nav-item${['employees', 'employee-create', 'payroll', 'employee-tracker'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'employees' ? null : 'employees')}><ClipboardList size={18} /><span>Dipendenti</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'employees' ? ' open' : ''}`} size={15} /></button>
           {openSidebarMenu === 'employees' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => navigateTo('employees')}>Lista Dipendenti</button><button className={`sidebar-subitem${section === 'employee-create' ? ' selected' : ''}`} onClick={startEmployeeCreation}>Crea Dipendente</button><button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => navigateTo('payroll')}>Paga Stipendi</button><button className={`sidebar-subitem${section === 'employee-tracker' ? ' selected' : ''}`} onClick={() => navigateTo('employee-tracker')}>Tracker Dipendenti</button></div>}
           <button aria-expanded={siteMenuOpen} className={`nav-item${['site-statistics', 'site-management', 'site-create', 'site-list'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'sites' ? null : 'sites')}><Store size={18} /><span>Gestione sedi</span><ChevronDown className={`nav-chevron${siteMenuOpen ? ' open' : ''}`} size={15} /></button>
-          {siteMenuOpen && <div className="sidebar-submenu">{canAccess('site-statistics') && <button className={`sidebar-subitem${section === 'site-statistics' ? ' selected' : ''}`} onClick={() => navigateTo('site-statistics')}>Statistiche sedi</button>}{canAccess('site-management') && <button className={`sidebar-subitem${section === 'site-management' ? ' selected' : ''}`} onClick={() => navigateTo('site-management')}>Gestisci sedi</button>}{canAccess('site-list') && <button className={`sidebar-subitem${section === 'site-list' ? ' selected' : ''}`} onClick={() => navigateTo('site-list')}>Lista sedi</button>}</div>}
+          {siteMenuOpen && <div className="sidebar-submenu">{canAccess('site-statistics') && <button className={`sidebar-subitem${section === 'site-statistics' ? ' selected' : ''}`} onClick={() => navigateTo('site-statistics')}>Statistiche sedi</button>}{canAccess('site-list') && <button className={`sidebar-subitem${section === 'site-list' ? ' selected' : ''}`} onClick={() => navigateTo('site-list')}>Lista sedi</button>}</div>}
         </>}
       </nav>
       <div className="sidebar-bottom"><div className="sidebar-settings-row">{canAccess('settings') && <button className={`nav-item settings-link${section === 'settings' ? ' active' : ''}`} onClick={() => { setSettingsTab(null); setDeviceTab(null); navigateTo('settings'); }}><Settings size={18} /><span>Impostazioni</span></button>}<button className="nav-item sidebar-refresh" type="button" onClick={() => void refreshCurrentData()} disabled={refreshing} title="Aggiorna dati senza chiudere la pagina" aria-label="Aggiorna dati senza chiudere la pagina"><RefreshCw className={refreshing ? 'refreshing-icon' : ''} size={18} /></button></div><div className="user-card"><div className="user-avatar">{currentUser?.first_name.slice(0, 1).toUpperCase() ?? data.settings.shop_name.slice(0, 1).toUpperCase()}</div><div><strong>{currentUser ? `${currentUser.first_name} ${currentUser.last_name}`.trim() : 'Gestore'}</strong><small>{currentUser?.role ?? 'Account locale'}</small></div>{data.employees.length > 0 && <button className="icon-button small" title="Blocca e cambia utente" aria-label="Blocca e cambia utente" onClick={() => { trackActivity('Accesso', 'Uscita dal gestionale'); setSelectedProduct(null); setProductAuthorization(null); setStockProduct(null); setCurrentUser(null); setLocked(true); setLoginBarcode(''); setPin(''); }}><LockKeyhole size={15} /></button>}</div></div>
@@ -2991,7 +2953,7 @@ export default function App() {
       {section === 'home' && <div className="page-content home-page"><img className="home-banner" src={data.settings.home_image || homeBanner} alt="Immagine homepage" /><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length} scontrini emessi`} /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyProfit)} detail="Profitto dopo sconti e costo merce" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString(appLocale)} detail="Pezzi registrati oggi" /></div><section className="expiry-alert expiry-home-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{canAccess('inventory') && expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length} articoli sotto soglia`} action={canAccess('inventory') ? <button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); navigateTo('inventory'); }}>{language === 'ar' ? 'الانتقال إلى المخزن ←' : 'Vai al magazzino →'}</button> : undefined} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => { if (canAccess('inventory')) setSelectedProduct(p); }}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock}</td><td>{p.low_stock_threshold}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => navigateTo('sales')}>{language === 'ar' ? 'كل المبيعات ←' : 'Tutte le vendite →'}</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
 
       {section === 'inventory' && <div className="page-content">
-        <div className="page-toolbar inventory-toolbar"><div><h2>Articoli in magazzino</h2><p>{data.products.length} articoli registrati</p></div>{!isCashierRole(activeRole) && <div className="toolbar-actions"><button className="button button-outline" onClick={exportInventoryReport}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-primary" onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct }); }}><Plus size={16} /> Aggiungi nuovo articolo</button></div>}</div>
+        <div className="page-toolbar inventory-toolbar"><div><h2>Articoli in magazzino</h2><p>{data.products.length} articoli registrati</p></div>{!isCashierRole(activeRole) && <div className="toolbar-actions"><button className="button button-outline" onClick={exportInventoryCsv}><ArrowDownToLine size={16} /> Esporta CSV</button><button className="button button-outline" onClick={exportInventoryReport}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-primary" onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct }); }}><Plus size={16} /> Aggiungi nuovo articolo</button></div>}</div>
         <div className="filter-row"><SearchInput value={inventorySearch} onChange={setInventorySearch} placeholder="Cerca per nome o codice…" /><label className="select-wrap"><span>Categoria</span><select value={category} onChange={(e) => setCategory(e.target.value)}><option>Tutte</option>{categories.map((item) => <option key={item}>{item}</option>)}</select><ChevronDown size={14} /></label><details className="inventory-filter-dropdown"><summary className="select-wrap"><span>Disponibilità: {inventoryFilters.find((item) => item.value === inventoryStatus)?.label}</span><ChevronDown size={14} /></summary><div className="inventory-status-filters" role="group" aria-label="Filtra prodotti per disponibilità">{inventoryFilters.map(({ value, label }) => <button key={value} className={`status-filter${inventoryStatus === value ? ' active' : ''}`} aria-pressed={inventoryStatus === value} onClick={(event) => { setInventoryStatus(value); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{label}</button>)}</div></details></div>
         {!isCashierRole(activeRole) && <div className="expiry-panels">
           <section className="expiry-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section>
@@ -3009,7 +2971,7 @@ export default function App() {
       {section === 'stock-distribution' && <div className="page-content accounting-page">
         <div className="distribution-layout">
           <form className="panel distribution-form" onSubmit={(event) => { event.preventDefault(); addDistributionItem(); }}>
-            <label className="field distribution-source"><span>Sede di partenza</span><strong>{distributionFromSite?.name ?? 'Magazzino centrale'}</strong></label>
+            <label className="field distribution-source"><span>Sede di partenza</span><strong>{distributionFromSite?.name ?? warehouseSiteName}</strong></label>
             <SelectField label="Sede di destinazione" value={distributionToSiteId} onChange={setDistributionToSiteId} options={['', ...data.sites.filter((site) => String(site.id) !== distributionFromSiteId).map((site) => String(site.id))]} labels={['Seleziona sede', ...data.sites.filter((site) => String(site.id) !== distributionFromSiteId).map((site) => site.name)]} />
             <div className="distribution-product-picker">
               <label className="field"><span>Articolo</span><div className="search-field"><Search size={16} /><input value={distributionProductSearch} placeholder="Cerca o scansiona barcode…" onFocus={() => setDistributionProductPickerOpen(true)} onChange={(event) => { setDistributionProductSearch(event.target.value); setDistributionProductPickerOpen(true); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); const match = data.products.find((product) => product.code === distributionProductSearch.trim()); if (match) { setDistributionProductId(String(match.id)); setDistributionProductSearch(`${match.name} · ${match.code}`); setDistributionProductPickerOpen(false); } } }} /></div></label>
@@ -3030,12 +2992,12 @@ export default function App() {
         </section>
       </div>}
 
-      {section === 'cash' && <div className="page-content cash-content"><div className="cash-layout">
+      {section === 'cash' && <div className="page-content cash-content">{salesDisabled && <div className="security-status"><div className="security-icon"><ShieldCheck size={18} /></div><div><strong>Vendite disabilitate</strong><span>La sede Magazzino non può registrare vendite.</span></div></div>}<div className="cash-layout">
         <section className="cash-products">
           <div className="cash-search-row"><div className="search-field"><Barcode size={17} /><input id="scanner-field" placeholder="Cerca o scansiona un codice a barre…" value={scannerSearch} onChange={(e) => setScannerSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scanCode(scannerSearch); } }} /><button type="button" className="search-clear" aria-label="Cancella ricerca" disabled={!scannerSearch} onClick={() => setScannerSearch('')}><X size={15} /></button></div><button className="icon-button camera-button" title="Scansiona con fotocamera" onClick={() => setCamera(true)}><Camera size={18} /></button></div>
-          <div className="cash-product-grid">{data.products.filter((p) => (p.name.toLowerCase().includes(scannerSearch.toLowerCase()) || p.code.includes(scannerSearch)) && siteStockFor(p.id) > 0).map((product) => { const remainingStock = Math.max(0, siteStockFor(product.id) - (cart.find((item) => item.product_id === product.id)?.quantity ?? 0)); return <button className="cash-product" key={product.id} disabled={remainingStock === 0} onClick={() => addProductToCart(product)}><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="cash-product-bottom"><b>{money.format(product.sale_price)}{product.unit === 'KG' ? ' / kg' : product.unit === 'LITRO' ? ' / lit.' : ''}</b><small>{quantityFormat.format(remainingStock)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'lit.' : 'pz'}</small></span></button>; })}</div>
+          <div className="cash-product-grid">{data.products.filter((p) => (p.name.toLowerCase().includes(scannerSearch.toLowerCase()) || p.code.includes(scannerSearch)) && siteStockFor(p.id) > 0).map((product) => { const remainingStock = Math.max(0, siteStockFor(product.id) - (cart.find((item) => item.product_id === product.id)?.quantity ?? 0)); return <button className="cash-product" key={product.id} disabled={salesDisabled || remainingStock === 0} onClick={() => addProductToCart(product)}><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="cash-product-bottom"><b>{money.format(product.sale_price)}{product.unit === 'KG' ? ' / kg' : product.unit === 'LITRO' ? ' / lit.' : ''}</b><small>{quantityFormat.format(remainingStock)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'lit.' : 'pz'}</small></span></button>; })}</div>
         </section>
-        <aside className="cart-panel"><div className="cart-heading"><div className="cart-heading-title"><h2>CARRELLO <span>{quantityFormat.format(cart.reduce((sum, item) => sum + item.quantity, 0))}</span></h2></div><button className="icon-button" title="Svuota carrello" aria-label="Svuota carrello" disabled={!cart.length} onClick={() => { setCart([]); setManualPromotionId(undefined); setAutomaticPromotionId(undefined); }}><Trash2 size={17} /></button></div><div className="cart-lines">{cart.map((item) => <div className="cart-line" key={item.product_id}><div className="cart-line-name"><strong>{item.name}</strong><small>{quantityFormat.format(item.quantity)} {item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}</small></div><div className="quantity-control"><button onClick={() => changeQuantity(item.product_id, -1)} aria-label="Rimuovi uno"><Minus size={13} /></button><span>{quantityFormat.format(item.quantity)}</span><button onClick={() => changeQuantity(item.product_id, 1)} aria-label="Aggiungi uno"><Plus size={13} /></button></div><strong className="line-total">{money.format(item.quantity * item.unit_price)}</strong></div>)}{!cart.length && <div className="cart-empty"><ShoppingBasket size={25} /><span>Seleziona gli articoli<br />per iniziare una vendita</span></div>}</div><div className="receipt-summary"><div><span>Subtotale</span><span>{money.format(subtotal)}</span></div><div className="total-row"><strong>TOTALE</strong><strong>{money.format(subtotal)}</strong></div></div><button className="button button-primary checkout-button" disabled={!cart.length} onClick={() => setCheckoutOpen(true)}>Procedi al pagamento <span>→</span></button></aside>
+        <aside className="cart-panel"><div className="cart-heading"><div className="cart-heading-title"><h2>CARRELLO <span>{quantityFormat.format(cart.reduce((sum, item) => sum + item.quantity, 0))}</span></h2></div><button className="icon-button" title="Svuota carrello" aria-label="Svuota carrello" disabled={!cart.length || salesDisabled} onClick={() => { setCart([]); setManualPromotionId(undefined); setAutomaticPromotionId(undefined); }}><Trash2 size={17} /></button></div><div className="cart-lines">{cart.map((item) => <div className="cart-line" key={item.product_id}><div className="cart-line-name"><strong>{item.name}</strong><small>{quantityFormat.format(item.quantity)} {item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}</small></div><div className="quantity-control"><button disabled={salesDisabled} onClick={() => changeQuantity(item.product_id, -1)} aria-label="Rimuovi uno"><Minus size={13} /></button><span>{quantityFormat.format(item.quantity)}</span><button disabled={salesDisabled} onClick={() => changeQuantity(item.product_id, 1)} aria-label="Aggiungi uno"><Plus size={13} /></button></div><strong className="line-total">{money.format(item.quantity * item.unit_price)}</strong></div>)}{!cart.length && <div className="cart-empty"><ShoppingBasket size={25} /><span>Seleziona gli articoli<br />per iniziare una vendita</span></div>}</div><div className="receipt-summary"><div><span>Subtotale</span><span>{money.format(subtotal)}</span></div><div className="total-row"><strong>TOTALE</strong><strong>{money.format(subtotal)}</strong></div></div><button className="button button-primary checkout-button" disabled={!cart.length || salesDisabled} onClick={() => setCheckoutOpen(true)}>Procedi al pagamento <span>→</span></button></aside>
       </div></div>}
 
       {section === 'sales' && <div className="page-content"><div className="sale-tools"><button className="button button-outline sale-camera-button" onClick={() => setCamera(true)}><Camera size={16} /> Cerca con fotocamera</button><SearchInput value={saleSearch} onChange={setSaleSearch} placeholder="Cerca numero scontrino…" numericOnly /><button className="button button-outline sale-report-button" onClick={() => { setReportExportType('sales-pdf'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Scarica report</button></div><div className="sale-filters"><SelectField label="Periodo" value={salesPeriod} onChange={setSalesPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A']} />{salesPeriod === 'Da - A' && <><Field label="Da" type="date" value={salesFrom} onChange={(event) => setSalesFrom(event.target.value)} /><Field label="A" type="date" value={salesTo} onChange={(event) => setSalesTo(event.target.value)} /></>}<SelectField label="Categoria" value={salesCategory} onChange={setSalesCategory} options={['Tutte', ...categories]} /></div><SalesTable sales={salesList} onSelect={setReceipt} /></div>}
@@ -3089,9 +3051,8 @@ export default function App() {
         <div className="employee-card-grid">{employeeList.map((employee) => <button className="employee-card" key={employee.id} onClick={() => setEmployeeDetails(employee)} aria-label={`Apri informazioni di ${employee.first_name} ${employee.last_name}`}><img className="employee-list-photo" src={employee.photo_data} alt={`Foto di ${employee.first_name} ${employee.last_name}`} /><span><small>Nome</small><strong>{employee.first_name}</strong></span><span><small>Cognome</small><strong>{employee.last_name}</strong></span><span><small>Ruolo</small><strong>{employee.role}</strong></span><span><small>Sede</small><strong>{employee.operational_site}</strong></span></button>)}{!employeeList.length && <Empty icon={ClipboardList} title={data.employees.length ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente registrato.'} detail="" />}</div>
       </div>}
       {section === 'site-statistics' && <div className="page-content accounting-page site-statistics-page"><div className="site-statistics-filters"><SelectField label="Periodo" value={siteStatsPeriod} onChange={setSiteStatsPeriod} options={['Oggi', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Ultimi 6 mesi', 'Tutto', 'Da - A']} /><SelectField label="Sede" value={siteStatsFilter} onChange={setSiteStatsFilter} options={['Tutte', ...data.sites.map((site) => site.name)]} /><>{siteStatsPeriod === 'Da - A' && <><Field label="Da" type="date" value={siteStatsFrom} onChange={(event) => setSiteStatsFrom(event.target.value)} /><Field label="A" type="date" value={siteStatsTo} onChange={(event) => setSiteStatsTo(event.target.value)} /></>}</></div><div className="metric-grid accounting-metrics"><Metric icon={Banknote} label="Entrate sedi" value={money.format(siteStatsIncome)} detail={siteStatsPeriod} /><Metric icon={ArrowDownToLine} label="Uscite sedi" value={money.format(siteStatsExpenses)} detail={siteStatsPeriod} /><Metric icon={TrendingUp} label="Saldo sedi" value={money.format(siteStatsIncome - siteStatsExpenses)} detail="Entrate meno uscite" /><Metric icon={Package} label="Sedi attive" value={String(selectedSiteStats.length)} detail="Sedi nel filtro selezionato" /></div><section className="panel site-summary-panel"><div className="panel-heading"><div><h3>Entrate e uscite per sede</h3><p>{siteStatsPeriod}</p></div></div><Table headings={['Sede', 'Entrate', 'Uscite', 'Saldo', 'Scontrini', 'Carico merce', 'Scarico merce']}><>{selectedSiteStats.map((site) => <tr key={site.id}><td className="cell-primary">{site.name}</td><td className="align-right">{money.format(site.income)}</td><td className="align-right">{money.format(site.expenses)}</td><td className="align-right cell-primary">{money.format(site.balance)}</td><td>{site.receipts}</td><td>{quantityFormat.format(site.stockIn)}</td><td>{quantityFormat.format(site.stockOut)}</td></tr>)}</>{!selectedSiteStats.length && <tr><td colSpan={7} className="empty-cell">Nessuna sede trovata.</td></tr>}</Table></section><SiteStockStatistics sites={data.sites.filter((site) => siteStatsFilter === 'Tutte' || site.name === siteStatsFilter)} siteStocks={data.siteStocks} employees={data.employees} products={data.products} /></div>}
-      {section === 'site-management' && <div className="page-content"><div className="page-toolbar"><div><h2>Gestisci sedi</h2><p>{data.sites.length} sedi registrate</p></div><button className="button button-primary" onClick={() => { setSiteDraft({ name: '', address: '', phone: '' }); navigateTo('site-create'); }}><Plus size={16} /> Aggiungi sede</button></div><div className="site-management-list">{data.sites.map((site) => <section className="panel site-management-row" key={site.id}><div><strong>{site.name}</strong><span>{site.address || '—'} · {site.phone || '—'}</span><small>{data.employees.filter((employee) => employee.operational_site === site.name).length} dipendenti · {data.sales.filter((sale) => sale.site === site.name).length} vendite</small></div><div className="toolbar-actions"><button className="button button-outline" onClick={() => { setSiteDraft({ id: site.id, name: site.name, address: site.address, phone: site.phone }); navigateTo('site-create'); }}><Pencil size={14} /> Modifica</button>{site.name !== centralSiteName && <button className="button button-danger" onClick={() => void deleteSite(site.id)}><Trash2 size={14} /> Elimina</button>}</div></section>)}</div></div>}
-      {section === 'site-create' && siteDraft && <div className="page-content settings-page"><section className="settings-panel"><button className="settings-back" onClick={() => navigateTo('site-management')}><ArrowLeft size={15} /> Gestisci sedi</button><div className="settings-title"><h2>{siteDraft.id ? 'Modifica sede' : 'Aggiungi sede'}</h2></div><form className="settings-form site-form" onSubmit={(event) => void saveSite(event)}><Field label="Nome sede" value={siteDraft.name} onChange={(event) => setSiteDraft({ ...siteDraft, name: event.target.value })} required /><Field label="Indirizzo" value={siteDraft.address} onChange={(event) => setSiteDraft({ ...siteDraft, address: event.target.value })} /><Field label="Telefono" type="tel" value={siteDraft.phone} onChange={(event) => setSiteDraft({ ...siteDraft, phone: event.target.value })} /><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setSiteDraft(null); navigateTo('site-management'); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Salva sede</button></div></form></section></div>}
-      {section === 'site-list' && <div className="page-content"><Table headings={['Sede', 'Indirizzo', 'Telefono', 'Dipendenti']}><>{data.sites.map((site) => <tr key={site.id}><td className="cell-primary">{site.name}</td><td>{site.address || '—'}</td><td>{site.phone || '—'}</td><td>{data.employees.filter((employee) => employee.operational_site === site.name).length}</td></tr>)}</></Table></div>}
+      {section === 'site-create' && siteDraft && <div className="page-content settings-page"><section className="settings-panel"><button className="settings-back" onClick={() => navigateTo('site-list')}><ArrowLeft size={15} /> Lista sedi</button><div className="settings-title"><h2>{siteDraft.id ? 'Modifica sede' : 'Aggiungi sede'}</h2></div><form className="settings-form site-form" onSubmit={(event) => void saveSite(event)}><Field label="Nome sede" value={siteDraft.name} onChange={(event) => setSiteDraft({ ...siteDraft, name: event.target.value })} required /><Field label="Indirizzo" value={siteDraft.address} onChange={(event) => setSiteDraft({ ...siteDraft, address: event.target.value })} /><Field label="Telefono" type="tel" value={siteDraft.phone} onChange={(event) => setSiteDraft({ ...siteDraft, phone: event.target.value })} /><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setSiteDraft(null); navigateTo('site-list'); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Salva sede</button></div></form></section></div>}
+      {section === 'site-list' && <div className="page-content"><div className="page-toolbar"><div><h2>Lista sedi</h2><p>{data.sites.length} sedi registrate</p></div>{canAccess('site-management') && <button className="button button-primary" onClick={() => { setSiteDraft({ name: '', address: '', phone: '' }); navigateTo('site-create'); }}><Plus size={16} /> Aggiungi sede</button>}</div><Table headings={['Sede', 'Tipo', 'Codice di riconoscimento', 'Indirizzo', 'Telefono', 'Dipendenti', 'Azioni']}><>{data.sites.map((site) => <tr key={site.id}><td className="cell-primary">{site.name}</td><td>{site.site_type === 'warehouse' ? 'Magazzino' : 'Punto vendita'}</td><td className="mono">{site.recognition_code}</td><td>{site.address || '—'}</td><td>{site.phone || '—'}</td><td>{data.employees.filter((employee) => employee.operational_site === site.name).length}</td><td><div className="toolbar-actions">{canAccess('site-management') && site.site_type === 'store' && site.name !== mainSiteName && <><button className="button button-outline" onClick={() => { setSiteDraft({ id: site.id, name: site.name, address: site.address, phone: site.phone }); navigateTo('site-create'); }}><Pencil size={14} /> Modifica</button><button className="button button-danger" onClick={() => void deleteSite(site.id)}><Trash2 size={14} /> Elimina</button></>}</div></td></tr>)}</></Table></div>}
       {section === 'employee-tracker' && <div className="page-content">
         <div id="employee-tracker-print">
           <div className="inventory-history-actions no-print">
@@ -3122,7 +3083,7 @@ export default function App() {
             <Field label="Importo (€)" type="number" min="0.01" step="0.01" value={expenseAmount} onChange={(event) => setExpenseAmount(event.target.value)} required />
             <Field label="Data" type="date" value={expenseDate} onChange={(event) => setExpenseDate(event.target.value)} required />
             {expenseCategory === 'Affitto' && <label className="field expense-receipt-field"><span>Ricevuta pagamento affitto</span><input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(event) => { void attachExpenseReceipt(event.target.files?.[0]); event.currentTarget.value = ''; }} required={!expenseReceiptData} />{expenseReceiptData && <small>Ricevuta allegata</small>}</label>}
-            <div className="expense-actions"><button className="button button-outline" type="button" onClick={(event) => { event.currentTarget.form?.reset(); setExpenseDescription(''); setExpenseSite(centralSiteName); setExpenseCategory(expenseCategories[0]); setExpenseOtherCategory(''); setExpenseAmount(''); setExpenseDate(localDateKey()); setExpenseReceiptData(''); }}>Annulla</button><button className="button button-primary"><Plus size={16} /> Registra spesa</button></div>
+            <div className="expense-actions"><button className="button button-outline" type="button" onClick={(event) => { event.currentTarget.form?.reset(); setExpenseDescription(''); setExpenseSite(mainSiteName); setExpenseCategory(expenseCategories[0]); setExpenseOtherCategory(''); setExpenseAmount(''); setExpenseDate(localDateKey()); setExpenseReceiptData(''); }}>Annulla</button><button className="button button-primary"><Plus size={16} /> Registra spesa</button></div>
           </form>
         </section>
         <div className="expense-list-toolbar"><SearchInput value={expenseSearch} onChange={setExpenseSearch} placeholder="Cerca descrizione o categoria…" /></div>
@@ -3306,7 +3267,7 @@ function SiteStockStatistics({ sites, siteStocks, employees, products }: { sites
 }
 function SalesTable({ sales, onSelect }: { sales: Sale[]; onSelect?: (sale: Sale) => void }) {
   const language = useContext(AppLanguageContext);
-  return <div className="table-wrap"><table><thead><tr><th>{localizedText('Numero scontrino', language)}</th><th>{localizedText('Data e ora', language)}</th><th>{localizedText('Articoli', language)}</th><th>{localizedText('Pagamento', language)}</th><th className="align-right">{localizedText('Totale', language)}</th></tr></thead><tbody><LocalizedNodes>{sales.map((sale) => <tr key={sale.id} onClick={onSelect ? () => onSelect(sale) : undefined}><td className="receipt-number">#{sale.receipt_no}</td><td>{dateTimeText(new Date(sale.created_at))}</td><td>{sale.item_count}</td><td><span className="payment-tag">{localizedText(sale.payment_method, language)}</span></td><td className="align-right cell-primary">{money.format(sale.total)}</td></tr>)}{!sales.length && <tr><td colSpan={5} className="empty-cell">Nessuna vendita registrata.</td></tr>}</LocalizedNodes></tbody></table></div>;
+  return <div className="table-wrap"><table><thead><tr><th>{localizedText('Numero scontrino', language)}</th><th>{localizedText('Data e ora', language)}</th><th>{localizedText('Persona', language)}</th><th>{localizedText('Articoli', language)}</th><th>{localizedText('Pagamento', language)}</th><th className="align-right">{localizedText('Totale', language)}</th></tr></thead><tbody><LocalizedNodes>{sales.map((sale) => <tr key={sale.id} onClick={onSelect ? () => onSelect(sale) : undefined}><td className="receipt-number">#{sale.receipt_no}</td><td>{dateTimeText(new Date(sale.created_at))}</td><td>{sale.person || '—'}</td><td>{sale.item_count}</td><td><span className="payment-tag">{localizedText(sale.payment_method, language)}</span></td><td className="align-right cell-primary">{money.format(sale.total)}</td></tr>)}{!sales.length && <tr><td colSpan={6} className="empty-cell">Nessuna vendita registrata.</td></tr>}</LocalizedNodes></tbody></table></div>;
 }
 function SearchInput({ value, onChange, placeholder, numericOnly = false }: { value: string; onChange: (value: string) => void; placeholder: string; numericOnly?: boolean }) {
   const language = useContext(AppLanguageContext);

@@ -307,7 +307,8 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .voucher-batch-row span, .voucher-batch-row small { color: var(--muted); font-size: 9px; }
 .voucher-batch-row .voucher-actions { margin-top: 0; }
 .voucher-edit-actions { display: flex; grid-column: 1 / -1; justify-content: flex-end; gap: 8px; }
-.voucher-create-actions { display: flex; grid-column: 1 / -1; justify-content: flex-end; gap: 8px; }
+.voucher-create-actions { display: flex; grid-column: 1 / -1; gap: 8px; }
+.voucher-create-actions .button { flex: 1 1 0; min-width: 0; justify-content: center; }
 .settings-back { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 15px; padding: 0; border: 0; background: transparent; color: var(--green); cursor: pointer; font-size: 10px; font-weight: 600; }
 .settings-panel { min-height: 475px; padding: 25px; border: 1px solid var(--line); border-radius: 5px; background: white; }
 .settings-title { padding-bottom: 17px; border-bottom: 1px solid var(--line); }
@@ -452,7 +453,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .receipt-shop img { width: 40px; height: 40px; object-fit: contain; }
 .receipt-spacer { height: 13px; }
 .receipt-shop + .receipt-spacer { height: 25px; }
-.receipt-datetime { display: flex; gap: 25px; }
+.receipt-datetime { display: flex; gap: 3px; }
 .receipt-head, .receipt-item { display: grid; grid-template-columns: minmax(0, 1fr) 43px 71px; gap: 4px; padding: 4px 0; }
 .receipt-head { border-bottom: 1px solid #c9cdc9; font-weight: 700; }
 .receipt-head span:nth-child(n+2), .receipt-item span:nth-child(n+2) { text-align: right; }
@@ -757,7 +758,8 @@ body svg text { fill: #000 !important; }
 .employee-detail-barcode h3 { color: var(--muted); font-size: 9px; font-weight: 500; }
 .employee-detail-barcode .barcode-image { width: min(210px, 100%); height: 42px; }
 .employee-detail-barcode strong { color: #657168; font-family: 'DM Mono', 'Consolas', monospace; font-size: 10px; }
-.employee-profile-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.employee-profile-actions { grid-template-columns: minmax(0, 1fr); }
+.employee-profile-actions .button { width: 100%; justify-content: center; }
 .report-export-options { display: grid; gap: 10px; padding: 20px; }
 .report-export-options p { margin-bottom: 4px; color: #66736a; font-size: 11px; line-height: 1.6; }
 .payroll-toolbar { display: grid; grid-template-columns: minmax(170px, 1fr) minmax(170px, 1fr) auto auto; align-items: end; gap: 12px; margin-bottom: 16px; padding: 18px; border: 0; background: linear-gradient(120deg, #fff 30%, var(--green-soft)); box-shadow: 0 8px 22px rgb(39 49 42 / 6%); }
