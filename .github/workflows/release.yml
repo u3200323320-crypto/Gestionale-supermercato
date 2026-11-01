@@ -25,10 +25,23 @@ jobs:
         run: npm pkg set version="0.1.${GITHUB_RUN_NUMBER}"
       - name: Build Windows installer
         run: npm run dist:win:all
+      - name: Verify both installers
+        shell: pwsh
+        run: |
+          $version = "0.1.${{ github.run_number }}"
+          $installers = @(
+            "release/management/Gestione-Supermercato-Setup-$version.exe",
+            "release/pos/Cassa-Supermercato-Setup-$version.exe"
+          )
+          foreach ($installer in $installers) {
+            if (-not (Test-Path $installer)) { throw "Installer mancante: $installer" }
+          }
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v0.1.${{ github.run_number }}
           name: Gestionale supermercato v0.1.${{ github.run_number }}
           generate_release_notes: true
-          files: release/**/*.exe
+          files: |
+            release/management/Gestione-Supermercato-Setup-0.1.${{ github.run_number }}.exe
+            release/pos/Cassa-Supermercato-Setup-0.1.${{ github.run_number }}.exe
