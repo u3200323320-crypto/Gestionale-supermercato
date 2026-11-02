@@ -133,15 +133,13 @@ export function deleteSite(database: Database.Database, siteId: number): void {
   if (site.site_type === 'warehouse') {
     throw new Error('Il Magazzino non può essere eliminato.');
   }
-  const used = database.prepare(`SELECT
-    (SELECT COUNT(*) FROM employees WHERE operational_site = ?) +
-    (SELECT COUNT(*) FROM sales WHERE site = ?) +
-    (SELECT COUNT(*) FROM expenses WHERE site = ?) +
-    (SELECT COUNT(*) FROM stock_movements WHERE site = ?) AS count`)
-    .get(site.name, site.name, site.name, site.name) as { count: number };
-  if (used.count > 0) throw new Error('La sede contiene dipendenti, vendite o spese e non può essere eliminata.');
-  const stock = (database.prepare('SELECT COALESCE(SUM(stock), 0) AS quantity FROM site_inventory WHERE site_id = ?')
-    .get(siteId) as { quantity: number }).quantity;
-  if (stock > 0) throw new Error('Trasferisci prima tutte le giacenze della sede prima di eliminarla.');
-  database.prepare('DELETE FROM sites WHERE id = ?').run(siteId);
+  const fallbackSite = database.prepare("SELECT id, name FROM sites WHERE site_type = 'store' AND id != ? ORDER BY id LIMIT 1")
+    .get(siteId) as { id: number; name: string } | undefined;
+  const warehouse = database.prepare("SELECT id FROM sites WHERE site_type = 'warehouse'").get() as { id: number } | undefined;
+  if (!warehouse) throw new Error('Magazzino centrale non disponibile.');
+  database.transaction(() => {
+    database.prepare('UPDATE employees SET operational_site = ? WHERE operational_site = ?').run(fallbackSite?.name ?? 'Non assegnata', site.name);
+    mergeSiteInventory(database, warehouse.id, siteId);
+    database.prepare('DELETE FROM sites WHERE id = ?').run(siteId);
+  })();
 }

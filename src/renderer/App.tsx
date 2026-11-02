@@ -689,6 +689,7 @@ export default function App() {
   const [activityEmployeeId, setActivityEmployeeId] = useState('Tutti');
   const [statisticsPeriod, setStatisticsPeriod] = useState('Tutti');
   const [statisticsSite, setStatisticsSite] = useState('Tutte');
+  const [unsoldSite, setUnsoldSite] = useState('Tutto');
   const [showAllProductRanking, setShowAllProductRanking] = useState(false);
   const [unsoldListOpen, setUnsoldListOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
@@ -811,6 +812,8 @@ export default function App() {
     if (!data) return;
     const defaultExpenseSite = data.sites.find((site) => site.site_type === 'store')?.name ?? data.sites[0]?.name ?? '';
     setExpenseSite((current) => data.sites.some((site) => site.name === current) ? current : defaultExpenseSite);
+    setStatisticsSite((current) => current === 'Tutte' || data.sites.some((site) => site.site_type === 'store' && site.name === current) ? current : 'Tutte');
+    setUnsoldSite((current) => current === 'Tutto' || data.sites.some((site) => site.site_type === 'store' && String(site.id) === current) ? current : 'Tutto');
   }, [data]);
   const notify = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 3600); };
   const refreshCurrentData = async () => {
@@ -830,6 +833,7 @@ export default function App() {
   const activeSiteType = data?.sites.find((site) => site.name === activeSiteName)?.site_type;
   const salesDisabled = activeSiteType === 'warehouse';
   const activeSiteId = data?.sites.find((site) => site.name === activeSiteName)?.id;
+  const storeSites = data?.sites.filter((site) => site.site_type === 'store') ?? [];
   const distributionFromSite = data?.sites.find((site) => site.site_type === 'warehouse');
   const distributionFromSiteId = distributionFromSite ? String(distributionFromSite.id) : '';
   const siteStockFor = (productId: number, siteId = activeSiteId) =>
@@ -1016,7 +1020,7 @@ export default function App() {
     } catch (error) { notify(errorText(error)); }
   };
   const deleteSite = async (siteId: number) => {
-    if (!currentUser?.barcode || !window.confirm('Eliminare questa sede? Le sedi con dati associati non possono essere eliminate.')) return;
+    if (!currentUser?.barcode || !window.confirm(`Eliminare questa sede? Le giacenze saranno trasferite al Magazzino centrale.${storeSites.length > 1 ? ' I dipendenti saranno assegnati alla sede rimanente.' : ' I dipendenti resteranno senza sede operativa.'}`)) return;
     try {
       await window.gestionale.deleteSite(siteId, currentUser.barcode);
       await refresh();
@@ -2099,9 +2103,9 @@ export default function App() {
     if (!data) return;
     const escapeCell = (value: string | number, forceText = false) => `"${`${forceText ? "'" : ''}${String(value)}`.replaceAll('"', '""')}"`;
     const rows: Array<Array<string | number>> = [
-      ['Articolo', 'Codice', 'Categoria', 'Prezzo vendita', 'Prezzo acquisto', 'Giacenza', 'Soglia minima', 'Data scadenza'],
+      ['Nome', 'Codice', 'SKU', 'Categoria', 'Prezzo vendita', 'Prezzo acquisto', 'Giacenza', 'Soglia minima', 'Data scadenza'],
       ...data.products.map((item) => [
-        item.name, item.code, item.category, item.sale_price, item.purchase_price, item.stock,
+        item.name, item.code, `SKU-${String(item.id).padStart(6, '0')}`, item.category, item.sale_price, item.purchase_price, item.stock,
         item.low_stock_threshold, item.expiry_enabled ? item.expiry_date ?? '' : '',
       ]),
     ];
@@ -2211,9 +2215,9 @@ export default function App() {
         const x = rtl ? 198 - column * 96 : 11 + column * 96;
         const text = rtl ? `${value} ${label}` : `${label}: ${value}`;
         if (rtl) {
-          doc.text(text, x, summaryY + 10 + row * 12, { maxWidth: 90, align: 'right' });
+          doc.text(text, x, summaryY + 10 + row * 9, { maxWidth: 90, align: 'right' });
         } else {
-          doc.text(text, x, summaryY + 10 + row * 12, { maxWidth: 90 });
+          doc.text(text, x, summaryY + 10 + row * 9, { maxWidth: 90 });
         }
       });
       doc.save(rtl ? `تقرير-المخزون-${todayKey}.pdf` : `report-magazzino-${todayKey}.pdf`);
@@ -2343,15 +2347,16 @@ export default function App() {
     if (!data) return;
     try {
       const rtl = language === 'ar';
-      const doc = new jsPDF({ orientation: 'landscape' });
+      const doc = new jsPDF({ orientation: 'portrait' });
       if (rtl) await addArabicPdfFont(doc);
       doc.setR2L(rtl);
+      const pageWidth = doc.internal.pageSize.getWidth();
       doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'bold');
       doc.setFontSize(15);
-      doc.text(rtl ? 'سجل أنشطة الموظفين' : 'Tracker dipendenti', rtl ? 285 : 12, 17, rtl ? { align: 'right' } : undefined);
+      doc.text(rtl ? 'سجل أنشطة الموظفين' : 'Tracker dipendenti', rtl ? pageWidth - 8 : 8, 17, rtl ? { align: 'right' } : undefined);
       doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'normal');
       doc.setFontSize(9);
-      doc.text(`${data.settings.shop_name} · ${receiptDate.format(new Date())}`, rtl ? 285 : 12, 24, rtl ? { align: 'right' } : undefined);
+      doc.text(`${data.settings.shop_name} · ${receiptDate.format(new Date())}`, rtl ? pageWidth - 8 : 8, 24, rtl ? { align: 'right' } : undefined);
       const headers = rtl
         ? ['التفاصيل', 'القسم', 'النشاط', 'الموظف', 'التاريخ والوقت']
         : ['Data e ora', 'Dipendente', 'Attività', 'Sezione', 'Dettagli'];
@@ -2360,12 +2365,15 @@ export default function App() {
         localizedText(entry.action, language), localizedText(entry.section, language), localizedText(entry.detail || '—', language),
       ]);
       autoTable(doc, {
-        startY: 31,
+        startY: 30,
         head: [rtl ? [...headers].reverse() : headers],
         body: rows.map((row) => rtl ? row.reverse() : row),
-        styles: { font: rtl ? 'DejaVuSans' : 'helvetica', fontSize: 8, cellPadding: 2, textColor: [0, 0, 0] },
+        styles: { font: rtl ? 'DejaVuSans' : 'helvetica', fontSize: 6.5, cellPadding: 1.5, overflow: 'linebreak', textColor: [0, 0, 0] },
         headStyles: { fillColor: [56, 104, 78], textColor: [255, 255, 255], fontStyle: 'bold' },
-        margin: { left: 12, right: 12, bottom: 12 },
+        margin: { left: 8, right: 8, bottom: 12 },
+        columnStyles: rtl
+          ? { 0: { cellWidth: 68 }, 1: { cellWidth: 29 }, 2: { cellWidth: 35 }, 3: { cellWidth: 30 }, 4: { cellWidth: 32 } }
+          : { 0: { cellWidth: 32 }, 1: { cellWidth: 34 }, 2: { cellWidth: 35 }, 3: { cellWidth: 29 }, 4: { cellWidth: 64 } },
       });
       doc.save(rtl ? `سجل-أنشطة-الموظفين-${todayKey}.pdf` : `tracker-dipendenti-${todayKey}.pdf`);
     } catch (error) {
@@ -2494,7 +2502,10 @@ export default function App() {
     stock: statisticsSite === 'Tutte' ? product.stock : siteStockFor(product.id, selectedStatisticsSiteId),
   }));
   const totalTrackedUnits = soldUnits + statisticsProducts.reduce((sum, product) => sum + product.stock, 0);
-  const unsoldProducts = statisticsProducts.filter((product) => product.stock > 0);
+  const unsoldListProducts = (data?.products ?? []).map((product) => ({
+    ...product,
+    stock: unsoldSite === 'Tutto' ? product.stock : siteStockFor(product.id, Number(unsoldSite)),
+  })).filter((product) => product.stock > 0);
   const stockCost = statisticsProducts.reduce((sum, item) => sum + item.stock * item.purchase_price, 0);
   const stockRetail = statisticsProducts.reduce((sum, item) => sum + item.stock * item.sale_price, 0);
   const productSales = statisticsSales.flatMap((sale) => sale.items).reduce<Record<number, { quantity: number; revenue: number }>>((totals, item) => {
@@ -2609,7 +2620,52 @@ export default function App() {
       alternateRowStyles: { fillColor: [248, 249, 248] },
       margin: { left: 12, right: 12, bottom: 14 },
     });
-    let sectionY = ((doc as jsPDF & { lastAutoTable?: AutoTableTable }).lastAutoTable?.finalY ?? 116) + 8;
+    const reportPieParts = [
+      { name: 'Acquisto merce venduta', value: reportGoodsCost, color: [56, 104, 78] as [number, number, number] },
+      { name: 'Spese e perdite', value: reportOperatingExpenses + reportWasteLoss, color: [216, 154, 58] as [number, number, number] },
+      { name: 'Margine gestionale', value: Math.max(0, reportOperatingResult), color: [63, 122, 168] as [number, number, number] },
+    ].filter((part) => part.value > 0);
+    const reportPieTotal = reportPieParts.reduce((sum, part) => sum + part.value, 0);
+    doc.addPage();
+    pageHeading(localizedText('Composizione del venduto', language));
+    if (reportPieTotal > 0) {
+      const centerX = pageWidth * 0.34;
+      const centerY = 103;
+      const radius = 37;
+      let startAngle = -Math.PI / 2;
+      reportPieParts.forEach((part) => {
+        const endAngle = startAngle + part.value / reportPieTotal * Math.PI * 2;
+        doc.setFillColor(...part.color);
+        const segments = Math.max(2, Math.ceil((endAngle - startAngle) / (Math.PI / 36)));
+        for (let segment = 0; segment < segments; segment += 1) {
+          const firstAngle = startAngle + (endAngle - startAngle) * segment / segments;
+          const secondAngle = startAngle + (endAngle - startAngle) * (segment + 1) / segments;
+          doc.triangle(centerX, centerY,
+            centerX + Math.cos(firstAngle) * radius, centerY + Math.sin(firstAngle) * radius,
+            centerX + Math.cos(secondAngle) * radius, centerY + Math.sin(secondAngle) * radius, 'F');
+        }
+        startAngle = endAngle;
+      });
+      doc.setFont(font, 'normal');
+      doc.setFontSize(9);
+      reportPieParts.forEach((part, index) => {
+        const y = 70 + index * 24;
+        doc.setFillColor(...part.color);
+        doc.rect(rtl ? pageWidth - 97 : pageWidth * 0.59, y - 4, 5, 5, 'F');
+        doc.setTextColor(0, 0, 0);
+        const x = rtl ? pageWidth - 87 : pageWidth * 0.59 + 9;
+        const label = `${localizedText(part.name, language)} · ${(part.value / reportPieTotal * 100).toFixed(1)}%`;
+        doc.text(label, x, y, { maxWidth: pageWidth * 0.35 });
+        doc.setFont(font, 'bold');
+        doc.text(money.format(part.value), x, y + 7, { maxWidth: pageWidth * 0.35 });
+        doc.setFont(font, 'normal');
+      });
+    } else {
+      doc.setFont(font, 'normal');
+      doc.setFontSize(10);
+      doc.text(localizedText('Nessun dato nel periodo selezionato.', language), pageWidth / 2, 103, { align: 'center' });
+    }
+    let sectionY = 153;
     doc.setFont(font, 'bold');
     doc.setFontSize(9);
     doc.setTextColor(0, 0, 0);
@@ -2744,7 +2800,7 @@ export default function App() {
     else start.setMonth(start.getMonth() - (siteStatsPeriod === 'Ultimo mese' ? 1 : siteStatsPeriod === 'Ultimi 3 mesi' ? 3 : 6));
     return new Date(value.length === 10 ? `${value}T12:00:00` : value) >= start;
   };
-  const siteStatistics = (data?.sites ?? []).map((site) => {
+  const siteStatistics = storeSites.map((site) => {
     const sales = (data?.sales ?? []).filter((sale) => sale.site === site.name && siteStatsMatchesDate(sale.created_at));
     const expenses = (data?.expenses ?? []).filter((expense) => expense.site === site.name && siteStatsMatchesDate(expense.expense_date));
     const movements = (data?.stockMovements ?? []).filter((movement) => movement.site === site.name && siteStatsMatchesDate(movement.created_at));
@@ -2756,7 +2812,7 @@ export default function App() {
       stockIn: movements.filter((movement) => movement.movement_type === 'Carico').reduce((sum, movement) => sum + movement.quantity, 0),
       stockOut: movements.filter((movement) => movement.movement_type === 'Scarico').reduce((sum, movement) => sum + movement.quantity, 0) };
   });
-  const selectedSiteStats = siteStatistics.filter((site) => siteStatsFilter === 'Tutte' || site.name === siteStatsFilter);
+  const selectedSiteStats = siteStatistics.filter((site) => site.site_type === 'store' && (siteStatsFilter === 'Tutte' || site.name === siteStatsFilter));
   const siteStatsIncome = selectedSiteStats.reduce((sum, site) => sum + site.income, 0);
   const siteStatsExpenses = selectedSiteStats.reduce((sum, site) => sum + site.expenses, 0);
   const matchesInventoryHistoryPeriod = (createdAt: string) => {
@@ -2860,7 +2916,7 @@ export default function App() {
     autoTable(doc, {
       startY: 32,
       head: [['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']],
-      body: unsoldProducts.map((product) => [product.name, product.category, `${product.stock} ${product.unit ?? 'PEZZO'}`, money.format(product.sale_price)]),
+      body: unsoldListProducts.map((product) => [product.name, product.category, `${product.stock} ${product.unit ?? 'PEZZO'}`, money.format(product.sale_price)]),
       styles: { fontSize: 9 },
       headStyles: { fillColor: [56, 104, 78] },
     });
@@ -2873,12 +2929,18 @@ export default function App() {
       const doc = new jsPDF({ orientation: 'portrait' });
       if (rtl) await addArabicPdfFont(doc);
       doc.setR2L(rtl);
+      const pageWidth = doc.internal.pageSize.getWidth();
+      doc.setFillColor(56, 136, 78);
+      doc.rect(8, 7, pageWidth - 16, 13, 'F');
       doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'bold');
-      doc.setFontSize(15);
-      doc.text(rtl ? 'سجل المخزن' : 'Storico magazzino', rtl ? 285 : 12, 17, rtl ? { align: 'right' } : undefined);
+      doc.setFontSize(13);
+      doc.setTextColor(255, 255, 255);
+      doc.text(rtl ? 'سجل المخزن' : 'Storico magazzino', rtl ? pageWidth - 12 : 12, 16, rtl ? { align: 'right' } : undefined);
+      doc.setFillColor(56, 136, 78);
+      doc.rect(8, 21, pageWidth - 16, 9, 'F');
       doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.text(`${data.settings.shop_name} · ${receiptDate.format(new Date())}`, rtl ? 285 : 12, 24, rtl ? { align: 'right' } : undefined);
+      doc.setFontSize(8);
+      doc.text(`${data.settings.shop_name} · ${receiptDate.format(new Date())}`, rtl ? pageWidth - 12 : 12, 27, rtl ? { align: 'right' } : undefined);
       const headers = rtl
         ? ['ملاحظة', 'الشخص', 'الكمية', 'الحركة', 'المنتج', 'التاريخ والوقت']
         : ['Data e ora', 'Articolo', 'Movimento', 'Quantità', 'Persona', 'Nota'];
@@ -2888,7 +2950,7 @@ export default function App() {
         movement.person || '—', localizedText(movement.note || '—', language),
       ]);
       autoTable(doc, {
-        startY: 31,
+        startY: 34,
         head: [rtl ? [...headers].reverse() : headers],
         body: rows.map((row) => rtl ? row.reverse() : row),
         styles: { font: rtl ? 'DejaVuSans' : 'helvetica', fontSize: 8, cellPadding: 2, textColor: [0, 0, 0] },
@@ -2959,7 +3021,7 @@ export default function App() {
         {(canAccess('promotions') || canAccess('employees')) && <div className="nav-label nav-label-extra">GESTIONE EXTRA</div>}
         {canAccess('employees') && <>
           <button aria-expanded={openSidebarMenu === 'employees'} className={`nav-item${['employees', 'employee-create', 'payroll', 'employee-tracker'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'employees' ? null : 'employees')}><ClipboardList size={18} /><span>Dipendenti</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'employees' ? ' open' : ''}`} size={15} /></button>
-          {openSidebarMenu === 'employees' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => navigateTo('employees')}>Lista Dipendenti</button><button className={`sidebar-subitem${section === 'employee-create' ? ' selected' : ''}`} onClick={startEmployeeCreation}>Crea Dipendente</button><button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => navigateTo('payroll')}>Paga Stipendi</button><button className={`sidebar-subitem${section === 'employee-tracker' ? ' selected' : ''}`} onClick={() => navigateTo('employee-tracker')}>Tracker Dipendenti</button></div>}
+          {openSidebarMenu === 'employees' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => navigateTo('employees')}>Lista Dipendenti</button><button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => navigateTo('payroll')}>Paga Stipendi</button><button className={`sidebar-subitem${section === 'employee-tracker' ? ' selected' : ''}`} onClick={() => navigateTo('employee-tracker')}>Tracker Dipendenti</button></div>}
           <button aria-expanded={siteMenuOpen} className={`nav-item${['site-statistics', 'site-management', 'site-create', 'site-list'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'sites' ? null : 'sites')}><Store size={18} /><span>Gestione sedi</span><ChevronDown className={`nav-chevron${siteMenuOpen ? ' open' : ''}`} size={15} /></button>
           {siteMenuOpen && <div className="sidebar-submenu">{canAccess('site-statistics') && <button className={`sidebar-subitem${section === 'site-statistics' ? ' selected' : ''}`} onClick={() => navigateTo('site-statistics')}>Statistiche sedi</button>}{canAccess('site-list') && <button className={`sidebar-subitem${section === 'site-list' ? ' selected' : ''}`} onClick={() => navigateTo('site-list')}>Lista sedi</button>}</div>}
         </>}
@@ -2972,7 +3034,7 @@ export default function App() {
       {section === 'home' && <div className="page-content home-page"><img className="home-banner" src={data.settings.home_image || homeBanner} alt="Immagine homepage" /><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length} scontrini emessi`} /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyProfit)} detail="Profitto dopo sconti e costo merce" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString(appLocale)} detail="Pezzi registrati oggi" /></div><section className="expiry-alert expiry-home-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{canAccess('inventory') && expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length} articoli sotto soglia`} action={canAccess('inventory') ? <button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); navigateTo('inventory'); }}>{language === 'ar' ? 'الانتقال إلى المخزن ←' : 'Vai al magazzino →'}</button> : undefined} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => { if (canAccess('inventory')) setSelectedProduct(p); }}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock}</td><td>{p.low_stock_threshold}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => navigateTo('sales')}>{language === 'ar' ? 'كل المبيعات ←' : 'Tutte le vendite →'}</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
 
       {section === 'inventory' && <div className="page-content">
-        <div className="page-toolbar inventory-toolbar"><div><h2>Articoli in magazzino</h2><p>{data.products.length} articoli registrati</p></div>{!isCashierRole(activeRole) && <div className="toolbar-actions"><button className="button button-outline" onClick={exportInventoryCsv}><ArrowDownToLine size={16} /> Esporta CSV</button><button className="button button-outline" onClick={exportInventoryReport}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-primary" onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct }); }}><Plus size={16} /> Aggiungi nuovo articolo</button></div>}</div>
+        <div className="page-toolbar inventory-toolbar"><div><h2>Articoli in magazzino</h2><p>{data.products.length} articoli registrati{!storeSites.length && ' · Registra una sede prima di aggiungere articoli'}</p></div>{!isCashierRole(activeRole) && <div className="toolbar-actions"><button className="button button-outline" onClick={exportInventoryCsv}><ArrowDownToLine size={16} /> Esporta CSV</button><button className="button button-outline" onClick={exportInventoryReport}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-primary" disabled={!storeSites.length} onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct }); }}><Plus size={16} /> Aggiungi nuovo articolo</button></div>}</div>
         <div className="filter-row"><SearchInput value={inventorySearch} onChange={setInventorySearch} placeholder="Cerca per nome o codice…" /><label className="select-wrap"><span>Categoria</span><select value={category} onChange={(e) => setCategory(e.target.value)}><option>Tutte</option>{categories.map((item) => <option key={item}>{item}</option>)}</select><ChevronDown size={14} /></label><details className="inventory-filter-dropdown"><summary className="select-wrap"><span>Disponibilità: {inventoryFilters.find((item) => item.value === inventoryStatus)?.label}</span><ChevronDown size={14} /></summary><div className="inventory-status-filters" role="group" aria-label="Filtra prodotti per disponibilità">{inventoryFilters.map(({ value, label }) => <button key={value} className={`status-filter${inventoryStatus === value ? ' active' : ''}`} aria-pressed={inventoryStatus === value} onClick={(event) => { setInventoryStatus(value); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{label}</button>)}</div></details></div>
         {!isCashierRole(activeRole) && <div className="expiry-panels">
           <section className="expiry-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section>
@@ -3071,7 +3133,7 @@ export default function App() {
       </div>}
       {section === 'site-statistics' && <div className="page-content accounting-page site-statistics-page"><div className="site-statistics-filters"><SelectField label="Periodo" value={siteStatsPeriod} onChange={setSiteStatsPeriod} options={['Oggi', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Ultimi 6 mesi', 'Tutto', 'Da - A']} /><SelectField label="Sede" value={siteStatsFilter} onChange={setSiteStatsFilter} options={['Tutte', ...data.sites.map((site) => site.name)]} /><>{siteStatsPeriod === 'Da - A' && <><Field label="Da" type="date" value={siteStatsFrom} onChange={(event) => setSiteStatsFrom(event.target.value)} /><Field label="A" type="date" value={siteStatsTo} onChange={(event) => setSiteStatsTo(event.target.value)} /></>}</></div><div className="metric-grid accounting-metrics"><Metric icon={Banknote} label="Entrate sedi" value={money.format(siteStatsIncome)} detail={siteStatsPeriod} /><Metric icon={ArrowDownToLine} label="Uscite sedi" value={money.format(siteStatsExpenses)} detail={siteStatsPeriod} /><Metric icon={TrendingUp} label="Saldo sedi" value={money.format(siteStatsIncome - siteStatsExpenses)} detail="Entrate meno uscite" /><Metric icon={Package} label="Sedi attive" value={String(selectedSiteStats.length)} detail="Sedi nel filtro selezionato" /></div><section className="panel site-summary-panel"><div className="panel-heading"><div><h3>Entrate e uscite per sede</h3><p>{siteStatsPeriod}</p></div></div><Table headings={['Sede', 'Entrate', 'Uscite', 'Saldo', 'Scontrini', 'Carico merce', 'Scarico merce']}><>{selectedSiteStats.map((site) => <tr key={site.id}><td className="cell-primary">{site.name}</td><td className="align-right">{money.format(site.income)}</td><td className="align-right">{money.format(site.expenses)}</td><td className="align-right cell-primary">{money.format(site.balance)}</td><td>{site.receipts}</td><td>{quantityFormat.format(site.stockIn)}</td><td>{quantityFormat.format(site.stockOut)}</td></tr>)}</>{!selectedSiteStats.length && <tr><td colSpan={7} className="empty-cell">Nessuna sede trovata.</td></tr>}</Table></section><SiteStockStatistics sites={data.sites.filter((site) => siteStatsFilter === 'Tutte' || site.name === siteStatsFilter)} siteStocks={data.siteStocks} employees={data.employees} products={data.products} /></div>}
       {section === 'site-create' && siteDraft && <div className="page-content settings-page"><section className="settings-panel"><button className="settings-back" onClick={() => navigateTo('site-list')}><ArrowLeft size={15} /> Lista sedi</button><div className="settings-title"><h2>{siteDraft.id ? 'Modifica sede' : 'Aggiungi sede'}</h2></div><form className="settings-form site-form" onSubmit={(event) => void saveSite(event)}><Field label="Nome sede" value={siteDraft.name} onChange={(event) => setSiteDraft({ ...siteDraft, name: event.target.value })} required /><Field label="Indirizzo" value={siteDraft.address} onChange={(event) => setSiteDraft({ ...siteDraft, address: event.target.value })} /><Field label="Telefono" type="tel" value={siteDraft.phone} onChange={(event) => setSiteDraft({ ...siteDraft, phone: event.target.value })} /><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setSiteDraft(null); navigateTo('site-list'); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Salva sede</button></div></form></section></div>}
-      {section === 'site-list' && <div className="page-content"><div className="page-toolbar"><div><h2>Lista sedi</h2><p>{data.sites.length} sedi registrate</p></div>{canAccess('site-management') && <button className="button button-primary" onClick={() => { setSiteDraft({ name: '', address: '', phone: '' }); navigateTo('site-create'); }}><Plus size={16} /> Aggiungi sede</button>}</div><Table headings={['Sede', 'Tipo', 'Codice di riconoscimento', 'Indirizzo', 'Telefono', 'Dipendenti', 'Azioni']}><>{data.sites.map((site) => <tr key={site.id}><td className="cell-primary">{site.name}</td><td>{site.site_type === 'warehouse' ? 'Magazzino' : 'Punto vendita'}</td><td className="mono">{site.recognition_code}</td><td>{site.address || '—'}</td><td>{site.phone || '—'}</td><td>{data.employees.filter((employee) => employee.operational_site === site.name).length}</td><td><div className="toolbar-actions">{canAccess('site-management') && site.site_type === 'store' && <><button className="button button-outline" onClick={() => { setSiteDraft({ id: site.id, name: site.name, address: site.address, phone: site.phone }); navigateTo('site-create'); }}><Pencil size={14} /> Modifica</button><button className="button button-danger" onClick={() => void deleteSite(site.id)}><Trash2 size={14} /> Elimina</button></>}</div></td></tr>)}</></Table></div>}
+      {section === 'site-list' && <div className="page-content"><div className="page-toolbar"><div><h2>Lista sedi</h2><p>{storeSites.length} sedi registrate</p></div>{canAccess('site-management') && <button className="button button-primary" onClick={() => { setSiteDraft({ name: '', address: '', phone: '' }); navigateTo('site-create'); }}><Plus size={16} /> Aggiungi sede</button>}</div><Table headings={['Sede', 'Tipo', 'Codice di riconoscimento', 'Indirizzo', 'Telefono', 'Dipendenti', 'Azioni']}><>{storeSites.map((site) => <tr key={site.id}><td className="cell-primary">{site.name}</td><td>Punto vendita</td><td className="mono">{site.recognition_code}</td><td>{site.address || '—'}</td><td>{site.phone || '—'}</td><td>{data.employees.filter((employee) => employee.operational_site === site.name).length}</td><td><div className="toolbar-actions">{canAccess('site-management') && <><button className="button button-outline" onClick={() => { setSiteDraft({ id: site.id, name: site.name, address: site.address, phone: site.phone }); navigateTo('site-create'); }}><Pencil size={14} /> Modifica</button><button className="button button-danger" onClick={() => void deleteSite(site.id)}><Trash2 size={14} /> Elimina</button></>}</div></td></tr>)}</></Table></div>}
       {section === 'employee-tracker' && <div className="page-content">
         <div id="employee-tracker-print">
           <div className="inventory-history-actions no-print">
@@ -3160,7 +3222,7 @@ export default function App() {
       </section></div>}
 
       {section === 'statistics' && <div className="page-content">
-        <div className="statistics-toolbar"><details className="statistics-period-dropdown"><summary className="select-wrap"><span>Periodo: {statisticsPeriod}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra statistiche per periodo">{statisticsPeriods.map((period) => <button key={period} className={`status-filter${statisticsPeriod === period ? ' active' : ''}`} aria-pressed={statisticsPeriod === period} onClick={(event) => { setStatisticsPeriod(period); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{period}</button>)}</div></details><label className="select-wrap statistics-site-filter"><span>Sede</span><select value={statisticsSite} onChange={(event) => setStatisticsSite(event.target.value)}><option value="Tutte">Tutte</option>{data.sites.map((site) => <option key={site.id} value={site.name}>{site.name}</option>)}</select><ChevronDown size={14} /></label></div>
+        <div className="statistics-toolbar"><details className="statistics-period-dropdown"><summary className="select-wrap"><span>Periodo: {statisticsPeriod}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra statistiche per periodo">{statisticsPeriods.map((period) => <button key={period} className={`status-filter${statisticsPeriod === period ? ' active' : ''}`} aria-pressed={statisticsPeriod === period} onClick={(event) => { setStatisticsPeriod(period); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{period}</button>)}</div></details><label className="select-wrap statistics-site-filter"><span>Sede</span><select value={statisticsSite} onChange={(event) => setStatisticsSite(event.target.value)}><option value="Tutte">Tutte</option>{storeSites.map((site) => <option key={site.id} value={site.name}>{site.name}</option>)}</select><ChevronDown size={14} /></label></div>
         <section className="panel product-sales-panel"><div className="panel-heading"><div><h3>Prodotti più e meno venduti</h3></div></div><Table headings={['Posizione', 'Prodotto', 'Quantità venduta', 'Ricavi']}><>{(showAllProductRanking ? productSalesRanking : productSalesRanking.slice(0, 4)).map((product, index) => <tr key={product.id}><td>{index + 1}</td><td className="cell-primary">{product.name}</td><td>{quantityFormat.format(product.quantitySold)} {product.unit === 'PEZZO' ? 'pz' : product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : ''}</td><td>{money.format(product.revenue)}</td></tr>)}</>{!productSalesRanking.length && <tr><td colSpan={4} className="empty-cell">Nessun prodotto registrato.</td></tr>}</Table>{productSalesRanking.length > 4 && <button className="button button-quiet ranking-expand" type="button" aria-expanded={showAllProductRanking} onClick={() => setShowAllProductRanking((current) => !current)}>{showAllProductRanking ? 'Mostra meno' : 'Vedi tutti'}</button>}</section>
         <div className="metric-grid stats-metrics"><Metric icon={Banknote} label="Vendite" value={money.format(soldTotal)} detail="Incassi registrati nel periodo" /><Metric icon={CreditCard} label="Acquisto merce venduta" value={money.format(soldCost)} detail="Costo degli articoli venduti" /><Metric icon={TrendingUp} label="Netto stimato" value={money.format(estimatedNet)} detail="Ricavi meno costo del venduto e spese" /><Metric className="stats-wide-card" icon={Trash2} label="Valore merce buttata" value={money.format(statisticsWasteLoss)} detail="Valore merce buttata nel periodo" /><Metric className="stats-wide-card" icon={ShoppingBasket} label="Quantità vendite" value={`${soldUnits.toLocaleString(appLocale)} ${language === 'ar' ? 'من' : 'di'} ${totalTrackedUnits.toLocaleString(appLocale)}`} valueDir="ltr" detail="Articoli venduti rispetto a quelli ancora in magazzino" action={<button className="text-button metric-action" onClick={() => setUnsoldListOpen(true)}>{language === 'ar' ? 'عرض القائمة' : 'Vedi lista'}</button>} /></div>
         <div className="metric-grid inventory-values"><Metric icon={Package} label="Valore vendita in magazzino" value={money.format(stockRetail)} detail="Valore al prezzo di vendita" compact /><Metric icon={Archive} label="Valore acquisto in magazzino" value={money.format(stockCost)} detail="Costo delle scorte attuali" compact /><Metric icon={TrendingUp} label="Netto potenziale" value={money.format(stockRetail - stockCost)} detail="Margine potenziale delle scorte" compact /></div>
@@ -3179,7 +3241,7 @@ export default function App() {
       </section>}</div></div>}
     </main>
 
-    {unsoldListOpen && <Modal title="Articoli ancora in magazzino" close={() => setUnsoldListOpen(false)} wide><div id="unsold-list-print"><Table headings={['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']}><>{unsoldProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td>{product.category}</td><td>{product.stock} {product.unit ?? 'PEZZO'}</td><td>{money.format(product.sale_price)}</td></tr>)}</>{!unsoldProducts.length && <tr><td colSpan={4} className="empty-cell">Non risultano articoli rimanenti in magazzino.</td></tr>}</Table></div><div className="unsold-list-actions no-print"><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa</button><button className="button button-primary" onClick={() => void shareUnsoldList()}><Share2 size={16} /> Condividi</button></div></Modal>}
+    {unsoldListOpen && <Modal title="Articoli ancora in magazzino" close={() => setUnsoldListOpen(false)} wide><label className="select-wrap unsold-site-filter"><span>Sede</span><select value={unsoldSite} onChange={(event) => setUnsoldSite(event.target.value)}><option value="Tutto">Tutto</option>{storeSites.map((site) => <option key={site.id} value={String(site.id)}>{site.name}</option>)}</select><ChevronDown size={14} /></label><div id="unsold-list-print"><Table headings={['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']}><>{unsoldListProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td>{product.category}</td><td>{product.stock} {product.unit ?? 'PEZZO'}</td><td>{money.format(product.sale_price)}</td></tr>)}</>{!unsoldListProducts.length && <tr><td colSpan={4} className="empty-cell">Non risultano articoli rimanenti in magazzino.</td></tr>}</Table></div><div className="unsold-list-actions no-print"><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa</button><button className="button button-primary" onClick={() => void shareUnsoldList()}><Share2 size={16} /> Condividi</button></div></Modal>}
     {reportExportOpen && <Modal title={reportExportType.startsWith('sales') ? 'Esporta report vendite' : 'Esporta report contabilità e finanza'} close={() => setReportExportOpen(false)}><div className="report-export-options"><p>Vuoi applicare al report il filtro temporale selezionato ({reportExportType.startsWith('sales') ? salesPeriod : balancePeriod}) o includere tutto il periodo disponibile?</p><button className="button button-primary" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(true); else if (reportExportType === 'sales-xlsx') void exportSalesXlsx(true); else void downloadFinancialBalance(true); }}><Check size={15} /> Rispetta il filtro di tempo</button><button className="button button-outline" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(false); else if (reportExportType === 'sales-xlsx') void exportSalesXlsx(false); else void downloadFinancialBalance(false); }}><ArrowDownToLine size={15} /> Esporta tutto</button></div></Modal>}
     {employeeDetails && <Modal title={`${employeeDetails.first_name} ${employeeDetails.last_name}`} close={() => setEmployeeDetails(null)} rightHalf>
       <div className={`employee-detail-content${normalizedRole(employeeDetails.role) === 'proprietario' ? ' employee-owner-profile' : ''}`}>

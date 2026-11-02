@@ -731,6 +731,9 @@ function createWindow(): void {
     mainWindow.focus();
     return;
   }
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'icons', 'app.svg')
+    : join(app.getAppPath(), 'build', 'icon.svg');
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 920,
@@ -740,6 +743,7 @@ function createWindow(): void {
     minHeight: 720,
     backgroundColor: '#f6f7f5',
     title: 'Gestione Supermercato',
+    icon: iconPath,
     webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   const rendererUrl = process.env.ELECTRON_RENDERER_URL;
@@ -836,6 +840,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   });
   ipcMain.handle('product:save', (event, product: ProductInput) => {
     requireSession(event.sender.id, ['proprietario', 'direttore']);
+    if (!(database.prepare("SELECT 1 FROM sites WHERE site_type = 'store' LIMIT 1").get())) {
+      throw new Error('Registra almeno una sede prima di aggiungere articoli.');
+    }
     const expiryDate = product.expiry_date ? new Date(`${product.expiry_date}T00:00:00`) : null;
     if (!product.name.trim() || !product.code.trim() || product.sale_price < 0 || product.purchase_price < 0 || product.stock < 0
       || (product.expiry_enabled && (!product.expiry_date || !/^\d{4}-\d{2}-\d{2}$/.test(product.expiry_date) || !expiryDate || Number.isNaN(expiryDate.getTime()) || localDate(expiryDate) !== product.expiry_date))) {

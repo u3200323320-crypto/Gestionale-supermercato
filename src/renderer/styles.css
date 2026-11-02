@@ -453,7 +453,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .receipt-shop img { width: 40px; height: 40px; object-fit: contain; }
 .receipt-spacer { height: 13px; }
 .receipt-shop + .receipt-spacer { height: 25px; }
-.receipt-datetime { display: flex; gap: 2ch; }
+.receipt-datetime { display: flex; gap: 3ch; }
 .receipt-head, .receipt-item { display: grid; grid-template-columns: minmax(0, 1fr) 43px 71px; gap: 4px; padding: 4px 0; }
 .receipt-head { border-bottom: 1px solid #c9cdc9; font-weight: 700; }
 .receipt-head span:nth-child(n+2), .receipt-item span:nth-child(n+2) { text-align: right; }
@@ -604,13 +604,14 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 
 @media print {
   @page { margin: 8mm; size: auto; }
+  @page receipt { margin: 0; size: 57mm auto; }
   body, body * { visibility: hidden !important; }
   #receipt-print, #receipt-print *,
   #inventory-history-print, #inventory-history-print *,
   #employee-tracker-print, #employee-tracker-print *,
   #unsold-list-print, #unsold-list-print *,
   #voucher-print, #voucher-print * { visibility: visible !important; }
-  #receipt-print { position: fixed; top: 0; left: 0; width: 76mm; max-width: none; padding: 0; color: #000; font-size: 9.5pt; }
+  #receipt-print { position: fixed; top: 0; left: 0; page: receipt; width: 57mm; max-width: none; padding: 0; color: #000; font-size: 9.5pt; }
   #inventory-history-print, #employee-tracker-print, #unsold-list-print, #voucher-print { position: fixed; top: 0; left: 0; width: 100%; max-width: none; padding: 0; background: white; }
   #voucher-print { display: block !important; }
   #inventory-history-print .table-wrap, #employee-tracker-print .table-wrap, #unsold-list-print .table-wrap, #voucher-print { overflow: visible; border: 0; max-height: none; }
@@ -659,12 +660,12 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .toggle-button { min-width: 62px; height: 34px; border: 1px solid #dfe4de; border-radius: 18px; background: #f4f5f3; color: #6d7770; cursor: pointer; font-size: 10px; font-weight: 700; }
 .toggle-button.enabled { border-color: rgb(56 104 78 / 42%); background: var(--green-soft); color: var(--green-dark); }
 .statistics-toolbar { display: flex; align-items: flex-end; gap: 9px; margin: -4px 0 16px; }
-.statistics-period-dropdown { position: relative; flex: 0 1 230px; }
+.statistics-period-dropdown { position: relative; min-width: 0; flex: 1 1 0; }
 .statistics-period-dropdown > summary { justify-content: space-between; cursor: pointer; list-style: none; }
 .statistics-period-dropdown > summary::-webkit-details-marker { display: none; }
 .statistics-period-options { position: absolute; top: calc(100% + 5px); left: 0; z-index: 4; display: grid; min-width: 100%; gap: 3px; padding: 5px; border: 1px solid var(--line); border-radius: 4px; background: white; box-shadow: var(--shadow); }
 .statistics-period-options .status-filter { text-align: left; white-space: nowrap; }
-.statistics-site-filter { width: min(230px, 100%); }
+.statistics-site-filter { width: auto; min-width: 0; flex: 1 1 0; }
 .metric-action { position: static; flex: 0 0 auto; padding: 4px 0; }
 .page-content:has(.stats-metrics) .panel, .accounting-page .panel { transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
 .page-content:has(.stats-metrics) .panel:hover, .accounting-page .panel:hover { transform: translateY(-2px); border-color: #ccd9cd; box-shadow: 0 7px 18px rgb(38 59 42 / 6%); }
@@ -681,6 +682,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .movement-out { background: #f5dfdd; color: #a1261b; }
 .unsold-list-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
 .unsold-list-actions .button { width: 100%; }
+.unsold-site-filter { width: 220px; max-width: 100%; margin-bottom: 12px; }
 
 .sidebar nav .nav-label-extra { margin: 12px 9px 4px; }
 .employee-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; }
@@ -840,7 +842,7 @@ body svg text { fill: #000 !important; }
   .employee-toolbar > .search-field { max-width: none; flex: 1 1 100%; }
   .employee-toolbar > .toolbar-actions { width: auto; flex-wrap: wrap; }
   .statistics-toolbar { flex-wrap: wrap; }
-  .statistics-period-dropdown, .statistics-site-filter { flex: 1 1 180px; }
+  .statistics-period-dropdown, .statistics-site-filter { flex: 1 1 0; }
 }
 @media (max-width: 600px) {
   .employee-fields { grid-template-columns: 1fr; }

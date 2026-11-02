@@ -54,11 +54,16 @@
       {
         "from": "src/renderer/DejaVuSans.LICENSE",
         "to": "licenses/DejaVuSans.LICENSE"
+      },
+      {
+        "from": "build/icon.svg",
+        "to": "icons/app.svg"
       }
     ],
     "asar": true,
     "npmRebuild": true,
     "win": {
+      "icon": "build/icon.svg",
       "target": [
         {
           "target": "nsis",
