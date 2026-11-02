@@ -8,13 +8,12 @@ import { pathToFileURL } from 'node:url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
 import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, Employee, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, Sale, SaleItem, Site, SiteInput, SiteStock, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
-import { deleteSite, MAIN_SITE_NAME, migrateSites, saveSite, WAREHOUSE_SITE_NAME } from './site-service';
+import { deleteSite, migrateSites, saveSite, WAREHOUSE_SITE_NAME } from './site-service';
 
 let database: Database.Database;
 let mainWindow: BrowserWindow;
 let databaseFile = '';
 let salesRetentionInterval: NodeJS.Timeout | undefined;
-const mainSiteName = MAIN_SITE_NAME;
 const warehouseSiteName = WAREHOUSE_SITE_NAME;
 const authenticatedSessions = new Map<number, AuthenticatedEmployee>();
 const saleActionAuthorizations = new Map<number, { barcode: string; expiresAt: number }>();
@@ -328,7 +327,7 @@ function initDatabase(): void {
     CREATE TABLE IF NOT EXISTS sales (
       id INTEGER PRIMARY KEY AUTOINCREMENT, receipt_no TEXT NOT NULL UNIQUE,
       created_at TEXT NOT NULL, employee_name TEXT NOT NULL DEFAULT '', payment_method TEXT NOT NULL, discount REAL NOT NULL DEFAULT 0,
-      total REAL NOT NULL DEFAULT 0, site TEXT NOT NULL DEFAULT '${mainSiteName}'
+      total REAL NOT NULL DEFAULT 0, site TEXT NOT NULL DEFAULT ''
     );
     CREATE TABLE IF NOT EXISTS sale_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
@@ -443,7 +442,7 @@ function initDatabase(): void {
     database.exec("ALTER TABLE sales ADD COLUMN employee_name TEXT NOT NULL DEFAULT ''");
   }
   if (!saleColumns.some((column) => column.name === 'site')) {
-    database.exec(`ALTER TABLE sales ADD COLUMN site TEXT NOT NULL DEFAULT '${mainSiteName}'`);
+    database.exec("ALTER TABLE sales ADD COLUMN site TEXT NOT NULL DEFAULT ''");
   }
   if (!saleColumns.some((column) => column.name === 'gross_total')) {
     database.exec('ALTER TABLE sales ADD COLUMN gross_total REAL NOT NULL DEFAULT 0');
@@ -508,9 +507,12 @@ function initDatabase(): void {
     const insert = database.prepare('INSERT INTO products (code, name, category, sale_price, purchase_price, stock, low_stock_threshold) VALUES (@code, @name, @category, @sale_price, @purchase_price, @stock, @low_stock_threshold)');
     database.transaction(() => seedProducts.forEach((product) => insert.run(product)))();
   }
-  database.prepare(`INSERT OR IGNORE INTO site_inventory (product_id, site_id, stock)
-    SELECT products.id, sites.id, products.stock FROM products
-    JOIN sites ON sites.name = '${warehouseSiteName}'`).run();
+  const inventorySeedSite = database.prepare('SELECT id FROM sites WHERE name = ?').get(warehouseSiteName) as { id: number } | undefined;
+  if (inventorySeedSite) {
+    database.prepare(`INSERT OR IGNORE INTO site_inventory (product_id, site_id, stock)
+      SELECT products.id, ?, products.stock FROM products
+      WHERE NOT EXISTS (SELECT 1 FROM site_inventory WHERE site_inventory.product_id = products.id)`).run(inventorySeedSite.id);
+  }
   database.prepare(`UPDATE products SET stock = (SELECT COALESCE(SUM(stock), 0)
     FROM site_inventory WHERE site_inventory.product_id = products.id)`).run();
   removeExpiredRecords();
@@ -542,9 +544,7 @@ function adjustSiteInventory(productId: number, siteId: number, delta: number): 
 function siteIdByName(name: string): number {
   const site = database.prepare('SELECT id FROM sites WHERE name = ?').get(name) as { id: number } | undefined;
   if (site) return site.id;
-  const mainSite = database.prepare('SELECT id FROM sites WHERE name = ?').get(mainSiteName) as { id: number } | undefined;
-  if (!mainSite) throw new Error('Punto vendita principale non trovato.');
-  return mainSite.id;
+  throw new Error(`Sede non trovata: ${name}.`);
 }
 
 function replaceItems(saleId: number, items: SaleItem[], siteId: number): void {
@@ -894,14 +894,18 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         const site = database.prepare('SELECT name FROM sites WHERE id = ?').get(site_id) as { name: string };
         recordStockMovement(productId, product.name, 'Scarico', stock, 'Smaltimento prodotto scaduto', '', '', site.name);
       });
-      database.prepare(`INSERT INTO expenses (description, category, amount, expense_date, created_at, site)
-        VALUES (?, 'Merce buttata', ?, ?, ?, ?)`).run(
-        `Perdita merce scaduta: ${product.name}`,
-        quantities.reduce((total, { stock }) => total + stock, 0) * product.purchase_price,
-        localDate(new Date()),
-        new Date().toISOString(),
-        mainSiteName,
-      );
+      const addWasteExpense = database.prepare(`INSERT INTO expenses (description, category, amount, expense_date, created_at, site)
+        VALUES (?, 'Merce buttata', ?, ?, ?, ?)`);
+      quantities.forEach(({ site_id, stock }) => {
+        const site = database.prepare('SELECT name FROM sites WHERE id = ?').get(site_id) as { name: string };
+        addWasteExpense.run(
+          `Perdita merce scaduta: ${product.name}`,
+          stock * product.purchase_price,
+          localDate(new Date()),
+          new Date().toISOString(),
+          site.name,
+        );
+      });
     })();
   });
   ipcMain.handle('product:stock', (event, productId: number, stock: number) => {
@@ -1018,7 +1022,8 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       const employee = employeeForLogin(session.barcode);
       const employeeSite = employee
         ? (database.prepare('SELECT operational_site FROM employees WHERE id = ?').get(employee.id) as { operational_site: string }).operational_site
-        : mainSiteName;
+        : (database.prepare("SELECT name FROM sites WHERE site_type = 'store' ORDER BY id LIMIT 1").get() as { name: string } | undefined)?.name;
+      if (!employeeSite) throw new Error('Crea prima una sede operativa per registrare le vendite.');
       const site = database.prepare('SELECT name, site_type FROM sites WHERE name = ?').get(employeeSite) as { name: string; site_type: 'store' | 'warehouse' } | undefined;
       if (!site || site.site_type !== 'store') throw new Error('La sede Magazzino non è abilitata alla registrazione delle vendite.');
       const voucher = voucherCode ? findValidVoucher(voucherCode) : undefined;
@@ -1102,7 +1107,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
             `Modifica vendita #${receipt?.receipt_no ?? sale.id}`,
             employee ? `${employee.first_name} ${employee.last_name}`.trim() : '',
             '',
-            receipt?.site ?? mainSiteName,
+            receipt.site,
           );
         }
       });
@@ -1132,7 +1137,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
           `Vendita #${receipt?.receipt_no ?? id} eliminata`,
           employee ? `${employee.first_name} ${employee.last_name}`.trim() : '',
           '',
-          receipt?.site ?? mainSiteName,
+          receipt.site,
         );
       });
       database.prepare('DELETE FROM sales WHERE id=?').run(id);
@@ -1296,6 +1301,16 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     const requester = employeeForLogin(requesterBarcode);
     if (!requester || normalizedEmployeeRole(requester.role) !== 'proprietario') throw new Error('Solo il Proprietario può gestire le sedi.');
     deleteSite(database, siteId);
+  });
+  ipcMain.handle('site:setup', (_event, input: SiteInput) => {
+    if (setting('setup_complete') === 'true'
+      || (database.prepare('SELECT COUNT(*) AS count FROM employees').get() as { count: number }).count > 0) {
+      throw new Error('La configurazione iniziale è già stata completata.');
+    }
+    const existing = database.prepare('SELECT id, site_type FROM sites WHERE name = ?').get(input?.name?.trim()) as
+      { id: number; site_type: 'store' | 'warehouse' } | undefined;
+    if (existing?.site_type === 'warehouse') throw new Error('Il nome scelto è già usato dal Magazzino.');
+    saveSite(database, existing ? { ...input, id: existing.id } : input);
   });
   ipcMain.handle('employee:save', (event, employee: EmployeeInput) => {
     const requiredText: Array<keyof EmployeeInput> = [

@@ -249,6 +249,7 @@ declare global {
     openExpenseReceipt: (id: number) => Promise<void>;
     deleteExpense: (id: number) => Promise<void>;
     saveSite: (site: SiteInput, requesterBarcode: string) => Promise<void>;
+    setupSite: (site: SiteInput) => Promise<void>;
     deleteSite: (siteId: number, requesterBarcode: string) => Promise<void>;
     chooseArchiveFolder: () => Promise<string | null>;
     chooseShopLogo: () => Promise<string | null>;

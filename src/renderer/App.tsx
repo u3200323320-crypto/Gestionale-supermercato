@@ -338,7 +338,6 @@ const appThemes = [
   { id: 'blue', label: 'Blu', color: '#42A4F6' },
 ] as const;
 type AppTheme = typeof appThemes[number]['id'];
-const mainSiteName = 'Punto vendita principale';
 const warehouseSiteName = 'Magazzino';
 type PromotionMinimum = 'none' | 'spend' | 'kilograms' | 'pieces';
 const nav: { section: Section; label: string; icon: typeof House }[] = [
@@ -508,7 +507,7 @@ function BarcodeImage({ value }: { value: string }) {
   return <svg className="barcode-image" ref={barcode} role="img" aria-label={`Barcode ${value}`} />;
 }
 
-function EmployeeForm({ initial, save, cancel, notify, canDelete = false, onDelete, sites = [mainSiteName] }: { initial: EmployeeInput; save: (employee: EmployeeInput) => Promise<void>; cancel: () => void; notify: (message: string) => void; canDelete?: boolean; onDelete?: () => Promise<void>; sites?: string[] }) {
+function EmployeeForm({ initial, save, cancel, notify, canDelete = false, onDelete, sites = [] }: { initial: EmployeeInput; save: (employee: EmployeeInput) => Promise<void>; cancel: () => void; notify: (message: string) => void; canDelete?: boolean; onDelete?: () => Promise<void>; sites?: string[] }) {
   const [employee, setEmployee] = useState(initial);
   const [roleOptions, setRoleOptions] = useState<string[]>(() => {
     try {
@@ -689,6 +688,7 @@ export default function App() {
   const [activityTo, setActivityTo] = useState('');
   const [activityEmployeeId, setActivityEmployeeId] = useState('Tutti');
   const [statisticsPeriod, setStatisticsPeriod] = useState('Tutti');
+  const [statisticsSite, setStatisticsSite] = useState('Tutte');
   const [showAllProductRanking, setShowAllProductRanking] = useState(false);
   const [unsoldListOpen, setUnsoldListOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
@@ -758,7 +758,7 @@ export default function App() {
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseDate, setExpenseDate] = useState(localDateKey());
   const [expenseReceiptData, setExpenseReceiptData] = useState('');
-  const [expenseSite, setExpenseSite] = useState(mainSiteName);
+  const [expenseSite, setExpenseSite] = useState('');
   const [siteDraft, setSiteDraft] = useState<SiteInput | null>(null);
   const [siteStatsPeriod, setSiteStatsPeriod] = useState('Ultimi 6 mesi');
   const [siteStatsFrom, setSiteStatsFrom] = useState(localDateKey());
@@ -807,6 +807,11 @@ export default function App() {
   const homeMediaFrameRef = useRef<HTMLDivElement>(null);
 
   const refresh = async () => { const next = await window.gestionale.getState(); setData(next); setShopName(next.settings.shop_name); setArchiveFolder(next.settings.archive_folder); return next; };
+  useEffect(() => {
+    if (!data) return;
+    const defaultExpenseSite = data.sites.find((site) => site.site_type === 'store')?.name ?? data.sites[0]?.name ?? '';
+    setExpenseSite((current) => data.sites.some((site) => site.name === current) ? current : defaultExpenseSite);
+  }, [data]);
   const notify = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 3600); };
   const refreshCurrentData = async () => {
     setRefreshing(true);
@@ -819,7 +824,9 @@ export default function App() {
     }
   };
   const activeRole = currentUser?.role ?? (data && data.employees.length === 0 ? 'Proprietario' : 'cassiere');
-  const activeSiteName = data?.employees.find((employee) => employee.id === currentUser?.id)?.operational_site ?? mainSiteName;
+  const activeSiteName = data?.employees.find((employee) => employee.id === currentUser?.id)?.operational_site
+    ?? data?.sites.find((site) => site.site_type === 'store')?.name
+    ?? warehouseSiteName;
   const activeSiteType = data?.sites.find((site) => site.name === activeSiteName)?.site_type;
   const salesDisabled = activeSiteType === 'warehouse';
   const activeSiteId = data?.sites.find((site) => site.name === activeSiteName)?.id;
@@ -894,10 +901,14 @@ export default function App() {
         ['shop_name', setupShopName.trim()], ['shop_address', setupShopAddress.trim()],
         ['shop_phone', setupShopPhone.trim()], ['shop_email', setupShopEmail.trim()], ['shop_tax_id', setupShopTaxId.trim()],
       ] as const;
+      await window.gestionale.setupSite({ name: setupShopName.trim(), address: setupShopAddress.trim(), phone: setupShopPhone.trim() });
       for (const [key, value] of settings) await window.gestionale.saveSetting(key, value);
       const next = await refresh();
       setShopName(next.settings.shop_name);
-      setSetupOwnerDraft({ ...newEmployeeDraft(next.employees), role: 'Proprietario', operational_site: mainSiteName });
+      const firstStore = next.sites.find((site) => site.site_type === 'store');
+      if (!firstStore) throw new Error('Impossibile creare la sede operativa iniziale.');
+      setSetupOwnerDraft({ ...newEmployeeDraft(next.employees), role: 'Proprietario', operational_site: firstStore.name });
+      setExpenseSite(firstStore.name);
       setSetupStep('owner');
     } catch (error) { notify(errorText(error)); }
   };
@@ -2086,7 +2097,7 @@ export default function App() {
   };
   const exportInventoryCsv = () => {
     if (!data) return;
-    const escapeCell = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
+    const escapeCell = (value: string | number, forceText = false) => `"${`${forceText ? "'" : ''}${String(value)}`.replaceAll('"', '""')}"`;
     const rows: Array<Array<string | number>> = [
       ['Articolo', 'Codice', 'Categoria', 'Prezzo vendita', 'Prezzo acquisto', 'Giacenza', 'Soglia minima', 'Data scadenza'],
       ...data.products.map((item) => [
@@ -2094,7 +2105,7 @@ export default function App() {
         item.low_stock_threshold, item.expiry_enabled ? item.expiry_date ?? '' : '',
       ]),
     ];
-    const csv = `\uFEFF${rows.map((row) => row.map(escapeCell).join(';')).join('\r\n')}`;
+    const csv = `\uFEFF${rows.map((row, index) => row.map((value) => escapeCell(value, index > 0)).join(';')).join('\r\n')}`;
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;
@@ -2464,20 +2475,28 @@ export default function App() {
     }, new Date(data.sales[0].created_at));
     statisticsStart.setFullYear(oldestSale.getFullYear(), oldestSale.getMonth(), 1);
   }
-  const statisticsSales = statisticsPeriod === 'Tutti'
+  const statisticsSales = (statisticsPeriod === 'Tutti'
     ? data?.sales ?? []
-    : data?.sales.filter((sale) => new Date(sale.created_at) >= statisticsStart) ?? [];
+    : data?.sales.filter((sale) => new Date(sale.created_at) >= statisticsStart) ?? [])
+    .filter((sale) => statisticsSite === 'Tutte' || sale.site === statisticsSite);
   const statisticsExpenses = (data?.expenses ?? []).filter((expense) =>
-    expense.expense_date <= todayKey && (statisticsPeriod === 'Tutti' || expense.expense_date >= localDateKey(statisticsStart)));
+    expense.expense_date <= todayKey
+      && (statisticsPeriod === 'Tutti' || expense.expense_date >= localDateKey(statisticsStart))
+      && (statisticsSite === 'Tutte' || expense.site === statisticsSite));
   const statisticsWasteLoss = statisticsExpenses.filter((expense) => expense.category === 'Merce buttata').reduce((sum, expense) => sum + expense.amount, 0);
   const soldCost = statisticsSales.reduce((sum, sale) => sum + sale.items.reduce((subtotal, item) => subtotal + item.quantity * item.purchase_price, 0), 0);
   const soldTotal = statisticsSales.reduce((sum, sale) => sum + sale.total, 0);
   const estimatedNet = soldTotal - soldCost - statisticsExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   const soldUnits = statisticsSales.reduce((sum, sale) => sum + sale.item_count, 0);
-  const totalTrackedUnits = soldUnits + (data?.products.reduce((sum, product) => sum + product.stock, 0) ?? 0);
-  const unsoldProducts = data?.products.filter((product) => product.stock > 0) ?? [];
-  const stockCost = data?.products.reduce((sum, item) => sum + item.stock * item.purchase_price, 0) ?? 0;
-  const stockRetail = data?.products.reduce((sum, item) => sum + item.stock * item.sale_price, 0) ?? 0;
+  const selectedStatisticsSiteId = data?.sites.find((site) => site.name === statisticsSite)?.id;
+  const statisticsProducts = (data?.products ?? []).map((product) => ({
+    ...product,
+    stock: statisticsSite === 'Tutte' ? product.stock : siteStockFor(product.id, selectedStatisticsSiteId),
+  }));
+  const totalTrackedUnits = soldUnits + statisticsProducts.reduce((sum, product) => sum + product.stock, 0);
+  const unsoldProducts = statisticsProducts.filter((product) => product.stock > 0);
+  const stockCost = statisticsProducts.reduce((sum, item) => sum + item.stock * item.purchase_price, 0);
+  const stockRetail = statisticsProducts.reduce((sum, item) => sum + item.stock * item.sale_price, 0);
   const productSales = statisticsSales.flatMap((sale) => sale.items).reduce<Record<number, { quantity: number; revenue: number }>>((totals, item) => {
     const total = totals[item.product_id] ?? { quantity: 0, revenue: 0 };
     totals[item.product_id] = { quantity: total.quantity + item.quantity, revenue: total.revenue + item.quantity * item.unit_price };
@@ -2851,7 +2870,7 @@ export default function App() {
     if (!data) return;
     try {
       const rtl = language === 'ar';
-      const doc = new jsPDF({ orientation: 'landscape' });
+      const doc = new jsPDF({ orientation: 'portrait' });
       if (rtl) await addArabicPdfFont(doc);
       doc.setR2L(rtl);
       doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'bold');
@@ -3047,12 +3066,12 @@ export default function App() {
       </section></div>}
 
       {section === 'employees' && <div className="page-content employee-page">
-        <div className="page-toolbar employee-toolbar"><SearchInput value={employeeSearch} onChange={setEmployeeSearch} placeholder="Cerca dipendente, ruolo o sede…" /></div>
+        <div className="page-toolbar employee-toolbar"><SearchInput value={employeeSearch} onChange={setEmployeeSearch} placeholder="Cerca dipendente, ruolo o sede…" /><div className="toolbar-actions"><button className="button button-primary" onClick={startEmployeeCreation}><Plus size={16} /> Aggiungi dipendente</button></div></div>
         <div className="employee-card-grid">{employeeList.map((employee) => <button className="employee-card" key={employee.id} onClick={() => setEmployeeDetails(employee)} aria-label={`Apri informazioni di ${employee.first_name} ${employee.last_name}`}><img className="employee-list-photo" src={employee.photo_data} alt={`Foto di ${employee.first_name} ${employee.last_name}`} /><span><small>Nome</small><strong>{employee.first_name}</strong></span><span><small>Cognome</small><strong>{employee.last_name}</strong></span><span><small>Ruolo</small><strong>{employee.role}</strong></span><span><small>Sede</small><strong>{employee.operational_site}</strong></span></button>)}{!employeeList.length && <Empty icon={ClipboardList} title={data.employees.length ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente registrato.'} detail="" />}</div>
       </div>}
       {section === 'site-statistics' && <div className="page-content accounting-page site-statistics-page"><div className="site-statistics-filters"><SelectField label="Periodo" value={siteStatsPeriod} onChange={setSiteStatsPeriod} options={['Oggi', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Ultimi 6 mesi', 'Tutto', 'Da - A']} /><SelectField label="Sede" value={siteStatsFilter} onChange={setSiteStatsFilter} options={['Tutte', ...data.sites.map((site) => site.name)]} /><>{siteStatsPeriod === 'Da - A' && <><Field label="Da" type="date" value={siteStatsFrom} onChange={(event) => setSiteStatsFrom(event.target.value)} /><Field label="A" type="date" value={siteStatsTo} onChange={(event) => setSiteStatsTo(event.target.value)} /></>}</></div><div className="metric-grid accounting-metrics"><Metric icon={Banknote} label="Entrate sedi" value={money.format(siteStatsIncome)} detail={siteStatsPeriod} /><Metric icon={ArrowDownToLine} label="Uscite sedi" value={money.format(siteStatsExpenses)} detail={siteStatsPeriod} /><Metric icon={TrendingUp} label="Saldo sedi" value={money.format(siteStatsIncome - siteStatsExpenses)} detail="Entrate meno uscite" /><Metric icon={Package} label="Sedi attive" value={String(selectedSiteStats.length)} detail="Sedi nel filtro selezionato" /></div><section className="panel site-summary-panel"><div className="panel-heading"><div><h3>Entrate e uscite per sede</h3><p>{siteStatsPeriod}</p></div></div><Table headings={['Sede', 'Entrate', 'Uscite', 'Saldo', 'Scontrini', 'Carico merce', 'Scarico merce']}><>{selectedSiteStats.map((site) => <tr key={site.id}><td className="cell-primary">{site.name}</td><td className="align-right">{money.format(site.income)}</td><td className="align-right">{money.format(site.expenses)}</td><td className="align-right cell-primary">{money.format(site.balance)}</td><td>{site.receipts}</td><td>{quantityFormat.format(site.stockIn)}</td><td>{quantityFormat.format(site.stockOut)}</td></tr>)}</>{!selectedSiteStats.length && <tr><td colSpan={7} className="empty-cell">Nessuna sede trovata.</td></tr>}</Table></section><SiteStockStatistics sites={data.sites.filter((site) => siteStatsFilter === 'Tutte' || site.name === siteStatsFilter)} siteStocks={data.siteStocks} employees={data.employees} products={data.products} /></div>}
       {section === 'site-create' && siteDraft && <div className="page-content settings-page"><section className="settings-panel"><button className="settings-back" onClick={() => navigateTo('site-list')}><ArrowLeft size={15} /> Lista sedi</button><div className="settings-title"><h2>{siteDraft.id ? 'Modifica sede' : 'Aggiungi sede'}</h2></div><form className="settings-form site-form" onSubmit={(event) => void saveSite(event)}><Field label="Nome sede" value={siteDraft.name} onChange={(event) => setSiteDraft({ ...siteDraft, name: event.target.value })} required /><Field label="Indirizzo" value={siteDraft.address} onChange={(event) => setSiteDraft({ ...siteDraft, address: event.target.value })} /><Field label="Telefono" type="tel" value={siteDraft.phone} onChange={(event) => setSiteDraft({ ...siteDraft, phone: event.target.value })} /><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setSiteDraft(null); navigateTo('site-list'); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Salva sede</button></div></form></section></div>}
-      {section === 'site-list' && <div className="page-content"><div className="page-toolbar"><div><h2>Lista sedi</h2><p>{data.sites.length} sedi registrate</p></div>{canAccess('site-management') && <button className="button button-primary" onClick={() => { setSiteDraft({ name: '', address: '', phone: '' }); navigateTo('site-create'); }}><Plus size={16} /> Aggiungi sede</button>}</div><Table headings={['Sede', 'Tipo', 'Codice di riconoscimento', 'Indirizzo', 'Telefono', 'Dipendenti', 'Azioni']}><>{data.sites.map((site) => <tr key={site.id}><td className="cell-primary">{site.name}</td><td>{site.site_type === 'warehouse' ? 'Magazzino' : 'Punto vendita'}</td><td className="mono">{site.recognition_code}</td><td>{site.address || '—'}</td><td>{site.phone || '—'}</td><td>{data.employees.filter((employee) => employee.operational_site === site.name).length}</td><td><div className="toolbar-actions">{canAccess('site-management') && site.site_type === 'store' && site.name !== mainSiteName && <><button className="button button-outline" onClick={() => { setSiteDraft({ id: site.id, name: site.name, address: site.address, phone: site.phone }); navigateTo('site-create'); }}><Pencil size={14} /> Modifica</button><button className="button button-danger" onClick={() => void deleteSite(site.id)}><Trash2 size={14} /> Elimina</button></>}</div></td></tr>)}</></Table></div>}
+      {section === 'site-list' && <div className="page-content"><div className="page-toolbar"><div><h2>Lista sedi</h2><p>{data.sites.length} sedi registrate</p></div>{canAccess('site-management') && <button className="button button-primary" onClick={() => { setSiteDraft({ name: '', address: '', phone: '' }); navigateTo('site-create'); }}><Plus size={16} /> Aggiungi sede</button>}</div><Table headings={['Sede', 'Tipo', 'Codice di riconoscimento', 'Indirizzo', 'Telefono', 'Dipendenti', 'Azioni']}><>{data.sites.map((site) => <tr key={site.id}><td className="cell-primary">{site.name}</td><td>{site.site_type === 'warehouse' ? 'Magazzino' : 'Punto vendita'}</td><td className="mono">{site.recognition_code}</td><td>{site.address || '—'}</td><td>{site.phone || '—'}</td><td>{data.employees.filter((employee) => employee.operational_site === site.name).length}</td><td><div className="toolbar-actions">{canAccess('site-management') && site.site_type === 'store' && <><button className="button button-outline" onClick={() => { setSiteDraft({ id: site.id, name: site.name, address: site.address, phone: site.phone }); navigateTo('site-create'); }}><Pencil size={14} /> Modifica</button><button className="button button-danger" onClick={() => void deleteSite(site.id)}><Trash2 size={14} /> Elimina</button></>}</div></td></tr>)}</></Table></div>}
       {section === 'employee-tracker' && <div className="page-content">
         <div id="employee-tracker-print">
           <div className="inventory-history-actions no-print">
@@ -3067,7 +3086,7 @@ export default function App() {
           </Table>
         </div>
       </div>}
-      {section === 'employee-create' && employeeDraft && <div className="page-content settings-page"><section className="settings-panel employee-create-panel"><EmployeeForm initial={employeeDraft} save={saveEmployee} cancel={() => { setEmployeeDraft(null); navigateTo('employees'); }} notify={notify} canDelete={['proprietario', 'direttore'].includes(normalizedRole(activeRole))} sites={data.sites.map((site) => site.name)} onDelete={async () => { const employee = data.employees.find((item) => item.id === employeeDraft.id); if (employee) await deleteEmployee(employee); }} /></section></div>}
+      {section === 'employee-create' && employeeDraft && <div className="page-content settings-page"><section className="settings-panel employee-create-panel"><EmployeeForm initial={employeeDraft} save={saveEmployee} cancel={() => { setEmployeeDraft(null); navigateTo('employees'); }} notify={notify} canDelete={['proprietario', 'direttore'].includes(normalizedRole(activeRole))} sites={data.sites.filter((site) => site.site_type === 'store').map((site) => site.name)} onDelete={async () => { const employee = data.employees.find((item) => item.id === employeeDraft.id); if (employee) await deleteEmployee(employee); }} /></section></div>}
       {section === 'payroll' && <div className="page-content payroll-page">
         <div className="payroll-page-heading"><div><p className="eyebrow">GESTIONE DEL PERSONALE</p><h2>Pagamenti stipendi</h2><p>Controlla lo stato mensile e scarica le ricevute dei pagamenti.</p></div><div className="payroll-summary-chip"><Banknote size={19} /><div><strong>{data.payrollPayments.filter((payment) => payment.pay_month === payrollMonth && normalizedRole(data.employees.find((employee) => employee.id === payment.employee_id)?.role ?? '') !== 'proprietario').length}/{data.employees.filter((employee) => normalizedRole(employee.role) !== 'proprietario').length}</strong><span>stipendi pagati</span></div></div></div>
         <div className="panel payroll-toolbar"><Field label="Mese di competenza" type="month" value={payrollMonth} onChange={(event) => setPayrollMonth(event.target.value)} /><Field label="Data di pagamento" type="date" value={payrollDate} onChange={(event) => setPayrollDate(event.target.value)} /><button className="button button-primary" onClick={() => void payAllEmployees()}><Banknote size={15} /> Paga tutti gli stipendi</button><button className="button button-outline" onClick={() => { const payments = data.payrollPayments.filter((payment) => payment.pay_month === payrollMonth); void exportPayrollZip(payments).catch((error: unknown) => notify(errorText(error))); }}><ArrowDownToLine size={15} /> Scarica ricevute del mese</button></div>
@@ -3083,7 +3102,7 @@ export default function App() {
             <Field label="Importo (€)" type="number" min="0.01" step="0.01" value={expenseAmount} onChange={(event) => setExpenseAmount(event.target.value)} required />
             <Field label="Data" type="date" value={expenseDate} onChange={(event) => setExpenseDate(event.target.value)} required />
             {expenseCategory === 'Affitto' && <label className="field expense-receipt-field"><span>Ricevuta pagamento affitto</span><input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(event) => { void attachExpenseReceipt(event.target.files?.[0]); event.currentTarget.value = ''; }} required={!expenseReceiptData} />{expenseReceiptData && <small>Ricevuta allegata</small>}</label>}
-            <div className="expense-actions"><button className="button button-outline" type="button" onClick={(event) => { event.currentTarget.form?.reset(); setExpenseDescription(''); setExpenseSite(mainSiteName); setExpenseCategory(expenseCategories[0]); setExpenseOtherCategory(''); setExpenseAmount(''); setExpenseDate(localDateKey()); setExpenseReceiptData(''); }}>Annulla</button><button className="button button-primary"><Plus size={16} /> Registra spesa</button></div>
+            <div className="expense-actions"><button className="button button-outline" type="button" onClick={(event) => { event.currentTarget.form?.reset(); setExpenseDescription(''); setExpenseSite(data.sites.find((site) => site.site_type === 'store')?.name ?? data.sites[0]?.name ?? ''); setExpenseCategory(expenseCategories[0]); setExpenseOtherCategory(''); setExpenseAmount(''); setExpenseDate(localDateKey()); setExpenseReceiptData(''); }}>Annulla</button><button className="button button-primary"><Plus size={16} /> Registra spesa</button></div>
           </form>
         </section>
         <div className="expense-list-toolbar"><SearchInput value={expenseSearch} onChange={setExpenseSearch} placeholder="Cerca descrizione o categoria…" /></div>
@@ -3141,7 +3160,7 @@ export default function App() {
       </section></div>}
 
       {section === 'statistics' && <div className="page-content">
-        <div className="statistics-periods" role="group" aria-label="Filtra statistiche per periodo">{statisticsPeriods.map((period) => <button key={period} className={`status-filter${statisticsPeriod === period ? ' active' : ''}`} aria-pressed={statisticsPeriod === period} onClick={() => setStatisticsPeriod(period)}>{period}</button>)}</div>
+        <div className="statistics-toolbar"><details className="statistics-period-dropdown"><summary className="select-wrap"><span>Periodo: {statisticsPeriod}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra statistiche per periodo">{statisticsPeriods.map((period) => <button key={period} className={`status-filter${statisticsPeriod === period ? ' active' : ''}`} aria-pressed={statisticsPeriod === period} onClick={(event) => { setStatisticsPeriod(period); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{period}</button>)}</div></details><label className="select-wrap statistics-site-filter"><span>Sede</span><select value={statisticsSite} onChange={(event) => setStatisticsSite(event.target.value)}><option value="Tutte">Tutte</option>{data.sites.map((site) => <option key={site.id} value={site.name}>{site.name}</option>)}</select><ChevronDown size={14} /></label></div>
         <section className="panel product-sales-panel"><div className="panel-heading"><div><h3>Prodotti più e meno venduti</h3></div></div><Table headings={['Posizione', 'Prodotto', 'Quantità venduta', 'Ricavi']}><>{(showAllProductRanking ? productSalesRanking : productSalesRanking.slice(0, 4)).map((product, index) => <tr key={product.id}><td>{index + 1}</td><td className="cell-primary">{product.name}</td><td>{quantityFormat.format(product.quantitySold)} {product.unit === 'PEZZO' ? 'pz' : product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : ''}</td><td>{money.format(product.revenue)}</td></tr>)}</>{!productSalesRanking.length && <tr><td colSpan={4} className="empty-cell">Nessun prodotto registrato.</td></tr>}</Table>{productSalesRanking.length > 4 && <button className="button button-quiet ranking-expand" type="button" aria-expanded={showAllProductRanking} onClick={() => setShowAllProductRanking((current) => !current)}>{showAllProductRanking ? 'Mostra meno' : 'Vedi tutti'}</button>}</section>
         <div className="metric-grid stats-metrics"><Metric icon={Banknote} label="Vendite" value={money.format(soldTotal)} detail="Incassi registrati nel periodo" /><Metric icon={CreditCard} label="Acquisto merce venduta" value={money.format(soldCost)} detail="Costo degli articoli venduti" /><Metric icon={TrendingUp} label="Netto stimato" value={money.format(estimatedNet)} detail="Ricavi meno costo del venduto e spese" /><Metric className="stats-wide-card" icon={Trash2} label="Valore merce buttata" value={money.format(statisticsWasteLoss)} detail="Valore merce buttata nel periodo" /><Metric className="stats-wide-card" icon={ShoppingBasket} label="Quantità vendite" value={`${soldUnits.toLocaleString(appLocale)} ${language === 'ar' ? 'من' : 'di'} ${totalTrackedUnits.toLocaleString(appLocale)}`} valueDir="ltr" detail="Articoli venduti rispetto a quelli ancora in magazzino" action={<button className="text-button metric-action" onClick={() => setUnsoldListOpen(true)}>{language === 'ar' ? 'عرض القائمة' : 'Vedi lista'}</button>} /></div>
         <div className="metric-grid inventory-values"><Metric icon={Package} label="Valore vendita in magazzino" value={money.format(stockRetail)} detail="Valore al prezzo di vendita" compact /><Metric icon={Archive} label="Valore acquisto in magazzino" value={money.format(stockCost)} detail="Costo delle scorte attuali" compact /><Metric icon={TrendingUp} label="Netto potenziale" value={money.format(stockRetail - stockCost)} detail="Margine potenziale delle scorte" compact /></div>
@@ -3168,7 +3187,7 @@ export default function App() {
         <div className="employee-detail-fields">{[['Età', employeeDetails.age], ['Sesso', employeeDetails.gender], ['Indirizzo', employeeDetails.home_address], ['Email', employeeDetails.email], ['Telefono', employeeDetails.phone], ['Ruolo', employeeDetails.role], ['Turno', employeeDetails.shift], ['Sede operativa', employeeDetails.operational_site], ['Stipendio', money.format(employeeDetails.salary)], ['Metodo di pagamento', employeeDetails.payment_method], ['IBAN', employeeDetails.payment_method === 'Bonifico' ? employeeDetails.iban : '—'], ['Codice riconoscimento', employeeDetails.recognition_code], ['Contratto', employeeDetails.contract_pdf_data ? 'PDF allegato' : 'Non presente']].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}<section className="employee-detail-barcode"><h3>Barcode</h3><BarcodeImage value={employeeDetails.recognition_code} /><strong>{employeeDetails.recognition_code}</strong></section></div>
         <section className="employee-detail-docs"><h3>Foto documenti</h3><div>{employeeDocumentImages(employeeDetails.documents_data).map((image, index) => <img src={image} alt={`Documento ${index + 1}`} key={`${index}-${image.slice(0, 30)}`} />)}</div></section>
       </div>
-      <div className="drawer-footer employee-profile-actions"><button className="button button-outline" onClick={() => void exportEmployeePdf(employeeDetails)}><ArrowDownToLine size={15} /> Scarica</button><button className="button button-outline" onClick={() => editEmployee(employeeDetails)}><Pencil size={15} /> Modifica dipendente</button><button className="button button-primary" onClick={() => setEmployeeDetails(null)}>Chiudi</button>{['proprietario', 'direttore'].includes(normalizedRole(activeRole)) && <button className="button button-danger" onClick={() => void deleteEmployee(employeeDetails)}><Trash2 size={15} /> Elimina dipendente</button>}</div>
+      <div className="drawer-footer employee-profile-actions"><div className="employee-profile-action-row"><button className="button button-outline" onClick={() => editEmployee(employeeDetails)}><Pencil size={15} /> Modifica dipendente</button><button className="button button-outline" onClick={() => void exportEmployeePdf(employeeDetails)}><ArrowDownToLine size={15} /> Scarica</button></div><div className={`employee-profile-action-row${['proprietario', 'direttore'].includes(normalizedRole(activeRole)) ? '' : ' single-action'}`}>{['proprietario', 'direttore'].includes(normalizedRole(activeRole)) && <button className="button button-danger" onClick={() => void deleteEmployee(employeeDetails)}><Trash2 size={15} /> Elimina dipendente</button>}<button className="button button-primary" onClick={() => setEmployeeDetails(null)}>Chiudi</button></div></div>
     </Modal>}
     {voucherViewBatch && <Modal title={`Codici buono · Gruppo ${voucherViewBatch.id}`} close={() => setVoucherViewBatch(null)} wide><div className="voucher-preview-heading"><strong>{voucherViewBatch.discount_percentage}% di sconto</strong><span>{formatLocalDate(voucherViewBatch.starts_at)} — {formatLocalDate(voucherViewBatch.ends_at)}</span></div><Table headings={['Codice', 'Barcode', 'Sconto', 'Inizio', 'Scadenza']}><>{voucherViewBatch.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td><BarcodeImage value={code} /></td><td>{voucherViewBatch.discount_percentage}%</td><td>{formatLocalDate(voucherViewBatch.starts_at)}</td><td>{formatLocalDate(voucherViewBatch.ends_at)}</td></tr>)}</></Table></Modal>}
     {pendingUnknownCode && <Modal title="Articolo non presente" wide close={() => { setPendingUnknownCode(''); setScannerSearch(''); }}><div className="unknown-code-message"><CircleAlert size={26} /><p>Il codice a barre <strong>{pendingUnknownCode}</strong> non è presente tra gli articoli.</p><span>Puoi aggiungerlo come nuovo articolo: il codice acquisito sarà già inserito nel modulo.</span><div className="form-actions"><button className="button button-quiet" onClick={() => { setPendingUnknownCode(''); setScannerSearch(''); }}>Annulla</button><button className="button button-primary" onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct, code: pendingUnknownCode }); setPendingUnknownCode(''); }}><Plus size={16} /> Aggiungi articolo</button></div></div></Modal>}

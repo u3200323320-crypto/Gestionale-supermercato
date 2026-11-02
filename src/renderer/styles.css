@@ -453,7 +453,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .receipt-shop img { width: 40px; height: 40px; object-fit: contain; }
 .receipt-spacer { height: 13px; }
 .receipt-shop + .receipt-spacer { height: 25px; }
-.receipt-datetime { display: flex; gap: 3px; }
+.receipt-datetime { display: flex; gap: 2ch; }
 .receipt-head, .receipt-item { display: grid; grid-template-columns: minmax(0, 1fr) 43px 71px; gap: 4px; padding: 4px 0; }
 .receipt-head { border-bottom: 1px solid #c9cdc9; font-weight: 700; }
 .receipt-head span:nth-child(n+2), .receipt-item span:nth-child(n+2) { text-align: right; }
@@ -658,8 +658,13 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .expiry-field > .field { grid-column: 1 / -1; }
 .toggle-button { min-width: 62px; height: 34px; border: 1px solid #dfe4de; border-radius: 18px; background: #f4f5f3; color: #6d7770; cursor: pointer; font-size: 10px; font-weight: 700; }
 .toggle-button.enabled { border-color: rgb(56 104 78 / 42%); background: var(--green-soft); color: var(--green-dark); }
-.statistics-periods { display: grid; width: 100%; grid-template-columns: repeat(auto-fit, minmax(94px, 1fr)); gap: 8px; margin: -4px 0 16px; padding: 12px; border: 1px solid var(--line); border-radius: 5px; background: white; }
-.statistics-periods .status-filter { width: 100%; min-height: 34px; padding: 0 6px; white-space: normal; }
+.statistics-toolbar { display: flex; align-items: flex-end; gap: 9px; margin: -4px 0 16px; }
+.statistics-period-dropdown { position: relative; flex: 0 1 230px; }
+.statistics-period-dropdown > summary { justify-content: space-between; cursor: pointer; list-style: none; }
+.statistics-period-dropdown > summary::-webkit-details-marker { display: none; }
+.statistics-period-options { position: absolute; top: calc(100% + 5px); left: 0; z-index: 4; display: grid; min-width: 100%; gap: 3px; padding: 5px; border: 1px solid var(--line); border-radius: 4px; background: white; box-shadow: var(--shadow); }
+.statistics-period-options .status-filter { text-align: left; white-space: nowrap; }
+.statistics-site-filter { width: min(230px, 100%); }
 .metric-action { position: static; flex: 0 0 auto; padding: 4px 0; }
 .page-content:has(.stats-metrics) .panel, .accounting-page .panel { transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
 .page-content:has(.stats-metrics) .panel:hover, .accounting-page .panel:hover { transform: translateY(-2px); border-color: #ccd9cd; box-shadow: 0 7px 18px rgb(38 59 42 / 6%); }
@@ -678,7 +683,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .unsold-list-actions .button { width: 100%; }
 
 .sidebar nav .nav-label-extra { margin: 12px 9px 4px; }
-.employee-toolbar { display: grid; grid-template-columns: minmax(0, 1fr); }
+.employee-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; }
 .employee-toolbar > .search-field { max-width: none; }
 .employee-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 20px; max-width: 1180px; }
 .employee-card { display: grid; min-width: 0; min-height: 242px; grid-template-columns: minmax(0, 1fr); align-content: start; justify-items: stretch; gap: 10px; padding: 16px; border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--ink); cursor: pointer; text-align: left; }
@@ -758,8 +763,10 @@ body svg text { fill: #000 !important; }
 .employee-detail-barcode h3 { color: var(--muted); font-size: 9px; font-weight: 500; }
 .employee-detail-barcode .barcode-image { width: min(210px, 100%); height: 42px; }
 .employee-detail-barcode strong { color: #657168; font-family: 'DM Mono', 'Consolas', monospace; font-size: 10px; }
-.employee-profile-actions { grid-template-columns: minmax(0, 1fr); }
-.employee-profile-actions .button { width: 100%; justify-content: center; }
+.employee-profile-actions { display: grid; gap: 9px; }
+.employee-profile-action-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.employee-profile-action-row .button { width: 100%; justify-content: center; }
+.employee-profile-action-row.single-action { grid-template-columns: 1fr; }
 .report-export-options { display: grid; gap: 10px; padding: 20px; }
 .report-export-options p { margin-bottom: 4px; color: #66736a; font-size: 11px; line-height: 1.6; }
 .payroll-toolbar { display: grid; grid-template-columns: minmax(170px, 1fr) minmax(170px, 1fr) auto auto; align-items: end; gap: 12px; margin-bottom: 16px; padding: 18px; border: 0; background: linear-gradient(120deg, #fff 30%, var(--green-soft)); box-shadow: 0 8px 22px rgb(39 49 42 / 6%); }
@@ -832,6 +839,8 @@ body svg text { fill: #000 !important; }
   .employee-toolbar { display: flex; align-items: stretch; flex-wrap: wrap; }
   .employee-toolbar > .search-field { max-width: none; flex: 1 1 100%; }
   .employee-toolbar > .toolbar-actions { width: auto; flex-wrap: wrap; }
+  .statistics-toolbar { flex-wrap: wrap; }
+  .statistics-period-dropdown, .statistics-site-filter { flex: 1 1 180px; }
 }
 @media (max-width: 600px) {
   .employee-fields { grid-template-columns: 1fr; }

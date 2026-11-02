@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('gestionale', {
   openExpenseReceipt: (id: number) => ipcRenderer.invoke('expense:receipt:open', id),
   deleteExpense: (id: number) => ipcRenderer.invoke('expense:delete', id),
   saveSite: (site: SiteInput, requesterBarcode: string) => ipcRenderer.invoke('site:save', site, requesterBarcode),
+  setupSite: (site: SiteInput) => ipcRenderer.invoke('site:setup', site),
   deleteSite: (siteId: number, requesterBarcode: string) => ipcRenderer.invoke('site:delete', siteId, requesterBarcode),
   chooseArchiveFolder: () => ipcRenderer.invoke('archive:choose-folder'),
   chooseShopLogo: () => ipcRenderer.invoke('settings:choose-shop-logo'),
