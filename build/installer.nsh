@@ -1,8 +1,58 @@
+!ifndef BUILD_UNINSTALLER
+!include nsDialogs.nsh
+
+Var TaskbarPinCheckbox
+Var TaskbarPinSelected
+
+!macro customPageAfterChangeDir
+  Page custom TaskbarPinPageCreate TaskbarPinPageLeave
+!macroend
+
+Function TaskbarPinPageCreate
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+  ${NSD_CreateLabel} 0 0 100% 24u "Vuoi aggiungere l'app alla barra delle applicazioni?"
+  Pop $1
+  ${NSD_CreateCheckbox} 0 34u 100% 14u "Aggiungi Gestione Supermercato alla barra delle applicazioni"
+  Pop $TaskbarPinCheckbox
+  ${NSD_Uncheck} $TaskbarPinCheckbox
+  nsDialogs::Show
+FunctionEnd
+
+Function TaskbarPinPageLeave
+  ${NSD_GetState} $TaskbarPinCheckbox $0
+  StrCpy $TaskbarPinSelected "false"
+  StrCmp $0 1 taskbar_pin_checked
+  Return
+taskbar_pin_checked:
+  StrCpy $TaskbarPinSelected "true"
+FunctionEnd
+!endif
+
 !macro customInstall
   IfFileExists "$INSTDIR\.initial-setup-done" initial_setup_done
   FileOpen $0 "$INSTDIR\.initial-setup-done" w
   FileClose $0
 initial_setup_done:
+  StrCmp $TaskbarPinSelected "true" 0 taskbar_pin_done
+  IfFileExists "$newStartMenuLink" 0 taskbar_pin_done
+  FileOpen $0 "$PLUGINSDIR\pin-taskbar.vbs" w
+  FileWrite $0 "On Error Resume Next$\r$\n"
+  FileWrite $0 "Set shell = CreateObject($\"Shell.Application$\")$\r$\n"
+  FileWrite $0 "Set fso = CreateObject($\"Scripting.FileSystemObject$\")$\r$\n"
+  FileWrite $0 "linkPath = WScript.Arguments(0)$\r$\n"
+  FileWrite $0 "Set folder = shell.Namespace(fso.GetParentFolderName(linkPath))$\r$\n"
+  FileWrite $0 "Set item = folder.ParseName(fso.GetFileName(linkPath))$\r$\n"
+  FileWrite $0 "For Each verb In item.Verbs$\r$\n"
+  FileWrite $0 "  name = LCase(Replace(verb.Name, $\"&$\", $\"$\"))$\r$\n"
+  FileWrite $0 "  If InStr(name, $\"pin to taskbar$\") > 0 Or InStr(name, $\"aggiungi alla barra delle applicazioni$\") > 0 Then verb.DoIt$\r$\n"
+  FileWrite $0 "Next$\r$\n"
+  FileClose $0
+  ExecWait '"$SYSDIR\wscript.exe" "$PLUGINSDIR\pin-taskbar.vbs" "$newStartMenuLink"' $1
+taskbar_pin_done:
 !macroend
 
 !macro customUnInstall
