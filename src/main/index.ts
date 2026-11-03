@@ -16,6 +16,7 @@ let databaseFile = '';
 let salesRetentionInterval: NodeJS.Timeout | undefined;
 const warehouseSiteName = WAREHOUSE_SITE_NAME;
 const authenticatedSessions = new Map<number, AuthenticatedEmployee>();
+const trialSessions = new Set<number>();
 const saleActionAuthorizations = new Map<number, { barcode: string; expiresAt: number }>();
 
 function localDate(date: Date): string {
@@ -61,6 +62,27 @@ const seedProducts: ProductInput[] = [
 
 function setting(key: string, fallback = ''): string {
   return (database.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value?: string } | undefined)?.value ?? fallback;
+}
+
+function authenticationTrialActive(): boolean {
+  const expiresAt = Date.parse(setting('auth_trial_expires_at'));
+  return Number.isFinite(expiresAt) && expiresAt > Date.now();
+}
+
+function sessionForSender(senderId: number): AuthenticatedEmployee | undefined {
+  if (trialSessions.has(senderId) && !authenticationTrialActive()) {
+    authenticatedSessions.delete(senderId);
+    trialSessions.delete(senderId);
+  }
+  const session = authenticatedSessions.get(senderId);
+  if (session) return session;
+  if (!authenticationTrialActive()) return undefined;
+  const owner = (database.prepare('SELECT id, first_name, last_name, role, barcode FROM employees ORDER BY id').all() as AuthenticatedEmployee[])
+    .find((employee) => normalizedEmployeeRole(employee.role) === 'proprietario');
+  if (!owner) return undefined;
+  authenticatedSessions.set(senderId, owner);
+  trialSessions.add(senderId);
+  return owner;
 }
 
 function setSetting(key: string, value: string): void {
@@ -116,7 +138,7 @@ function employeeForLogin(value: unknown): AuthenticatedEmployee | null {
 }
 
 function requireSession(senderId: number, allowedRoles?: string[]): AuthenticatedEmployee {
-  const session = authenticatedSessions.get(senderId);
+  const session = sessionForSender(senderId);
   if (!session || !session.id) throw new Error('Sessione non autenticata. Accedi nuovamente con il badge dipendente.');
   if (allowedRoles && normalizedEmployeeRole(session.role) !== 'proprietario' && !allowedRoles.includes(normalizedEmployeeRole(session.role))) {
     throw new Error('Il tuo ruolo non ha i permessi per eseguire questa operazione.');
@@ -203,6 +225,7 @@ function state() {
       shop_email: setting('shop_email'),
       shop_tax_id: setting('shop_tax_id'),
       setup_complete: setting('setup_complete', employees.length ? 'true' : 'false') === 'true',
+      auth_trial_expires_at: setting('auth_trial_expires_at'),
       shop_logo: setting('shop_logo'),
       home_image: setting('home_image'),
       home_video: (() => {
@@ -314,6 +337,7 @@ function stateForSession(session?: AuthenticatedEmployee): ReturnType<typeof sta
 
 function initDatabase(): void {
   databaseFile = join(app.getPath('userData'), 'gestionale.sqlite');
+  const isNewDatabase = !existsSync(databaseFile);
   database = new Database(databaseFile);
   database.pragma('journal_mode = WAL');
   database.pragma('foreign_keys = ON');
@@ -405,6 +429,10 @@ function initDatabase(): void {
       UNIQUE(employee_id, pay_month)
     );
   `);
+  if (!setting('auth_trial_expires_at')) {
+    const expiresAt = isNewDatabase ? Date.now() + 24 * 60 * 60 * 1000 : 0;
+    setSetting('auth_trial_expires_at', new Date(expiresAt).toISOString());
+  }
   const siteColumns = database.prepare('PRAGMA table_info(sites)').all() as Array<{ name: string }>;
   if (!siteColumns.some((column) => column.name === 'site_type')) {
     database.exec("ALTER TABLE sites ADD COLUMN site_type TEXT NOT NULL DEFAULT 'store' CHECK(site_type IN ('store', 'warehouse'))");
@@ -781,7 +809,7 @@ if (!hasSingleInstanceLock) {
 
 if (hasSingleInstanceLock) app.whenReady().then(() => {
   initDatabase();
-  ipcMain.handle('state:get', (event) => stateForSession(authenticatedSessions.get(event.sender.id)));
+  ipcMain.handle('state:get', (event) => stateForSession(sessionForSender(event.sender.id)));
   ipcMain.handle('pin:has', () => Boolean(setting('pin_hash')));
   ipcMain.handle('pin:verify', (event, pin: string) => {
     const stored = setting('pin_hash');
@@ -790,6 +818,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     const valid = timingSafeEqual(scryptSync(pin, salt, 64), Buffer.from(hash, 'hex'));
     if (!valid) {
       authenticatedSessions.delete(event.sender.id);
+      trialSessions.delete(event.sender.id);
       return null;
     }
     const candidates = database.prepare(`SELECT employees.id, employees.first_name, employees.last_name, employees.role, employees.barcode, employees.operational_site
@@ -805,6 +834,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       barcode: fallbackEmployee.barcode,
     };
     authenticatedSessions.set(event.sender.id, authenticatedEmployee);
+    trialSessions.delete(event.sender.id);
     return authenticatedEmployee;
   });
   ipcMain.handle('employee:authorize', (event, barcode: string) => {
@@ -813,12 +843,18 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   });
   ipcMain.handle('employee:login', (event, barcode: string) => {
     const employee = employeeForLogin(barcode);
-    if (employee) authenticatedSessions.set(event.sender.id, employee);
-    else authenticatedSessions.delete(event.sender.id);
+    if (employee) {
+      authenticatedSessions.set(event.sender.id, employee);
+      trialSessions.delete(event.sender.id);
+    } else {
+      authenticatedSessions.delete(event.sender.id);
+      trialSessions.delete(event.sender.id);
+    }
     return employee;
   });
   ipcMain.handle('session:logout', (event) => {
     saleActionAuthorizations.delete(event.sender.id);
+    trialSessions.delete(event.sender.id);
     return authenticatedSessions.delete(event.sender.id);
   });
   ipcMain.handle('employee:activity', (event, input: { employee_barcode: string; section: string; action: string; detail?: string }) => {
@@ -1422,7 +1458,10 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         if (firstAccount) {
           setSetting('setup_complete', 'true');
           const owner = employeeForLogin(candidate.barcode);
-          if (owner) authenticatedSessions.set(event.sender.id, owner);
+          if (owner) {
+            authenticatedSessions.set(event.sender.id, owner);
+            if (authenticationTrialActive()) trialSessions.add(event.sender.id);
+          }
         }
       }
     } catch (error) {

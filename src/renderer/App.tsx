@@ -27,7 +27,20 @@ let dateTimeText = (date: Date) => dateTime.format(date);
 const roundQuantity = (quantity: number) => Math.round((quantity + Number.EPSILON) * 1000) / 1000;
 const colors = ['var(--green)', '#c17e4f', '#658499', '#a9aa64', '#8a7461', '#609085'];
 const localDateKey = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const authenticationTrialActive = (expiresAt: string) => Date.parse(expiresAt) > Date.now();
 const safeFilePart = (value: string) => value.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').trim() || 'Dipendente';
+const productArtPalettes = [
+  ['#e7eee6', '#557c5c'], ['#f3e8d8', '#b57945'], ['#e5edf2', '#4f7c96'], ['#f0e9df', '#8a6c51'],
+  ['#e8eee1', '#87944d'], ['#f3e2df', '#b55f51'],
+];
+function productArtwork(product: Pick<Product, 'name' | 'category'>): string {
+  const seed = [...`${product.category}-${product.name}`].reduce((value, character) => (value * 31 + character.charCodeAt(0)) >>> 0, 7);
+  const [background, accent] = productArtPalettes[seed % productArtPalettes.length];
+  const packageX = 118 + seed % 22;
+  const packageWidth = 68 + seed % 18;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 144"><rect width="320" height="144" fill="${background}"/><path d="M0 112 Q70 82 145 112 T320 106 V144 H0Z" fill="#fff" opacity=".55"/><ellipse cx="160" cy="119" rx="54" ry="9" fill="#223329" opacity=".12"/><rect x="${packageX}" y="28" width="${packageWidth}" height="86" rx="9" fill="#fff"/><path d="M${packageX} 45 Q${packageX + packageWidth / 2} 57 ${packageX + packageWidth} 45 V85 H${packageX}Z" fill="${accent}"/><rect x="${packageX + 10}" y="92" width="${packageWidth - 20}" height="4" rx="2" fill="${accent}" opacity=".34"/><circle cx="${packageX + packageWidth / 2}" cy="68" r="11" fill="#fff" opacity=".88"/><path d="M${packageX + packageWidth / 2} 60 C${packageX + packageWidth / 2 - 9} 70 ${packageX + packageWidth / 2 - 4} 77 ${packageX + packageWidth / 2} 78 C${packageX + packageWidth / 2 + 7} 76 ${packageX + packageWidth / 2 + 10} 68 ${packageX + packageWidth / 2} 60Z" fill="${accent}"/><path d="M34 42h32M34 52h22M253 36h26M253 46h17" stroke="${accent}" stroke-width="3" stroke-linecap="round" opacity=".4"/></svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
 const permanentPromotionEnd = '9999-12-31';
 const promotionDurations = ['1 giorno', '3 giorni', '7 giorni', '1 mese', 'Sempre', 'Personalizzata'];
 const expenseCategories = ['Affitto', 'Utenze', 'Forniture', 'Stipendi', 'Manutenzione', 'Trasporti', 'Altro'];
@@ -274,6 +287,18 @@ const arabicUiTranslations: Record<string, string> = {
   'Gruppo buoni eliminato': 'تم حذف مجموعة القسائم', 'buoni': 'قسائم',
   'Valore a costo': 'القيمة بالتكلفة', 'Margine potenziale': 'هامش الربح المحتمل',
   'Totale vendita': 'إجمالي البيع', 'Sconto automatico': 'الخصم التلقائي', 'Sconto manuale': 'الخصم اليدوي',
+  'Acquisto merce venduta': 'تكلفة البضائع المباعة',
+  'Cerca o scansiona barcode…': 'ابحث عن الرمز الشريطي أو امسحه…', 'Disponibili:': 'المتاح:',
+  "Articoli nell'ordine": 'المنتجات في الطلب', 'articoli inseriti': 'منتجات مُضافة',
+  'Gli articoli aggiunti compariranno qui.': 'ستظهر المنتجات المضافة هنا.', 'Conferma prelievo': 'تأكيد السحب',
+  'Scansiona il barcode del dipendente che sta effettuando il prelievo.': 'امسح الرمز الشريطي للموظف الذي يقوم بالسحب.',
+  'Data di inizio': 'تاريخ البدء', 'Quantità di codici': 'عدد الرموز',
+  'Nessun buono sconto': 'لا توجد قسائم خصم', 'Crea e conferma un gruppo di codici per visualizzarlo qui.': 'أنشئ مجموعة رموز وأكدها لعرضها هنا.',
+  'Visualizza codici': 'عرض الرموز', 'Data inizio': 'تاريخ البدء', 'Data scadenza': 'تاريخ الانتهاء',
+  'Buoni sconto gruppo ': 'قسائم الخصم للمجموعة ', 'Carrello ·': 'السلة ·', 'Mostra articoli aggiunti': 'عرض المنتجات المضافة',
+  'Codici buono': 'رموز القسيمة', 'di sconto': 'خصم', 'Validità:': 'الصلاحية:',
+  'Rimuovi articolo': 'إزالة المنتج',
+  'Ricerca o aggiungi un articolo.': 'ابحث عن منتج أو أضفه.', 'Aggiungi al ordine': 'إضافة إلى الطلب',
 };
 const AppLanguageContext = createContext<AppLanguage>('it');
 const AppDynamicNamesContext = createContext<Set<string>>(new Set());
@@ -290,6 +315,14 @@ const localizedText = (value: string, language: AppLanguage, dynamicNames = new 
       (_match, prefix: string, match: string) => `${prefix}${dynamicNames.has(match) ? match : translated}`,
     ), value);
   return translated.replaceAll('€', 'EGP');
+};
+const localizedStockNote = (value: string, language: AppLanguage) => {
+  if (language !== 'ar') return value;
+  const sale = /^Vendita #(.+)$/u.exec(value);
+  if (sale) return `بيع رقم ${sale[1]}`;
+  const transfer = /^Trasferimento da (.+) a (.+)$/u.exec(value);
+  if (transfer) return `نقل من ${transfer[1]} إلى ${transfer[2]}`;
+  return localizedText(value, language);
 };
 
 function LocalizedNodes({ children }: { children: ReactNode }) {
@@ -312,7 +345,7 @@ function LocalizedNodes({ children }: { children: ReactNode }) {
       if (value) localizedAttributes[attribute] = localizedText(value, language, dynamicNames);
     }
     const preserveContent = preserve || className.split(/\s+/).includes('cell-primary')
-      || (elementType === 'strong' && ['employee-card', 'product-tile', 'cash-product', 'cart-line-name', 'employee-detail-hero', 'user-card'].some((name) => parentClass.split(/\s+/).includes(name)));
+      || (elementType === 'strong' && ['product-tile', 'cash-product', 'cart-line-name', 'user-card'].some((name) => parentClass.split(/\s+/).includes(name)));
     if (node.props.children === undefined) return cloneElement(node, localizedAttributes);
     if (elementType === 'option') {
       const optionValue = node.props.value ?? (typeof node.props.children === 'string' ? node.props.children : undefined);
@@ -773,7 +806,7 @@ export default function App() {
   const [salesTo, setSalesTo] = useState('');
   const [salesCategory, setSalesCategory] = useState('Tutte');
   const [category, setCategory] = useState('Tutte');
-  const [paymentMethod, setPaymentMethod] = useState('Carta');
+  const [paymentMethod, setPaymentMethod] = useState('Contanti');
   const [voucherCode, setVoucherCode] = useState('');
   const [voucherMessage, setVoucherMessage] = useState('');
   const [voucherDiscountPercentage, setVoucherDiscountPercentage] = useState(0);
@@ -1267,7 +1300,11 @@ export default function App() {
       setSetupShopTaxId(next.settings.shop_tax_id);
       setArchiveFolder(next.settings.archive_folder);
       setHasPin(pinExists);
-      setLocked(next.employees.length > 0);
+      const trialOwner = authenticationTrialActive(next.settings.auth_trial_expires_at)
+        ? next.employees.find((employee) => normalizedRole(employee.role) === 'proprietario') ?? null
+        : null;
+      setCurrentUser(trialOwner);
+      setLocked(next.employees.length > 0 && !trialOwner);
     };
     void initialize().catch((error: unknown) => notify(errorText(error)));
   }, []);
@@ -1282,6 +1319,17 @@ export default function App() {
   useEffect(() => {
     if (locked) void window.gestionale.logout();
   }, [locked]);
+  useEffect(() => {
+    if (checkoutOpen) setPaymentMethod('Contanti');
+  }, [checkoutOpen]);
+  useEffect(() => {
+    if (!currentUser || !data || !authenticationTrialActive(data.settings.auth_trial_expires_at)) return;
+    const timeout = window.setTimeout(() => {
+      setCurrentUser(null);
+      setLocked(data.employees.length > 0);
+    }, Math.max(0, Date.parse(data.settings.auth_trial_expires_at) - Date.now()));
+    return () => window.clearTimeout(timeout);
+  }, [currentUser, data]);
   useEffect(() => {
     document.documentElement.dataset.theme = appTheme;
     window.localStorage.setItem('app-theme', appTheme);
@@ -1560,7 +1608,10 @@ export default function App() {
     }
   };
   const deleteVoucherBatch = async (batch: AppState['voucherBatches'][number]) => {
-    if (!window.confirm(`Eliminare il gruppo ${batch.id} e tutti i suoi buoni non utilizzati?`)) return;
+    const confirmation = language === 'ar'
+      ? `هل تريد حذف المجموعة ${batch.id} وجميع قسائمها غير المستخدمة؟`
+      : `Eliminare il gruppo ${batch.id} e tutti i suoi buoni non utilizzati?`;
+    if (!window.confirm(confirmation)) return;
     try {
       await window.gestionale.deleteVoucherBatch(batch.id);
       trackActivity('Offerta', 'Gruppo buoni eliminato', `Gruppo ${batch.id}`);
@@ -1570,27 +1621,40 @@ export default function App() {
       notify(errorText(error));
     }
   };
-  const downloadVoucherBatch = (batch: AppState['voucherBatches'][number]) => {
+  const downloadVoucherBatch = async (batch: AppState['voucherBatches'][number]) => {
     const doc = new jsPDF();
+    const rtl = language === 'ar';
+    if (rtl) await addArabicPdfFont(doc);
+    doc.setR2L(rtl);
     const barcodes = batch.codes.map((code) => barcodePng(code));
+    const x = rtl ? 196 : 14;
+    const align = rtl ? { align: 'right' as const } : undefined;
+    doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'bold');
     doc.setFontSize(16);
-    doc.text(`Buoni sconto gruppo ${batch.id}`, 14, 17);
+    doc.text(rtl ? `قسائم الخصم للمجموعة ${batch.id}` : `Buoni sconto gruppo ${batch.id}`, x, 17, align);
+    doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Sconto: ${batch.discount_percentage}%`, 14, 25);
-    doc.text(`Validità: ${batch.starts_at} - ${batch.ends_at}`, 14, 31);
+    doc.text(rtl ? `الخصم: ${batch.discount_percentage}%` : `Sconto: ${batch.discount_percentage}%`, x, 25, align);
+    doc.text(rtl ? `الصلاحية: ${batch.starts_at} - ${batch.ends_at}` : `Validità: ${batch.starts_at} - ${batch.ends_at}`, x, 31, align);
+    const headers = rtl
+      ? ['تاريخ الانتهاء', 'تاريخ البدء', 'الخصم', 'الرمز الشريطي', 'الرمز']
+      : ['Codice', 'Barcode', 'Sconto', 'Data inizio', 'Data scadenza'];
     autoTable(doc, {
       startY: 38,
-      head: [['Codice', 'Barcode', 'Sconto', 'Data inizio', 'Data scadenza']],
-      body: batch.codes.map((code) => [code, '', `${batch.discount_percentage}%`, batch.starts_at, batch.ends_at]),
-      styles: { fontSize: 9, minCellHeight: 18 },
-      headStyles: { fillColor: [56, 104, 78] },
+      head: [headers],
+      body: batch.codes.map((code) => {
+        const row = [code, '', `${batch.discount_percentage}%`, batch.starts_at, batch.ends_at];
+        return rtl ? row.reverse() : row;
+      }),
+      styles: { font: rtl ? 'DejaVuSans' : 'helvetica', fontSize: 9, minCellHeight: 18, halign: rtl ? 'right' : 'left' },
+      headStyles: { fillColor: [56, 104, 78], textColor: [255, 255, 255], font: rtl ? 'DejaVuSans' : 'helvetica', halign: rtl ? 'right' : 'left' },
       didDrawCell: (cell) => {
-        if (cell.section === 'body' && cell.column.index === 1) {
+        if (cell.section === 'body' && cell.column.index === (rtl ? 3 : 1)) {
           doc.addImage(barcodes[cell.row.index], 'PNG', cell.cell.x + 2, cell.cell.y + 3, cell.cell.width - 4, 12);
         }
       },
     });
-    doc.save(`buoni-sconto-gruppo-${batch.id}.pdf`);
+    doc.save(rtl ? `قسائم-الخصم-${batch.id}.pdf` : `buoni-sconto-gruppo-${batch.id}.pdf`);
   };
   const applyVoucherCode = async (code: string) => {
     const normalized = code.trim();
@@ -2458,7 +2522,7 @@ export default function App() {
     const wasteLoss = monthlyExpenses.filter((expense) => expense.category === 'Merce buttata')
       .reduce((sum, expense) => sum + expense.amount, 0);
     return {
-      mese: month.toLocaleDateString(appLocale, { month: 'short', year: 'numeric' }),
+      mese: month.toLocaleDateString(appLocale, { month: 'short' }),
       vendite: revenue,
       costiMerce: goodsCost,
       speseOperative: expenses,
@@ -2930,13 +2994,18 @@ export default function App() {
       if (rtl) await addArabicPdfFont(doc);
       doc.setR2L(rtl);
       const pageWidth = doc.internal.pageSize.getWidth();
-      doc.setFillColor(56, 136, 78);
+      doc.setFillColor(56, 104, 78);
       doc.rect(8, 7, pageWidth - 16, 13, 'F');
       doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'bold');
       doc.setFontSize(13);
       doc.setTextColor(255, 255, 255);
-      doc.text(rtl ? 'سجل المخزن' : 'Storico magazzino', rtl ? pageWidth - 12 : 12, 16, rtl ? { align: 'right' } : undefined);
-      doc.setFillColor(56, 136, 78);
+      const reportTitle = rtl ? 'سجل المخزن' : 'Storico magazzino';
+      if (data.settings.shop_logo) {
+        const logoX = rtl ? Math.max(12, pageWidth - 12 - doc.getTextWidth(reportTitle) - 14) : 10;
+        doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', logoX, 8, 10, 10);
+      }
+      doc.text(reportTitle, rtl ? pageWidth - 12 : data.settings.shop_logo ? 24 : 12, 16, rtl ? { align: 'right' } : undefined);
+      doc.setFillColor(56, 104, 78);
       doc.rect(8, 21, pageWidth - 16, 9, 'F');
       doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'normal');
       doc.setFontSize(8);
@@ -2947,14 +3016,14 @@ export default function App() {
       const rows = inventoryHistoryMovements.map((movement) => [
         dateTimeText(new Date(movement.created_at)), movement.product_name,
         localizedText(movement.movement_type, language), quantityFormat.format(movement.quantity),
-        movement.person || '—', localizedText(movement.note || '—', language),
+        movement.person || '—', localizedStockNote(movement.note || '—', language),
       ]);
       autoTable(doc, {
         startY: 34,
         head: [rtl ? [...headers].reverse() : headers],
         body: rows.map((row) => rtl ? row.reverse() : row),
         styles: { font: rtl ? 'DejaVuSans' : 'helvetica', fontSize: 8, cellPadding: 2, textColor: [0, 0, 0] },
-        headStyles: { fillColor: [56, 136, 78], textColor: [255, 255, 255], fontStyle: 'bold' },
+        headStyles: { fillColor: [56, 104, 78], textColor: [255, 255, 255], fontStyle: 'bold' },
         margin: { left: 12, right: 12, bottom: 12 },
       });
       doc.save(rtl ? `سجل-المخزن-${todayKey}.pdf` : `storico-magazzino-${todayKey}.pdf`);
@@ -3040,14 +3109,14 @@ export default function App() {
           <section className="expiry-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section>
           <section className="expiry-alert expired-alert"><div className="expired-alert-top"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Prodotti scaduti</strong><span>{expiredProducts.length ? `${expiredProducts.length} ${expiredProducts.length === 1 ? 'articolo scaduto' : 'articoli scaduti'}` : 'Nessun prodotto scaduto'}</span></div></div><button className="text-button expired-manage-link" onClick={() => navigateTo('expired-products')}>Gestisci articoli scaduti</button></div>{expiredProducts.length > 0 && <div className="expiry-list">{expiredProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section>
         </div>}
-        <div className="product-grid">{inventoryList.map((product) => <button className="product-tile" key={product.id} onClick={() => { if (!isCashierRole(activeRole)) setSelectedProduct(product); }}><div className="tile-icon"><Package size={20} /></div><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="tile-price">{money.format(product.sale_price)}</span><span className={`tile-stock${product.stock <= product.low_stock_threshold ? ' text-low' : ''}`}>{quantityFormat.format(product.stock)} disponibili</span></button>)}</div>{inventoryList.length === 0 && <Empty icon={Package} title="Nessun articolo trovato" detail="Modifica la ricerca o aggiungi un articolo." />}
+        <div className="product-grid">{inventoryList.map((product) => <button className="product-tile" key={product.id} onClick={() => { if (!isCashierRole(activeRole)) setSelectedProduct(product); }}><img className="tile-art" src={productArtwork(product)} alt="" /><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="tile-price">{money.format(product.sale_price)}</span><span className={`tile-stock${product.stock <= product.low_stock_threshold ? ' text-low' : ''}`}>{quantityFormat.format(product.stock)} disponibili</span></button>)}</div>{inventoryList.length === 0 && <Empty icon={Package} title="Nessun articolo trovato" detail="Modifica la ricerca o aggiungi un articolo." />}
       </div>}
 
       {section === 'expired-products' && <div className="page-content"><div className="page-toolbar"><div><h2>Gestione prodotti scaduti</h2><p>Verifica gli articoli scaduti e registra lo smaltimento.</p></div><button className="button button-outline" onClick={() => navigateTo('inventory')}>Torna al magazzino</button></div><Table headings={['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Data di scadenza', 'Azione']}><>{expiredProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td className="mono">{product.code}</td><td>{product.category}</td><td>{quantityFormat.format(product.stock)} {product.unit ?? 'PEZZO'}</td><td>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</td><td><button className="button button-danger" onClick={() => void disposeExpiredProduct(product)}><Trash2 size={14} /> Butta articolo</button></td></tr>)}</>{!expiredProducts.length && <tr><td colSpan={6} className="empty-cell">Non ci sono prodotti scaduti da gestire.</td></tr>}</Table></div>}
 
       {section === 'inventory-history' && <div className="page-content"><div id="inventory-history-print">
         <div className="inventory-history-actions no-print"><SelectField label="Periodo" value={inventoryHistoryPeriod} onChange={setInventoryHistoryPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Da - A']} />{inventoryHistoryPeriod === 'Da - A' && <><Field label="Da" type="date" value={inventoryHistoryFrom} onChange={(event) => setInventoryHistoryFrom(event.target.value)} /><Field label="A" type="date" value={inventoryHistoryTo} onChange={(event) => setInventoryHistoryTo(event.target.value)} /></>}<SearchInput value={inventoryHistorySearch} onChange={setInventoryHistorySearch} placeholder="Cerca articolo, persona o nota…" /><button className="button button-outline" onClick={() => void exportInventoryHistoryPdf()}><ArrowDownToLine size={16} /> Esporta lista</button></div>
-        <Table headings={['Data e ora', 'Articolo', 'Movimento', 'Quantità', 'Persona', 'Nota']}><>{inventoryHistoryMovements.map((movement) => <tr key={movement.id}><td>{dateTimeText(new Date(movement.created_at))}</td><td className="cell-primary">{movement.product_name}</td><td><span className={`movement-badge ${movement.movement_type === 'Carico' ? 'movement-in' : 'movement-out'}`}>{movement.movement_type}</span></td><td>{quantityFormat.format(movement.quantity)}</td><td>{movement.person || '—'}</td><td>{localizedText(movement.note || '—', language)}</td></tr>)}</>{!inventoryHistoryMovements.length && <tr><td colSpan={6} className="empty-cell">Nessun movimento nel periodo selezionato.</td></tr>}</Table></div></div>}
+        <Table headings={['Data e ora', 'Articolo', 'Movimento', 'Quantità', 'Persona', 'Nota']}><>{inventoryHistoryMovements.map((movement) => <tr key={movement.id}><td>{dateTimeText(new Date(movement.created_at))}</td><td className="cell-primary">{movement.product_name}</td><td><span className={`movement-badge ${movement.movement_type === 'Carico' ? 'movement-in' : 'movement-out'}`}>{movement.movement_type}</span></td><td>{quantityFormat.format(movement.quantity)}</td><td>{movement.person || '—'}</td><td>{localizedStockNote(movement.note || '—', language)}</td></tr>)}</>{!inventoryHistoryMovements.length && <tr><td colSpan={6} className="empty-cell">Nessun movimento nel periodo selezionato.</td></tr>}</Table></div></div>}
 
       {section === 'stock-distribution' && <div className="page-content accounting-page">
         <div className="distribution-layout">
@@ -3214,7 +3283,7 @@ export default function App() {
           {!data.voucherBatches.length ? <Empty icon={Barcode} title="Nessun buono sconto" detail="Crea e conferma un gruppo di codici per visualizzarlo qui." /> : <>
             <div className="voucher-batch-list">{data.voucherBatches.map((batch) => <div className="voucher-batch-row" key={batch.id}>
               <div><strong>Gruppo {batch.id}</strong><span>{batch.codes.length} codici · {batch.discount_percentage}% di sconto</span><small>{formatLocalDate(batch.starts_at)} — {formatLocalDate(batch.ends_at)}</small></div>
-              <div className="voucher-actions no-print"><button className="icon-button" title="Visualizza codici" aria-label={`Visualizza codici del gruppo ${batch.id}`} onClick={() => setVoucherViewBatch(batch)}><Eye size={17} /></button><button className="button button-outline" onClick={() => startVoucherBatchEdit(batch)}><Pencil size={15} /> Modifica</button><button className="button button-outline" onClick={() => setVoucherPrintBatch(batch)}><Printer size={15} /> Stampa</button><button className="button button-outline" onClick={() => downloadVoucherBatch(batch)}><ArrowDownToLine size={15} /> Scarica lista</button><button className="button button-danger" onClick={() => void deleteVoucherBatch(batch)}><Trash2 size={15} /> Elimina</button></div>
+              <div className="voucher-actions no-print"><button className="icon-button" title="Visualizza codici" aria-label={`Visualizza codici del gruppo ${batch.id}`} onClick={() => setVoucherViewBatch(batch)}><Eye size={17} /></button><button className="button button-outline" onClick={() => startVoucherBatchEdit(batch)}><Pencil size={15} /> Modifica</button><button className="button button-outline" onClick={() => setVoucherPrintBatch(batch)}><Printer size={15} /> Stampa</button><button className="button button-outline" onClick={() => void downloadVoucherBatch(batch).catch((error: unknown) => notify(errorText(error)))}><ArrowDownToLine size={15} /> Scarica lista</button><button className="button button-danger" onClick={() => void deleteVoucherBatch(batch)}><Trash2 size={15} /> Elimina</button></div>
             </div>)}</div>
             {voucherPrintBatch && <div id="voucher-print" className="table-wrap voucher-codes voucher-print-only"><h2>Buoni sconto gruppo {voucherPrintBatch.id} · {voucherPrintBatch.discount_percentage}%</h2><p>{formatLocalDate(voucherPrintBatch.starts_at)} — {formatLocalDate(voucherPrintBatch.ends_at)}</p><table><thead><tr><th>Codice</th><th>Barcode</th><th>Sconto</th><th>Inizio</th><th>Scadenza</th></tr></thead><tbody>{voucherPrintBatch.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td><BarcodeImage value={code} /></td><td>{voucherPrintBatch.discount_percentage}%</td><td>{formatLocalDate(voucherPrintBatch.starts_at)}</td><td>{formatLocalDate(voucherPrintBatch.ends_at)}</td></tr>)}</tbody></table></div>}
           </>}
@@ -3304,7 +3373,7 @@ export default function App() {
       <div className="sale-edit-total"><span>Nuovo totale</span><strong>{money.format(Math.max(0, saleDialog.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0) - saleDialog.discount))}</strong></div>
       <div className="sale-edit-actions"><button className="button button-primary" onClick={() => void updateSale()}><Check size={15} /> Salva modifiche</button></div>
     </div></Modal>}
-    {saleAddOpen && <div className="drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSaleAddOpen(false); }}><aside className="detail-drawer sale-add-drawer"><header className="drawer-header"><div><p className="eyebrow">MODIFICA VENDITA</p><h2>Aggiungi articoli</h2></div><button className="icon-button" onClick={() => setSaleAddOpen(false)} aria-label="Chiudi"><X size={18} /></button></header><div className="sale-add-content"><SearchInput value={saleProductSearch} onChange={setSaleProductSearch} placeholder="Cerca articolo o codice…" /><div className="sale-add-products">{availableSaleProducts.filter((product) => product.name.toLowerCase().includes(saleProductSearch.toLowerCase()) || product.code.includes(saleProductSearch)).map((product) => { const selected = saleCart.find((item) => item.product_id === product.id); return <button className={`sale-add-product${selected ? ' selected' : ''}`} key={product.id} onClick={() => addProductToSaleCart(product)}><span><strong>{product.name}</strong><small>{product.code} · {product.stock} {product.unit ?? 'PEZZO'} disponibili</small></span><span>{money.format(product.sale_price)} / {product.unit ?? 'PEZZO'}<b>{selected ? ` · ${selected.quantity}` : ''}</b></span></button>; })}</div><details className="sale-add-cart"><summary><strong>Carrello · {saleCart.length}</strong></summary>{saleCart.map((item) => <span key={item.product_id}>{item.name} · {item.quantity} {item.unit} <b>{money.format(item.quantity * item.unit_price)}</b></span>)}</details><button className="button button-primary full-width sale-add-confirm" disabled={!saleCart.length} onClick={addProductToSale}><ShoppingCart size={16} /> Conferma l'aggiunta</button></div></aside></div>}
+    {saleAddOpen && <div className="drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSaleAddOpen(false); }}><aside className="detail-drawer sale-add-drawer"><header className="drawer-header"><div><p className="eyebrow">MODIFICA VENDITA</p><h2>Aggiungi articoli</h2></div><button className="icon-button" onClick={() => setSaleAddOpen(false)} aria-label="Chiudi"><X size={18} /></button></header><div className="sale-add-content"><SearchInput value={saleProductSearch} onChange={setSaleProductSearch} placeholder="Cerca articolo o codice…" /><div className="sale-add-products">{availableSaleProducts.filter((product) => product.name.toLowerCase().includes(saleProductSearch.toLowerCase()) || product.code.includes(saleProductSearch)).map((product) => { const selected = saleCart.find((item) => item.product_id === product.id); return <button className={`sale-add-product${selected ? ' selected' : ''}`} key={product.id} onClick={() => addProductToSaleCart(product)}><span><strong>{product.name}</strong><small>{product.code} · {product.stock} {product.unit ?? 'PEZZO'} disponibili</small></span><span>{money.format(product.sale_price)} / {product.unit ?? 'PEZZO'}<b>{selected ? ` · ${selected.quantity}` : ''}</b></span></button>; })}</div><div className="sale-add-confirm-row"><button className="button button-primary full-width sale-add-confirm" disabled={!saleCart.length} onClick={addProductToSale}><ShoppingCart size={16} /> Conferma l'aggiunta</button><details className="sale-add-cart"><summary title="Mostra articoli aggiunti" aria-label="Mostra articoli aggiunti"><ShoppingCart size={18} /></summary><div className="sale-add-cart-items">{saleCart.map((item) => <div key={item.product_id}><strong>{item.name}</strong><span>{quantityFormat.format(item.quantity)} {item.unit ?? 'PEZZO'}</span><b>{money.format(item.quantity * item.unit_price)}</b></div>)}</div></details></div></div></aside></div>}
     {camera && <CameraScanner close={() => setCamera(false)} scan={scanCameraCode} />}
     {notice && <div className="toast">{notice}</div>}
   </div></LocalizedNodes></AppDynamicNamesContext.Provider></AppLanguageContext.Provider>;
