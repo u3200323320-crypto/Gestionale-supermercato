@@ -508,10 +508,10 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .lock-screen, .loading-screen { display: grid; min-height: 100vh; place-items: center; background: radial-gradient(ellipse at 78% 10%, #f9eee3 0, transparent 38%), #f5f6f3; }
 .lock-screen { position: relative; isolation: isolate; overflow: hidden; background: #f5f6f3; }
 .lock-screen::before, .lock-screen::after { position: fixed; inset: 0; z-index: 0; content: ''; pointer-events: none; }
-.lock-screen::before { background-image: repeating-linear-gradient(135deg, transparent 0 38px, rgb(41 80 57 / 38%) 38px 41px, transparent 41px 78px); mask-image: repeating-linear-gradient(45deg, #000 0 13px, transparent 13px 23px); }
-.lock-screen::after { background-image: repeating-linear-gradient(0deg, transparent 0 24px, rgb(70 116 79 / 22%) 24px 26px, transparent 26px 50px); animation: lock-lines-scroll 14s linear infinite; }
+.lock-screen::before { background-image: repeating-linear-gradient(135deg, transparent 0 18px, rgb(243 80 10 / 48%) 18px 20px, transparent 20px 38px); mask-image: repeating-linear-gradient(45deg, #000 0 8px, transparent 8px 14px); }
+.lock-screen::after { background-image: repeating-linear-gradient(135deg, transparent 0 18px, rgb(243 80 10 / 28%) 18px 20px, transparent 20px 38px); animation: lock-lines-scroll 7s linear infinite; }
 .lock-screen > * { position: relative; z-index: 1; }
-@keyframes lock-lines-scroll { to { background-position: 0 50px; } }
+@keyframes lock-lines-scroll { to { background-position: 38px 38px; } }
 @media (prefers-reduced-motion: reduce) { .lock-screen::after { animation: none; } }
 .lock-panel { width: min(380px, calc(100vw - 30px)); padding: 31px; border: 1px solid var(--line); border-radius: 6px; background: white; box-shadow: var(--shadow); }
 .setup-screen { overflow: auto; padding: 20px 0; place-items: start center; }
@@ -685,7 +685,11 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .statistics-site-filter { position: relative; width: auto; min-width: 0; flex: 1 1 0; padding-right: 32px; }
 .statistics-site-filter > svg { position: absolute; right: 10px; }
 .statistics-site-filter select { min-width: 0; flex: 1; }
-.stats-metrics > .metric-card:last-child .metric-action { color: #1685dc; }
+.statistics-site-filter { justify-content: space-between; }
+.statistics-site-filter > span { flex: 0 0 auto; color: #89928b; }
+.statistics-site-filter select { color: #445148; font-size: 10px; }
+.stats-metrics > .metric-card:last-child .metric-card-top { flex-wrap: wrap; }
+.stats-metrics > .metric-card:last-child .metric-action { flex-basis: 100%; margin: 0; color: #1685dc !important; text-align: left; }
 .metric-action { position: static; flex: 0 0 auto; padding: 4px 0; }
 .page-content:has(.stats-metrics) .panel, .accounting-page .panel { transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
 .page-content:has(.stats-metrics) .panel:hover, .accounting-page .panel:hover { transform: translateY(-2px); border-color: #ccd9cd; box-shadow: 0 7px 18px rgb(38 59 42 / 6%); }
@@ -826,6 +830,10 @@ body svg text { fill: #000 !important; }
 .sale-adjustment-message p { color: #536157; font-size: 13px; line-height: 1.6; }
 .sale-adjustment-message .button { justify-self: end; min-width: 88px; }
 .sale-add-confirm { flex: 0 0 auto; min-height: 43px; }
+.sale-add-backdrop { z-index: 14; }
+.sale-add-confirm-row .sale-add-cart summary { position: relative; }
+.sale-add-cart-count { position: absolute; inset-block-start: -7px; inset-inline-end: -7px; display: grid; min-width: 18px; height: 18px; place-items: center; padding: 0 4px; border: 2px solid white; border-radius: 10px; background: var(--green-dark); color: white !important; font-size: 9px; font-weight: 700; }
+.sale-add-cart-items .quantity-control { justify-self: center; }
  .expense-receipt-field { grid-column: 1 / -1; }
  .expense-form .expense-receipt-field { min-height: 84px; padding: 10px; border: 1px dashed #cbd5cc; border-radius: 5px; background: #fafbf9; }
 .expense-receipt-field input { height: auto; padding: 8px; }
