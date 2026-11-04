@@ -16,6 +16,7 @@ export interface Product {
   low_stock_threshold: number;
   expiry_enabled?: boolean;
   expiry_date?: string | null;
+  photo_data?: string;
 }
 
 export interface SiteStock {
@@ -204,6 +205,7 @@ export interface ProductInput {
   low_stock_threshold: number;
   expiry_enabled?: boolean;
   expiry_date?: string | null;
+  photo_data?: string;
 }
 
 declare global {
@@ -213,6 +215,7 @@ declare global {
     onSalesExpired: (callback: () => void) => () => void;
     hasPin: () => Promise<boolean>;
     verifyPin: (pin: string) => Promise<AuthenticatedEmployee | null>;
+    checkPin: (pin: string) => Promise<boolean>;
     verifyEmployeeBarcode: (barcode: string) => Promise<boolean>;
     loginEmployee: (barcode: string) => Promise<AuthenticatedEmployee | null>;
     logout: () => Promise<void>;

@@ -346,7 +346,7 @@ function initDatabase(): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, unit TEXT NOT NULL DEFAULT 'PEZZO',
       category TEXT NOT NULL DEFAULT 'Altro', sale_price REAL NOT NULL, purchase_price REAL NOT NULL,
       stock REAL NOT NULL DEFAULT 0, low_stock_threshold REAL NOT NULL DEFAULT 5,
-      expiry_enabled INTEGER NOT NULL DEFAULT 0, expiry_date TEXT
+      expiry_enabled INTEGER NOT NULL DEFAULT 0, expiry_date TEXT, photo_data TEXT NOT NULL DEFAULT ''
     );
     CREATE TABLE IF NOT EXISTS sales (
       id INTEGER PRIMARY KEY AUTOINCREMENT, receipt_no TEXT NOT NULL UNIQUE,
@@ -514,6 +514,9 @@ function initDatabase(): void {
   }
   if (!productColumns.some((column) => column.name === 'expiry_date')) {
     database.exec('ALTER TABLE products ADD COLUMN expiry_date TEXT');
+  }
+  if (!productColumns.some((column) => column.name === 'photo_data')) {
+    database.exec("ALTER TABLE products ADD COLUMN photo_data TEXT NOT NULL DEFAULT ''");
   }
   const saleItemColumns = database.prepare('PRAGMA table_info(sale_items)').all() as Array<{ name: string }>;
   if (!saleItemColumns.some((column) => column.name === 'unit')) {
@@ -837,6 +840,14 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     trialSessions.delete(event.sender.id);
     return authenticatedEmployee;
   });
+  ipcMain.handle('pin:check', (event, pin: string) => {
+    requireSession(event.sender.id, ['proprietario']);
+    if (typeof pin !== 'string' || !/^\d{4,8}$/.test(pin)) throw new Error('Inserisci il PIN attuale da 4 a 8 cifre.');
+    const stored = setting('pin_hash');
+    if (!stored) return false;
+    const [salt, hash] = stored.split(':');
+    return timingSafeEqual(scryptSync(pin, salt, 64), Buffer.from(hash, 'hex'));
+  });
   ipcMain.handle('employee:authorize', (event, barcode: string) => {
     requireSession(event.sender.id, ['proprietario', 'direttore']);
     return isEmployeeBarcode(barcode);
@@ -880,26 +891,31 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       throw new Error('Registra almeno una sede prima di aggiungere articoli.');
     }
     const expiryDate = product.expiry_date ? new Date(`${product.expiry_date}T00:00:00`) : null;
+    const photoData = product.photo_data ?? '';
     if (!product.name.trim() || !product.code.trim() || product.sale_price < 0 || product.purchase_price < 0 || product.stock < 0
+      || typeof photoData !== 'string'
+      || (photoData !== '' && (!/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/i.test(photoData)
+        || Buffer.byteLength(photoData.split(',')[1] ?? '', 'base64') > 5 * 1024 * 1024))
       || (product.expiry_enabled && (!product.expiry_date || !/^\d{4}-\d{2}-\d{2}$/.test(product.expiry_date) || !expiryDate || Number.isNaN(expiryDate.getTime()) || localDate(expiryDate) !== product.expiry_date))) {
       throw new Error('Controlla i dati dell’articolo e la data di scadenza.');
     }
     database.transaction(() => {
       const warehouseSiteId = siteIdByName(warehouseSiteName);
-      const existing = database.prepare('SELECT id FROM products WHERE code = ?').get(product.code.trim()) as { id: number } | undefined;
+      const existing = database.prepare('SELECT id, photo_data FROM products WHERE code = ?').get(product.code.trim()) as { id: number; photo_data: string } | undefined;
       const otherSiteStock = existing
         ? (database.prepare('SELECT COALESCE(SUM(stock), 0) AS stock FROM site_inventory WHERE product_id = ? AND site_id != ?')
           .get(existing.id, warehouseSiteId) as { stock: number }).stock
         : 0;
       if (product.stock < otherSiteStock) throw new Error('La giacenza totale non può essere inferiore alle quantità già assegnate alle altre sedi.');
-      database.prepare(`INSERT INTO products (code, name, unit, category, sale_price, purchase_price, stock, low_stock_threshold, expiry_enabled, expiry_date)
-        VALUES (@code, @name, @unit, @category, @sale_price, @purchase_price, @stock, @low_stock_threshold, @expiry_enabled, @expiry_date)
+      database.prepare(`INSERT INTO products (code, name, unit, category, sale_price, purchase_price, stock, low_stock_threshold, expiry_enabled, expiry_date, photo_data)
+        VALUES (@code, @name, @unit, @category, @sale_price, @purchase_price, @stock, @low_stock_threshold, @expiry_enabled, @expiry_date, @photo_data)
         ON CONFLICT(code) DO UPDATE SET name=excluded.name, category=excluded.category, sale_price=excluded.sale_price,
         unit=excluded.unit, purchase_price=excluded.purchase_price, stock=excluded.stock, low_stock_threshold=excluded.low_stock_threshold,
-        expiry_enabled=excluded.expiry_enabled, expiry_date=excluded.expiry_date`).run({
+        expiry_enabled=excluded.expiry_enabled, expiry_date=excluded.expiry_date, photo_data=excluded.photo_data`).run({
         ...product,
         code: product.code.trim(),
         unit: product.unit ?? 'PEZZO',
+        photo_data: product.photo_data ?? existing?.photo_data ?? '',
         expiry_enabled: product.expiry_enabled ? 1 : 0,
         expiry_date: product.expiry_enabled ? product.expiry_date : null,
       });

@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('gestionale', {
   },
   hasPin: () => ipcRenderer.invoke('pin:has'),
   verifyPin: (pin: string): Promise<AuthenticatedEmployee | null> => ipcRenderer.invoke('pin:verify', pin),
+  checkPin: (pin: string): Promise<boolean> => ipcRenderer.invoke('pin:check', pin),
   verifyEmployeeBarcode: (barcode: string) => ipcRenderer.invoke('employee:authorize', barcode),
   loginEmployee: (barcode: string): Promise<AuthenticatedEmployee | null> => ipcRenderer.invoke('employee:login', barcode),
   logout: () => ipcRenderer.invoke('session:logout'),
