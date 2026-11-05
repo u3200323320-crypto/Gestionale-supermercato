@@ -3539,6 +3539,7 @@ function Table({ headings, children }: { headings: string[]; children: ReactNode
   return <div className="table-wrap"><table><thead><tr>{headings.map((heading) => <th key={heading}>{localizedText(heading, language)}</th>)}</tr></thead><tbody><LocalizedNodes>{children}</LocalizedNodes></tbody></table></div>;
 }
 function SiteStockStatistics({ sites, siteStocks, employees, products }: { sites: Site[]; siteStocks: SiteStock[]; employees: Employee[]; products: Product[] }) {
+  const language = useContext(AppLanguageContext);
   return <section className="panel site-summary-panel"><div className="panel-heading"><div><h3>Magazzino e personale per sede</h3></div></div>
     <Table headings={['Sede', 'Dipendenti', 'Persone che lavorano', 'Articoli disponibili', 'Valore a costo', 'Valore di vendita']}>
       <>{sites.map((site) => {
@@ -3552,7 +3553,8 @@ function SiteStockStatistics({ sites, siteStocks, employees, products }: { sites
           <td>{workers.map((employee) => `${employee.first_name} ${employee.last_name}`).join(', ') || '—'}</td>
           <td><div className="site-stock-lines">{inventory.length ? inventory.map((stock) => {
             const product = products.find((item) => item.id === stock.product_id);
-            return <span key={stock.product_id}>{product?.name ?? `#${stock.product_id}`}: {quantityFormat.format(stock.stock)} {product?.unit === 'KG' ? 'kg' : product?.unit === 'LITRO' ? 'L' : 'pz'}</span>;
+            const unit = product?.unit === 'KG' ? 'kg' : product?.unit === 'LITRO' ? 'lit.' : 'pz';
+            return <span key={stock.product_id}>{product?.name ?? `#${stock.product_id}`}: {quantityFormat.format(stock.stock)} {localizedText(unit, language)}</span>;
           }) : '—'}</div></td>
           <td className="align-right">{money.format(cost)}</td>
           <td className="align-right">{money.format(retail)}</td>
