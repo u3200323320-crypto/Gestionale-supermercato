@@ -170,6 +170,14 @@ export interface PayrollPayment {
   last_name: string;
   site: string;
 }
+export interface Refund {
+  id: number;
+  sale_id: number;
+  receipt_no: string;
+  amount: number;
+  created_at: string;
+  site: string;
+}
 export type PayrollPaymentInput = { employee_id: number; pay_month: string; payment_date: string };
 export type CustomerInput = { first_name: string; last_name: string; phone: string; email: string; address: string };
 export type VoucherBatchInput = Pick<VoucherBatch, 'discount_percentage' | 'starts_at' | 'ends_at' | 'codes'> & { id?: number };
@@ -185,7 +193,8 @@ export interface AppState {
   employees: Employee[];
   employeeActivities: EmployeeActivity[];
   payrollPayments: PayrollPayment[];
-  settings: { shop_name: string; shop_logo?: string; home_image?: string; home_video?: string; shop_address: string; shop_phone: string; shop_email: string; shop_tax_id: string; setup_complete: boolean; auth_trial_expires_at: string; archive_folder: string; database_file: string; receipt_printer: string; receipt_printer_thermal: string; barcode_scanner_enabled: boolean; barcode_scanner_detected: boolean };
+  refunds: Refund[];
+  settings: { shop_name: string; shop_number: string; shop_logo?: string; home_image?: string; home_video?: string; shop_address: string; shop_phone: string; shop_email: string; shop_tax_id: string; setup_complete: boolean; auth_trial_expires_at: string; archive_folder: string; database_file: string; receipt_printer: string; receipt_printer_thermal: string; barcode_scanner_enabled: boolean; barcode_scanner_detected: boolean };
   stockMovements: StockMovement[];
   siteStocks: SiteStock[];
   expenses: Expense[];
@@ -238,7 +247,7 @@ declare global {
     paySalary: (input: PayrollPaymentInput) => Promise<void>;
     payAllSalaries: (input: { pay_month: string; payment_date: string }) => Promise<void>;
     paySelectedSalaries: (input: { employee_ids: number[]; pay_month: string; payment_date: string }) => Promise<void>;
-    saveSetting: (key: 'shop_name' | 'shop_address' | 'shop_phone' | 'shop_email' | 'shop_tax_id' | 'archive_folder' | 'receipt_printer' | 'receipt_printer_thermal' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => Promise<void>;
+    saveSetting: (key: 'shop_name' | 'shop_number' | 'shop_address' | 'shop_phone' | 'shop_email' | 'shop_tax_id' | 'archive_folder' | 'receipt_printer' | 'receipt_printer_thermal' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => Promise<void>;
     getPrinters: () => Promise<Printer[]>;
     printReceipt: (target?: 'regular' | 'thermal') => Promise<void>;
     savePayrollReceipts: (input: { folderName: string; files: Array<{ name: string; data: string }> }) => Promise<string>;
@@ -255,6 +264,7 @@ declare global {
     saveSite: (site: SiteInput, requesterBarcode: string) => Promise<void>;
     setupSite: (site: SiteInput) => Promise<void>;
     deleteSite: (siteId: number, requesterBarcode: string) => Promise<void>;
+    authorizeSiteAction: (requesterBarcode: string) => Promise<boolean>;
     chooseArchiveFolder: () => Promise<string | null>;
     chooseShopLogo: () => Promise<string | null>;
     chooseHomepageImage: () => Promise<string | null>;

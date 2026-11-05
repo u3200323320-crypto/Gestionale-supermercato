@@ -33,23 +33,34 @@ function mergeSiteInventory(database: Database.Database, targetSiteId: number, s
 
 export function migrateSites(database: Database.Database): void {
   database.transaction(() => {
-    const legacyWarehouses = database.prepare("SELECT id, name FROM sites WHERE name = 'Magazzino centrale' ORDER BY id")
-      .all() as Array<{ id: number; name: string }>;
-    for (const legacy of legacyWarehouses) {
-      const currentWarehouse = database.prepare('SELECT id FROM sites WHERE name = ?').get(WAREHOUSE_SITE_NAME) as { id: number } | undefined;
-      if (!currentWarehouse) {
-        database.prepare("UPDATE sites SET name = ?, site_type = 'warehouse' WHERE id = ?").run(WAREHOUSE_SITE_NAME, legacy.id);
+    const warehouseDeleted = (database.prepare('SELECT value FROM settings WHERE key = ?')
+      .get('system_warehouse_deleted') as { value: string } | undefined)?.value === 'true';
+    if (!warehouseDeleted) {
+      const legacyWarehouses = database.prepare("SELECT id, name FROM sites WHERE name = 'Magazzino centrale' ORDER BY id")
+        .all() as Array<{ id: number; name: string }>;
+      for (const legacy of legacyWarehouses) {
+        const currentWarehouse = database.prepare('SELECT id FROM sites WHERE name = ?').get(WAREHOUSE_SITE_NAME) as { id: number } | undefined;
+        if (!currentWarehouse) {
+          database.prepare("UPDATE sites SET name = ?, site_type = 'warehouse' WHERE id = ?").run(WAREHOUSE_SITE_NAME, legacy.id);
+          moveSiteReferences(database, legacy.name, WAREHOUSE_SITE_NAME);
+          continue;
+        }
+        mergeSiteInventory(database, currentWarehouse.id, legacy.id);
         moveSiteReferences(database, legacy.name, WAREHOUSE_SITE_NAME);
-        continue;
+        database.prepare('DELETE FROM sites WHERE id = ?').run(legacy.id);
       }
-      mergeSiteInventory(database, currentWarehouse.id, legacy.id);
-      moveSiteReferences(database, legacy.name, WAREHOUSE_SITE_NAME);
-      database.prepare('DELETE FROM sites WHERE id = ?').run(legacy.id);
-    }
 
-    database.prepare("INSERT OR IGNORE INTO sites (name, address, phone, created_at, site_type, recognition_code) VALUES (?, '', '', ?, 'warehouse', '')")
-      .run(WAREHOUSE_SITE_NAME, new Date().toISOString());
-    database.prepare("UPDATE sites SET site_type = 'warehouse' WHERE name = ?").run(WAREHOUSE_SITE_NAME);
+      const warehouse = database.prepare("SELECT id FROM sites WHERE site_type = 'warehouse' LIMIT 1").get() as { id: number } | undefined;
+      if (!warehouse) {
+        const namedWarehouse = database.prepare('SELECT id FROM sites WHERE name = ?').get(WAREHOUSE_SITE_NAME) as { id: number } | undefined;
+        if (namedWarehouse) {
+          database.prepare("UPDATE sites SET site_type = 'warehouse' WHERE id = ?").run(namedWarehouse.id);
+        } else {
+          database.prepare("INSERT INTO sites (name, address, phone, created_at, site_type, recognition_code) VALUES (?, '', '', ?, 'warehouse', '')")
+            .run(WAREHOUSE_SITE_NAME, new Date().toISOString());
+        }
+      }
+    }
 
     const referencedSites = [
       ...database.prepare('SELECT operational_site AS name FROM employees').all() as Array<{ name: string }>,
@@ -80,7 +91,8 @@ export function migrateSites(database: Database.Database): void {
       if (code !== site.recognition_code) updateCode.run(code, site.id);
     }
     database.exec('CREATE UNIQUE INDEX IF NOT EXISTS sites_recognition_code_unique ON sites(recognition_code)');
-    const inventorySite = database.prepare('SELECT id FROM sites WHERE name = ?').get(WAREHOUSE_SITE_NAME) as { id: number } | undefined;
+    const inventorySite = database.prepare("SELECT id FROM sites WHERE site_type = 'warehouse' ORDER BY id LIMIT 1").get() as { id: number } | undefined
+      ?? database.prepare("SELECT id FROM sites WHERE site_type = 'store' ORDER BY id LIMIT 1").get() as { id: number } | undefined;
     if (inventorySite) {
       database.prepare(`INSERT OR IGNORE INTO site_inventory (product_id, site_id, stock)
         SELECT products.id, ?, products.stock FROM products
@@ -103,9 +115,6 @@ export function saveSite(database: Database.Database, input: SiteInput): void {
       const existing = database.prepare('SELECT name, site_type FROM sites WHERE id = ?').get(input.id) as
         { name: string; site_type: 'store' | 'warehouse' } | undefined;
       if (!existing) throw new Error('Sede non trovata.');
-      if (existing.site_type === 'warehouse' && name !== existing.name) {
-        throw new Error('Il nome del Magazzino non può essere modificato.');
-      }
       database.transaction(() => {
         database.prepare('UPDATE sites SET name = ?, address = ?, phone = ? WHERE id = ?')
           .run(name, input.address.trim(), input.phone.trim(), input.id);
@@ -130,16 +139,27 @@ export function deleteSite(database: Database.Database, siteId: number): void {
   const site = database.prepare('SELECT id, name, site_type FROM sites WHERE id = ?').get(siteId) as
     { id: number; name: string; site_type: 'store' | 'warehouse' } | undefined;
   if (!site) throw new Error('Sede non trovata.');
-  if (site.site_type === 'warehouse') {
-    throw new Error('Il Magazzino non può essere eliminato.');
-  }
-  const fallbackSite = database.prepare("SELECT id, name FROM sites WHERE site_type = 'store' AND id != ? ORDER BY id LIMIT 1")
+  const fallbackSite = database.prepare("SELECT id, name FROM sites WHERE id != ? ORDER BY CASE site_type WHEN 'store' THEN 0 ELSE 1 END, id LIMIT 1")
     .get(siteId) as { id: number; name: string } | undefined;
-  const warehouse = database.prepare("SELECT id FROM sites WHERE site_type = 'warehouse'").get() as { id: number } | undefined;
-  if (!warehouse) throw new Error('Magazzino centrale non disponibile.');
+  const assignedEmployees = (database.prepare('SELECT COUNT(*) AS count FROM employees WHERE operational_site = ?')
+    .get(site.name) as { count: number }).count;
+  if (!fallbackSite && assignedEmployees > 0) throw new Error('Crea un’altra sede prima di eliminare quella assegnata ai dipendenti.');
   database.transaction(() => {
-    database.prepare('UPDATE employees SET operational_site = ? WHERE operational_site = ?').run(fallbackSite?.name ?? 'Non assegnata', site.name);
-    mergeSiteInventory(database, warehouse.id, siteId);
+    database.prepare('DELETE FROM payroll_payments WHERE employee_id IN (SELECT id FROM employees WHERE operational_site = ?)').run(site.name);
+    if (fallbackSite) {
+      database.prepare('UPDATE employees SET operational_site = ? WHERE operational_site = ?').run(fallbackSite.name, site.name);
+    }
+    database.prepare('DELETE FROM sales WHERE site = ?').run(site.name);
+    database.prepare('DELETE FROM expenses WHERE site = ?').run(site.name);
+    database.prepare('DELETE FROM refunds WHERE site = ?').run(site.name);
+    database.prepare('DELETE FROM stock_movements WHERE site = ? OR destination = ?').run(site.name, site.name);
     database.prepare('DELETE FROM sites WHERE id = ?').run(siteId);
+    if (site.site_type === 'warehouse') {
+      database.prepare(`INSERT INTO settings (key, value) VALUES ('system_warehouse_deleted', 'true')
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run();
+    }
+    database.prepare(`UPDATE products SET stock = (
+      SELECT COALESCE(SUM(stock), 0) FROM site_inventory WHERE site_inventory.product_id = products.id
+    )`).run();
   })();
 }

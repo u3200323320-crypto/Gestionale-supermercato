@@ -212,6 +212,7 @@ function state() {
     payrollPayments: database.prepare(`SELECT payments.*, employees.first_name, employees.last_name, employees.operational_site AS site
       FROM payroll_payments payments JOIN employees ON employees.id = payments.employee_id
       ORDER BY payments.pay_month DESC, employees.last_name, employees.first_name`).all() as PayrollPayment[],
+    refunds: database.prepare('SELECT * FROM refunds ORDER BY created_at DESC, id DESC').all(),
     sites: database.prepare('SELECT * FROM sites ORDER BY name').all() as Site[],
     customers: database.prepare('SELECT * FROM customers ORDER BY last_name, first_name').all(),
     loyaltyCards: database.prepare(`SELECT cards.*, CASE WHEN customers.id IS NULL THEN NULL
@@ -220,6 +221,7 @@ function state() {
       ORDER BY cards.created_at DESC, cards.id DESC`).all(),
     settings: {
       shop_name: setting('shop_name', 'Il tuo supermercato'),
+      shop_number: setting('shop_number'),
       shop_address: setting('shop_address'),
       shop_phone: setting('shop_phone'),
       shop_email: setting('shop_email'),
@@ -393,6 +395,10 @@ function initDatabase(): void {
       amount REAL NOT NULL, expense_date TEXT NOT NULL, created_at TEXT NOT NULL,
       site TEXT NOT NULL DEFAULT 'Non assegnata', receipt_data TEXT NOT NULL DEFAULT ''
     );
+    CREATE TABLE IF NOT EXISTS refunds (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER NOT NULL, receipt_no TEXT NOT NULL,
+      amount REAL NOT NULL CHECK(amount > 0), created_at TEXT NOT NULL, site TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS voucher_batches (
       id INTEGER PRIMARY KEY AUTOINCREMENT, discount_percentage REAL NOT NULL,
       starts_at TEXT NOT NULL, ends_at TEXT NOT NULL, created_at TEXT NOT NULL
@@ -538,7 +544,8 @@ function initDatabase(): void {
     const insert = database.prepare('INSERT INTO products (code, name, category, sale_price, purchase_price, stock, low_stock_threshold) VALUES (@code, @name, @category, @sale_price, @purchase_price, @stock, @low_stock_threshold)');
     database.transaction(() => seedProducts.forEach((product) => insert.run(product)))();
   }
-  const inventorySeedSite = database.prepare('SELECT id FROM sites WHERE name = ?').get(warehouseSiteName) as { id: number } | undefined;
+  const inventorySeedSite = database.prepare("SELECT id FROM sites WHERE site_type = 'warehouse' ORDER BY id LIMIT 1").get() as { id: number } | undefined
+    ?? database.prepare("SELECT id FROM sites WHERE site_type = 'store' ORDER BY id LIMIT 1").get() as { id: number } | undefined;
   if (inventorySeedSite) {
     database.prepare(`INSERT OR IGNORE INTO site_inventory (product_id, site_id, stock)
       SELECT products.id, ?, products.stock FROM products
@@ -578,6 +585,15 @@ function siteIdByName(name: string): number {
   throw new Error(`Sede non trovata: ${name}.`);
 }
 
+function defaultStockSite(): { id: number; name: string } {
+  const site = database.prepare("SELECT id, name FROM sites WHERE site_type = 'warehouse' ORDER BY id LIMIT 1").get() as
+    { id: number; name: string } | undefined
+    ?? database.prepare("SELECT id, name FROM sites WHERE site_type = 'store' ORDER BY id LIMIT 1").get() as
+      { id: number; name: string } | undefined;
+  if (!site) throw new Error('Registra almeno una sede prima di gestire le giacenze.');
+  return site;
+}
+
 function replaceItems(saleId: number, items: SaleItem[], siteId: number): void {
   const oldItems = saleItems(saleId);
   oldItems.forEach((item) => adjustSiteInventory(item.product_id, siteId, item.quantity));
@@ -595,7 +611,7 @@ function replaceItems(saleId: number, items: SaleItem[], siteId: number): void {
   }
 }
 
-function recordStockMovement(productId: number, productName: string, type: 'Carico' | 'Scarico', quantity: number, note: string, person = '', destination = '', site = warehouseSiteName): void {
+function recordStockMovement(productId: number, productName: string, type: 'Carico' | 'Scarico', quantity: number, note: string, person = '', destination = '', site = defaultStockSite().name): void {
   database.prepare(`INSERT INTO stock_movements (product_id, product_name, movement_type, quantity, created_at, person, destination, note, site)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(productId, productName, type, quantity, new Date().toISOString(), person, destination, note, site);
 }
@@ -900,11 +916,11 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       throw new Error('Controlla i dati dell’articolo e la data di scadenza.');
     }
     database.transaction(() => {
-      const warehouseSiteId = siteIdByName(warehouseSiteName);
+      const stockSiteId = defaultStockSite().id;
       const existing = database.prepare('SELECT id, photo_data FROM products WHERE code = ?').get(product.code.trim()) as { id: number; photo_data: string } | undefined;
       const otherSiteStock = existing
         ? (database.prepare('SELECT COALESCE(SUM(stock), 0) AS stock FROM site_inventory WHERE product_id = ? AND site_id != ?')
-          .get(existing.id, warehouseSiteId) as { stock: number }).stock
+          .get(existing.id, stockSiteId) as { stock: number }).stock
         : 0;
       if (product.stock < otherSiteStock) throw new Error('La giacenza totale non può essere inferiore alle quantità già assegnate alle altre sedi.');
       database.prepare(`INSERT INTO products (code, name, unit, category, sale_price, purchase_price, stock, low_stock_threshold, expiry_enabled, expiry_date, photo_data)
@@ -922,7 +938,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       const saved = database.prepare('SELECT id FROM products WHERE code = ?').get(product.code.trim()) as { id: number };
       const mainStock = product.stock - otherSiteStock;
       database.prepare(`INSERT INTO site_inventory (product_id, site_id, stock) VALUES (?, ?, ?)
-        ON CONFLICT(product_id, site_id) DO UPDATE SET stock = excluded.stock`).run(saved.id, warehouseSiteId, mainStock);
+        ON CONFLICT(product_id, site_id) DO UPDATE SET stock = excluded.stock`).run(saved.id, stockSiteId, mainStock);
     })();
   });
   ipcMain.handle('product:delete', (event, productId: number) => {
@@ -975,12 +991,12 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     database.transaction(() => {
       const product = database.prepare('SELECT id FROM products WHERE id = ?').get(productId) as { id: number } | undefined;
       if (!product) throw new Error('Articolo non trovato.');
-      const warehouseSiteId = siteIdByName(warehouseSiteName);
+      const stockSiteId = defaultStockSite().id;
       const otherStock = (database.prepare('SELECT COALESCE(SUM(stock), 0) AS stock FROM site_inventory WHERE product_id = ? AND site_id != ?')
-        .get(productId, warehouseSiteId) as { stock: number }).stock;
+        .get(productId, stockSiteId) as { stock: number }).stock;
       if (stock < otherStock) throw new Error('La giacenza totale non può essere inferiore alle quantità già assegnate alle altre sedi.');
       database.prepare(`INSERT INTO site_inventory (product_id, site_id, stock) VALUES (?, ?, ?)
-        ON CONFLICT(product_id, site_id) DO UPDATE SET stock = excluded.stock`).run(productId, warehouseSiteId, stock - otherStock);
+        ON CONFLICT(product_id, site_id) DO UPDATE SET stock = excluded.stock`).run(productId, stockSiteId, stock - otherStock);
       database.prepare('UPDATE products SET stock = ? WHERE id = ?').run(stock, productId);
     })();
   });
@@ -1035,7 +1051,8 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       const fromSite = database.prepare('SELECT name, site_type FROM sites WHERE id = ?').get(movement.fromSiteId) as { name: string; site_type: 'store' | 'warehouse' } | undefined;
       const toSite = database.prepare('SELECT name, site_type FROM sites WHERE id = ?').get(movement.toSiteId) as { name: string; site_type: 'store' | 'warehouse' } | undefined;
       if (!fromSite || !toSite) throw new Error('Sede di partenza o di destinazione non trovata.');
-      if (fromSite.site_type !== 'warehouse') throw new Error(`La sede di partenza deve essere ${warehouseSiteName}.`);
+      const warehouse = database.prepare("SELECT id FROM sites WHERE site_type = 'warehouse' LIMIT 1").get();
+      if (warehouse && fromSite.site_type !== 'warehouse') throw new Error(`La sede di partenza deve essere ${warehouseSiteName}.`);
       const employee = database.prepare('SELECT first_name, last_name, role FROM employees WHERE barcode = ?')
         .get(movement.employee_barcode.trim()) as { first_name: string; last_name: string; role: string } | undefined;
       if (!employee) throw new Error('Barcode personale non riconosciuto. Scansiona il badge di un dipendente registrato.');
@@ -1047,7 +1064,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         const product = database.prepare('SELECT name FROM products WHERE id = ?').get(item.productId) as { name: string } | undefined;
         if (!product) throw new Error('Articolo non trovato.');
         if (siteInventory(item.productId, movement.fromSiteId) < item.quantity) {
-          throw new Error(`Quantità insufficiente per ${product.name} nel ${warehouseSiteName}.`);
+          throw new Error(`Quantità insufficiente per ${product.name} nella sede ${fromSite.name}.`);
         }
         adjustSiteInventory(item.productId, movement.fromSiteId, -item.quantity);
         adjustSiteInventory(item.productId, movement.toSiteId, item.quantity);
@@ -1150,7 +1167,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         const current = nextQuantities.get(item.product_id);
         nextQuantities.set(item.product_id, { quantity: (current?.quantity ?? 0) + item.quantity, name: item.name });
       });
-      const receipt = database.prepare('SELECT receipt_no, site FROM sales WHERE id = ?').get(sale.id) as { receipt_no: string; site: string } | undefined;
+      const receipt = database.prepare('SELECT receipt_no, site, total FROM sales WHERE id = ?').get(sale.id) as { receipt_no: string; site: string; total: number } | undefined;
       if (!receipt) throw new Error('Scontrino non trovato.');
       replaceItems(sale.id, trustedItems, siteIdByName(receipt.site));
       new Set([...previousQuantities.keys(), ...nextQuantities.keys()]).forEach((productId) => {
@@ -1171,8 +1188,13 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         }
       });
       const grossTotal = sale.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+      const nextTotal = Math.max(0, grossTotal - sale.discount);
+      if (receipt.total > nextTotal) {
+        database.prepare('INSERT INTO refunds (sale_id, receipt_no, amount, created_at, site) VALUES (?, ?, ?, ?, ?)')
+          .run(sale.id, receipt.receipt_no, Math.round((receipt.total - nextTotal) * 100) / 100, new Date().toISOString(), receipt.site);
+      }
       database.prepare('UPDATE sales SET payment_method=?, discount=?, gross_total=?, total=? WHERE id=?')
-        .run(sale.payment_method, sale.discount, grossTotal, Math.max(0, grossTotal - sale.discount), sale.id);
+        .run(sale.payment_method, sale.discount, grossTotal, nextTotal, sale.id);
     })();
   });
   ipcMain.handle('sale:delete', (event, id: number, employeeBarcode: string) => {
@@ -1182,8 +1204,12 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       if (!Number.isInteger(id) || id < 1 || !isEmployeeBarcode(employeeBarcode)) {
         throw new Error('Barcode dipendente non riconosciuto. Scansiona il codice di riconoscimento di un dipendente.');
       }
-      const receipt = database.prepare('SELECT receipt_no, site FROM sales WHERE id = ?').get(id) as { receipt_no: string; site: string } | undefined;
+      const receipt = database.prepare('SELECT receipt_no, site, total FROM sales WHERE id = ?').get(id) as { receipt_no: string; site: string; total: number } | undefined;
       if (!receipt) throw new Error('Scontrino non trovato.');
+      if (receipt.total > 0) {
+        database.prepare('INSERT INTO refunds (sale_id, receipt_no, amount, created_at, site) VALUES (?, ?, ?, ?, ?)')
+          .run(id, receipt.receipt_no, receipt.total, new Date().toISOString(), receipt.site);
+      }
       const employee = employeeForLogin(employeeBarcode);
       const siteId = siteIdByName(receipt.site);
       saleItems(id).forEach((item) => {
@@ -1347,6 +1373,12 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     const receiptFolder = join(app.getPath('userData'), 'Ricevute pagamento affitto');
     if (expense?.receipt_data && dirname(expense.receipt_data) === receiptFolder && existsSync(expense.receipt_data)) unlinkSync(expense.receipt_data);
   });
+  ipcMain.handle('site:authorize', (event, requesterBarcode: string) => {
+    const session = requireSession(event.sender.id, ['proprietario']);
+    if (session.barcode !== requesterBarcode?.trim()) return false;
+    const requester = employeeForLogin(requesterBarcode);
+    return Boolean(requester && normalizedEmployeeRole(requester.role) === 'proprietario');
+  });
   ipcMain.handle('site:save', (event, input: SiteInput, requesterBarcode: string) => {
     const session = requireSession(event.sender.id, ['proprietario']);
     if (session.barcode !== requesterBarcode?.trim()) throw new Error('La sessione non corrisponde al proprietario che gestisce le sedi.');
@@ -1359,7 +1391,16 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     if (session.barcode !== requesterBarcode?.trim()) throw new Error('La sessione non corrisponde al proprietario che gestisce le sedi.');
     const requester = employeeForLogin(requesterBarcode);
     if (!requester || normalizedEmployeeRole(requester.role) !== 'proprietario') throw new Error('Solo il Proprietario può gestire le sedi.');
+    const site = database.prepare('SELECT name FROM sites WHERE id = ?').get(siteId) as { name: string } | undefined;
+    if (!site) throw new Error('Sede non trovata.');
+    const receipts = database.prepare('SELECT receipt_data FROM expenses WHERE site = ?').all(site.name) as Array<{ receipt_data: string }>;
     deleteSite(database, siteId);
+    const receiptFolder = join(app.getPath('userData'), 'Ricevute pagamento affitto');
+    for (const receipt of receipts) {
+      if (receipt.receipt_data && dirname(receipt.receipt_data) === receiptFolder
+        && basename(receipt.receipt_data) === receipt.receipt_data.split(/[\\/]/).pop()
+        && existsSync(receipt.receipt_data)) unlinkSync(receipt.receipt_data);
+    }
   });
   ipcMain.handle('site:setup', (_event, input: SiteInput) => {
     if (setting('setup_complete') === 'true'
@@ -1677,7 +1718,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     return { valid: true, discount_percentage: voucher.discount_percentage };
   });
   ipcMain.handle('settings:save', (event, key: string, value: string) => {
-    if (!['shop_name', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id', 'archive_folder', 'receipt_printer', 'receipt_printer_thermal', 'barcode_scanner_enabled', 'barcode_scanner_detected'].includes(key)) throw new Error('Impostazione non valida.');
+    if (!['shop_name', 'shop_number', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id', 'archive_folder', 'receipt_printer', 'receipt_printer_thermal', 'barcode_scanner_enabled', 'barcode_scanner_detected'].includes(key)) throw new Error('Impostazione non valida.');
     const setupKeys = ['shop_name', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id'];
     const firstSetup = !authenticatedSessions.has(event.sender.id)
       && (database.prepare('SELECT COUNT(*) AS count FROM employees').get() as { count: number }).count === 0
