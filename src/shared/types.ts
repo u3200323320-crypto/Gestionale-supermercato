@@ -237,6 +237,7 @@ declare global {
     disposeExpiredProduct: (productId: number) => Promise<void>;
     paySalary: (input: PayrollPaymentInput) => Promise<void>;
     payAllSalaries: (input: { pay_month: string; payment_date: string }) => Promise<void>;
+    paySelectedSalaries: (input: { employee_ids: number[]; pay_month: string; payment_date: string }) => Promise<void>;
     saveSetting: (key: 'shop_name' | 'shop_address' | 'shop_phone' | 'shop_email' | 'shop_tax_id' | 'archive_folder' | 'receipt_printer' | 'receipt_printer_thermal' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => Promise<void>;
     getPrinters: () => Promise<Printer[]>;
     printReceipt: (target?: 'regular' | 'thermal') => Promise<void>;

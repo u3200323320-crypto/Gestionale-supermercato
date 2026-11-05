@@ -1,6 +1,6 @@
 import { cloneElement, createContext, isValidElement, useContext, useEffect, useRef, useState } from 'react';
 import type { FormEvent, InputHTMLAttributes, ReactNode } from 'react';
-import { Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Camera, Check, ChevronDown, CircleAlert, ClipboardList, CreditCard, Eye, House, LockKeyhole, Minus, Package, Palette, Pencil, Plus, Printer, RefreshCw, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Store, Trash2, TrendingUp, Users, Video, X } from 'lucide-react';
+import { Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Camera, Check, ChevronDown, CircleAlert, ClipboardList, CreditCard, Eye, House, LockKeyhole, Minus, Package, Pencil, Plus, Printer, RefreshCw, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Store, Trash2, TrendingUp, Users, Video, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { jsPDF } from 'jspdf';
 import autoTable, { Table as AutoTableTable } from 'jspdf-autotable';
@@ -29,6 +29,18 @@ const colors = ['var(--green)', '#c17e4f', '#658499', '#a9aa64', '#8a7461', '#60
 const localDateKey = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const authenticationTrialActive = (expiresAt: string) => Date.parse(expiresAt) > Date.now();
 const safeFilePart = (value: string) => value.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').trim() || 'Dipendente';
+const productArtPalettes = [
+  ['#e7eee6', '#557c5c'], ['#f3e8d8', '#b57945'], ['#e5edf2', '#4f7c96'], ['#f0e9df', '#8a6c51'],
+  ['#e8eee1', '#87944d'], ['#f3e2df', '#b55f51'],
+];
+function productArtwork(product: Pick<Product, 'name' | 'category'>): string {
+  const seed = [...`${product.category}-${product.name}`].reduce((value, character) => (value * 31 + character.charCodeAt(0)) >>> 0, 7);
+  const [background, accent] = productArtPalettes[seed % productArtPalettes.length];
+  const packageX = 118 + seed % 22;
+  const packageWidth = 68 + seed % 18;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 144"><rect width="320" height="144" fill="${background}"/><path d="M0 112 Q70 82 145 112 T320 106 V144 H0Z" fill="#fff" opacity=".55"/><ellipse cx="160" cy="119" rx="54" ry="9" fill="#223329" opacity=".12"/><rect x="${packageX}" y="28" width="${packageWidth}" height="86" rx="9" fill="#fff"/><path d="M${packageX} 45 Q${packageX + packageWidth / 2} 57 ${packageX + packageWidth} 45 V85 H${packageX}Z" fill="${accent}"/><rect x="${packageX + 10}" y="92" width="${packageWidth - 20}" height="4" rx="2" fill="${accent}" opacity=".34"/><circle cx="${packageX + packageWidth / 2}" cy="68" r="11" fill="#fff" opacity=".88"/><path d="M${packageX + packageWidth / 2} 60 C${packageX + packageWidth / 2 - 9} 70 ${packageX + packageWidth / 2 - 4} 77 ${packageX + packageWidth / 2} 78 C${packageX + packageWidth / 2 + 7} 76 ${packageX + packageWidth / 2 + 10} 68 ${packageX + packageWidth / 2} 60Z" fill="${accent}"/><path d="M34 42h32M34 52h22M253 36h26M253 46h17" stroke="${accent}" stroke-width="3" stroke-linecap="round" opacity=".4"/></svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
 const permanentPromotionEnd = '9999-12-31';
 const promotionDurations = ['1 giorno', '3 giorni', '7 giorni', '1 mese', 'Sempre', 'Personalizzata'];
 const expenseCategories = ['Affitto', 'Utenze', 'Forniture', 'Stipendi', 'Manutenzione', 'Trasporti', 'Altro'];
@@ -183,7 +195,12 @@ const arabicUiTranslations: Record<string, string> = {
   'La scansione del badge verifica e apre automaticamente la vendita.': 'تتحقق قراءة البطاقة من الموظف وتفتح البيع تلقائيًا.',
   'I lettori USB che si comportano come tastiera vengono riconosciuti automaticamente quando inviano un codice. La preferenza resta salvata tra gli avvii.': 'يتم التعرف تلقائيًا على قارئات USB التي تعمل كلوحة مفاتيح عند إرسال رمز. ويُحفظ هذا الإعداد بين مرات التشغيل.',
   'Mese': 'الشهر', 'Mese di competenza': 'شهر الاستحقاق', 'Data di pagamento': 'تاريخ الدفع', 'Paga tutti gli stipendi': 'دفع جميع الرواتب',
+  'Paga selezionati': 'ادفع المحددين', 'Seleziona tutti da pagare': 'تحديد جميع المستحقين للدفع',
+  'Seleziona per pagare': 'حدد للدفع', 'Scarica lista dipendenti': 'تنزيل قائمة الموظفين',
   'Scarica ricevute del mese': 'تنزيل إيصالات الشهر', 'Pagato il': 'تم الدفع في',
+  'Verifica accesso tracker': 'التحقق من الوصول إلى سجل الأنشطة',
+  'Per accedere alla lista delle attività dei dipendenti, verifica un barcode valido.': 'للانتقال إلى قائمة أنشطة الموظفين، تحقق من رمز شريطي صالح.',
+  'Nessuna spesa operativa nel periodo selezionato.': 'لا توجد مصروفات تشغيلية خلال الفترة المحددة.',
   'Ricevuta pagamento affitto': 'إيصال دفع الإيجار', 'Ricevuta allegata': 'تم إرفاق الإيصال',
   'Menu principale': 'القائمة الرئيسية', 'Torna al magazzino': 'العودة إلى المخزن', 'Dettaglio articolo': 'تفاصيل المنتج', 'DETTAGLIO ARTICOLO': 'تفاصيل المنتج',
   'Giacenza attuale:': 'المخزون الحالي:', 'Condividi': 'مشاركة', 'Vedi lista': 'عرض القائمة', 'Scarica': 'تنزيل', 'Salva nome': 'حفظ الاسم',
@@ -368,11 +385,6 @@ async function addArabicPdfFont(doc: jsPDF) {
   doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'normal');
   doc.addFont('DejaVuSans.ttf', 'DejaVuSans', 'bold');
 }
-const appThemes = [
-  { id: 'blue', label: 'Blu', color: '#42A4F6' },
-  { id: 'dark', label: 'Scuro', color: '#252d29' },
-] as const;
-type AppTheme = typeof appThemes[number]['id'];
 const warehouseSiteName = 'Magazzino';
 type PromotionMinimum = 'none' | 'spend' | 'kilograms' | 'pieces';
 const nav: { section: Section; label: string; icon: typeof House }[] = [
@@ -653,19 +665,6 @@ function ProductForm({ initial, save, close, categories, addCategory, deleteCate
   const [product, setProduct] = useState({ ...initial, expiry_enabled: initial.expiry_enabled ?? false, expiry_date: initial.expiry_date ?? '' });
   const [saving, setSaving] = useState(false);
   const [newCategory, setNewCategory] = useState('');
-  const attachProductPhoto = async (file: File | undefined) => {
-    if (!file) return;
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
-      notify('Scegli una foto PNG, JPG o WEBP da massimo 5 MB.');
-      return;
-    }
-    try {
-      const photoData = await fileAsDataUrl(file);
-      setProduct((current) => ({ ...current, photo_data: photoData }));
-    } catch (error) {
-      notify(errorText(error));
-    }
-  };
   const change = (key: keyof ProductInput, value: string) => setProduct((current) => ({ ...current, [key]: ['sale_price', 'purchase_price', 'stock', 'low_stock_threshold'].includes(key) ? Number(value) : value }));
   const createCategory = () => {
     const nextCategory = newCategory.trim();
@@ -680,15 +679,10 @@ function ProductForm({ initial, save, close, categories, addCategory, deleteCate
   };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!initial.name && !product.photo_data) {
-      notify('Aggiungi la foto dell’articolo prima di salvarlo.');
-      return;
-    }
     setSaving(true);
     try { await save(product); close(); } finally { setSaving(false); }
   };
   return <Modal title={initial.name ? 'Modifica articolo' : 'Nuovo articolo'} close={close} rightHalf={!initial.name}><form className="form-grid product-form" onSubmit={submit}>
-    <label className="field product-photo-field"><span>Foto articolo</span><div className="product-photo-preview">{product.photo_data ? <img src={product.photo_data} alt={`Foto ${product.name || 'articolo'}`} /> : <><Camera size={24} /><small>Seleziona una foto dell’articolo</small></>}</div><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { void attachProductPhoto(event.target.files?.[0]); event.currentTarget.value = ''; }} /><small>PNG, JPG o WEBP · massimo 5 MB · conservata solo su questo dispositivo</small>{product.photo_data && <button className="button button-quiet" type="button" onClick={() => setProduct((current) => ({ ...current, photo_data: '' }))}>Rimuovi foto</button>}</label>
     <Field label="Nome articolo" value={product.name} onChange={(e) => change('name', e.target.value)} required autoFocus />
     <Field label="Codice a barre" value={product.code} onChange={(e) => change('code', e.target.value)} required />
     <fieldset className="unit-choice"><legend>Unità di vendita</legend>{(['KG', 'PEZZO', ...(product.unit === 'LITRO' ? ['LITRO'] : [])] as ProductUnit[]).map((unit) => <label key={unit}><input type="radio" name="product-unit" checked={(product.unit ?? 'PEZZO') === unit} onChange={() => setProduct({ ...product, unit })} /><span>{unit}</span></label>)}</fieldset>
@@ -751,14 +745,9 @@ export default function App() {
   const [showAllProductRanking, setShowAllProductRanking] = useState(false);
   const [unsoldListOpen, setUnsoldListOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
-  const [themePage, setThemePage] = useState<'Homepage' | 'Colore principale'>('Homepage');
   const [homeMediaWidthCm, setHomeMediaWidthCm] = useState(0);
   const [deviceTab, setDeviceTab] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(() => new Date());
-  const [appTheme, setAppTheme] = useState<AppTheme>(() => {
-    const savedTheme = window.localStorage.getItem('app-theme');
-    return appThemes.find((theme) => theme.id === savedTheme)?.id ?? 'blue';
-  });
   const [language, setLanguage] = useState<AppLanguage>(() => window.localStorage.getItem('app-language') === 'ar' ? 'ar' : 'it');
   const [savedCategories, setSavedCategories] = useState<string[]>(() => {
     try {
@@ -808,10 +797,13 @@ export default function App() {
   const [employeeDetails, setEmployeeDetails] = useState<Employee | null>(null);
   const [employeeAction, setEmployeeAction] = useState<{ employee: Employee; action: 'edit' | 'delete' } | null>(null);
   const [employeeActionBarcode, setEmployeeActionBarcode] = useState('');
+  const [trackerAccessOpen, setTrackerAccessOpen] = useState(false);
+  const [trackerAccessBarcode, setTrackerAccessBarcode] = useState('');
   const [reportExportOpen, setReportExportOpen] = useState(false);
   const [reportExportType, setReportExportType] = useState<'sales-pdf' | 'sales-xlsx' | 'balance'>('sales-pdf');
   const [payrollMonth, setPayrollMonth] = useState(localDateKey().slice(0, 7));
   const [payrollDate, setPayrollDate] = useState(localDateKey());
+  const [payrollSelectedEmployees, setPayrollSelectedEmployees] = useState<number[]>([]);
   const [expenseSearch, setExpenseSearch] = useState('');
   const [expenseDescription, setExpenseDescription] = useState('');
   const [expenseCategory, setExpenseCategory] = useState(expenseCategories[0]);
@@ -908,8 +900,13 @@ export default function App() {
       detail,
     }).catch((error: unknown) => notify(`Impossibile registrare l’attività: ${errorText(error)}`));
   };
-  const navigateTo = (target: Section) => {
-    const nextTarget = target === 'site-management' ? 'site-list' : target;
+  const navigateTo = (target: Section, trackerBarcodeVerified = false) => {
+    const nextTarget = target;
+    if (nextTarget === 'employee-tracker' && !trackerBarcodeVerified) {
+      setTrackerAccessBarcode('');
+      setTrackerAccessOpen(true);
+      return;
+    }
     if (!locked && data && !canAccess(nextTarget)) {
       notify('Non hai i permessi per accedere a questa sezione.');
       return;
@@ -1158,14 +1155,20 @@ export default function App() {
     const text = (value: string) => labels[value] ?? value;
     const photo = await imageAsPng(employee.photo_data);
     const documents = await Promise.all(employeeDocumentImages(employee.documents_data).map(imageAsPng));
+    doc.setFillColor(43, 82, 61);
+    doc.rect(0, 0, 210, 29, 'F');
     doc.setFont(font, 'bold');
-    doc.setFontSize(16);
-    doc.text(text('Scheda dipendente'), rtl ? 196 : 14, 18, rtl ? { align: 'right' } : undefined);
-    doc.setFont(font, 'normal');
+    doc.setTextColor(255, 255, 255);
     doc.setFontSize(9);
-    doc.text(`${data?.settings.shop_name ?? ''} · ${receiptDate.format(new Date())}`, rtl ? 196 : 14, 25, rtl ? { align: 'right' } : undefined);
+    doc.text(data?.settings.shop_name ?? '', rtl ? 196 : 14, 10, rtl ? { align: 'right' } : undefined);
+    doc.setFontSize(14);
+    doc.text(`${employee.first_name} ${employee.last_name}`, rtl ? 196 : 14, 20, rtl ? { align: 'right' } : undefined);
+    doc.setFont(font, 'normal');
+    doc.setFontSize(8);
+    doc.text(`${text('Scheda dipendente')} · ${receiptDate.format(new Date())}`, rtl ? 196 : 14, 26, rtl ? { align: 'right' } : undefined);
     doc.setFont(font, 'bold');
     doc.setFontSize(7);
+    doc.setTextColor(0, 0, 0);
     doc.text(text('Foto dipendente'), rtl ? 196 : 14, 31, rtl ? { align: 'right' } : undefined);
     doc.text(text('Foto documenti'), rtl ? 150 : 60, 31, rtl ? { align: 'right' } : undefined);
     doc.addImage(photo, 'PNG', 14, 34, 38, 38);
@@ -1310,32 +1313,29 @@ export default function App() {
     await window.gestionale.savePayrollReceipts({ folderName: `ricevute-stipendi-${payrollMonth}`, files });
   };
   const exportPayrollZip = exportPayrollFolder;
-  const payEmployee = async (employee: Employee) => {
-    try {
-      await window.gestionale.paySalary({ employee_id: employee.id, pay_month: payrollMonth, payment_date: payrollDate });
-      trackActivity('Dipendenti', 'Stipendio pagato', `${employee.first_name} ${employee.last_name} · ${payrollMonth}`);
-      const next = await refresh();
-      const payment = next.payrollPayments.find((item) => item.employee_id === employee.id && item.pay_month === payrollMonth);
-      if (payment) savePdf(await createSalaryPdf(employee, payment.payment_date, payment.pay_month, payment.amount), `Stipendio-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}-${payment.payment_date}.pdf`);
-      notify(`Stipendio di ${employee.first_name} registrato.`);
-    } catch (error) {
-      notify(errorText(error));
-    }
-  };
-  const payAllEmployees = async () => {
+  const paySelectedEmployees = async () => {
     if (!data) return;
     const alreadyPaid = new Set(data.payrollPayments.filter((payment) => payment.pay_month === payrollMonth).map((payment) => payment.employee_id));
-    const dueEmployees = data.employees.filter((employee) => normalizedRole(employee.role) !== 'proprietario' && !alreadyPaid.has(employee.id));
+    const dueEmployees = data.employees.filter((employee) =>
+      payrollSelectedEmployees.includes(employee.id)
+      && normalizedRole(employee.role) !== 'proprietario'
+      && !alreadyPaid.has(employee.id)
+    );
     if (!dueEmployees.length) {
-      notify('Tutti gli stipendi di questo mese risultano già pagati.');
+      notify('Seleziona almeno un dipendente con stipendio ancora da pagare.');
       return;
     }
     try {
-      await window.gestionale.payAllSalaries({ pay_month: payrollMonth, payment_date: payrollDate });
-      trackActivity('Dipendenti', 'Stipendi pagati', payrollMonth);
+      await window.gestionale.paySelectedSalaries({
+        employee_ids: dueEmployees.map((employee) => employee.id),
+        pay_month: payrollMonth,
+        payment_date: payrollDate,
+      });
+      trackActivity('Dipendenti', 'Stipendi pagati', `${dueEmployees.length} dipendenti · ${payrollMonth}`);
       const next = await refresh();
       const justPaidIds = new Set(dueEmployees.map((employee) => employee.id));
       const payments = next.payrollPayments.filter((payment) => payment.pay_month === payrollMonth && justPaidIds.has(payment.employee_id));
+      setPayrollSelectedEmployees([]);
       try {
         await exportPayrollFolder(payments);
       } catch (error) {
@@ -1390,9 +1390,9 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [currentUser, data]);
   useEffect(() => {
-    document.documentElement.dataset.theme = appTheme;
-    window.localStorage.setItem('app-theme', appTheme);
-  }, [appTheme]);
+    document.documentElement.removeAttribute('data-theme');
+    window.localStorage.removeItem('app-theme');
+  }, []);
   useEffect(() => {
     const frame = homeMediaFrameRef.current;
     if (!frame) return;
@@ -1401,7 +1401,7 @@ export default function App() {
     observer.observe(frame);
     updateSize();
     return () => observer.disconnect();
-  }, [settingsTab, themePage]);
+  }, [settingsTab]);
   useEffect(() => {
     document.documentElement.lang = language === 'ar' ? 'ar-EG-u-nu-latn' : 'it-IT';
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
@@ -2381,17 +2381,33 @@ export default function App() {
       if (rtl) await addArabicPdfFont(doc);
       doc.setR2L(rtl);
       doc.setFillColor(43, 82, 61);
-      doc.rect(0, 0, 210, 297, 'F');
-      if (data.settings.shop_logo) doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', 79, 46, 52, 52);
+      doc.rect(0, 0, 210, 62, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'bold');
-      doc.setFontSize(25);
-      doc.text(data.settings.shop_name, 105, data.settings.shop_logo ? 122 : 95, { align: 'center', maxWidth: 170 });
-      doc.setFontSize(18);
-      doc.text(rtl ? 'قائمة الموظفين' : 'Lista dipendenti', 105, data.settings.shop_logo ? 143 : 120, { align: 'center' });
+      doc.setFontSize(12);
+      doc.text(rtl ? 'إدارة الموظفين' : 'GESTIONE DEL PERSONALE', 105, 35, { align: 'center' });
+      if (data.settings.shop_logo) doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', 84, 76, 42, 42);
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'bold');
+      doc.setFontSize(24);
+      doc.text(data.settings.shop_name, 105, 142, { align: 'center', maxWidth: 170 });
+      doc.setTextColor(43, 82, 61);
+      doc.setFontSize(17);
+      doc.text(rtl ? 'قائمة الموظفين' : 'Lista dipendenti', 105, 157, { align: 'center' });
       doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'normal');
       doc.setFontSize(11);
-      doc.text(rtl ? `${data.employees.length} موظف · ${receiptDate.format(new Date())}` : `${data.employees.length} dipendenti · ${receiptDate.format(new Date())}`, 105, data.settings.shop_logo ? 155 : 132, { align: 'center' });
+      doc.setFillColor(241, 247, 241);
+      doc.setDrawColor(214, 229, 212);
+      doc.roundedRect(35, 177, 140, 32, 3, 3, 'FD');
+      doc.setTextColor(0, 0, 0);
+      doc.text(rtl ? `${data.employees.length} موظف · ${receiptDate.format(new Date())}` : `${data.employees.length} dipendenti · ${receiptDate.format(new Date())}`, 105, 191, { align: 'center' });
+      doc.setFontSize(9);
+      doc.setTextColor(90, 103, 93);
+      doc.text(rtl ? 'تفاصيل الموظفين' : 'Schede e dati del personale', 105, 199, { align: 'center' });
+      doc.setDrawColor(224, 230, 224);
+      doc.line(35, 225, 175, 225);
+      doc.setFontSize(8);
+      doc.text(data.settings.shop_name, 105, 234, { align: 'center' });
       for (const employee of data.employees) await createEmployeePdf(employee, doc, true);
       doc.save(rtl ? `تقرير-الموظفين-${todayKey}.pdf` : `lista-dipendenti-${todayKey}.pdf`);
     } catch (error) {
@@ -3049,6 +3065,20 @@ export default function App() {
     setEmployeeAction(null);
     setEmployeeActionBarcode('');
   };
+  const confirmTrackerAccess = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      if (!await window.gestionale.verifyEmployeeBarcode(trackerAccessBarcode.trim())) {
+        notify('Barcode non riconosciuto.');
+        return;
+      }
+      setTrackerAccessOpen(false);
+      setTrackerAccessBarcode('');
+      navigateTo('employee-tracker', true);
+    } catch (error) {
+      notify(errorText(error));
+    }
+  };
   const printReceipt = (target: 'regular' | 'thermal' = 'regular') => {
     const printer = target === 'thermal' ? data?.settings.receipt_printer_thermal : data?.settings.receipt_printer;
     if (printer) {
@@ -3137,7 +3167,7 @@ export default function App() {
         body: rows.map((row) => rtl ? row.reverse() : row),
         styles: { font: rtl ? 'DejaVuSans' : 'helvetica', fontSize: 8, cellPadding: 2, textColor: [0, 0, 0] },
         headStyles: { fillColor: [56, 104, 78], textColor: [255, 255, 255], fontStyle: 'bold' },
-        margin: { left: 12, right: 12, bottom: 12 },
+        margin: { left: 8, right: 8, bottom: 12 },
       });
       doc.save(rtl ? `سجل-المخزن-${todayKey}.pdf` : `storico-magazzino-${todayKey}.pdf`);
     } catch (error) {
@@ -3205,7 +3235,7 @@ export default function App() {
           <button aria-expanded={openSidebarMenu === 'employees'} className={`nav-item${['employees', 'employee-create', 'payroll', 'employee-tracker'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'employees' ? null : 'employees')}><ClipboardList size={18} /><span>Dipendenti</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'employees' ? ' open' : ''}`} size={15} /></button>
           {openSidebarMenu === 'employees' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => navigateTo('employees')}>Lista Dipendenti</button><button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => navigateTo('payroll')}>Paga Stipendi</button><button className={`sidebar-subitem${section === 'employee-tracker' ? ' selected' : ''}`} onClick={() => navigateTo('employee-tracker')}>Tracker Dipendenti</button></div>}
           <button aria-expanded={siteMenuOpen} className={`nav-item${['site-statistics', 'site-management', 'site-create', 'site-list'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'sites' ? null : 'sites')}><Store size={18} /><span>Gestione sedi</span><ChevronDown className={`nav-chevron${siteMenuOpen ? ' open' : ''}`} size={15} /></button>
-          {siteMenuOpen && <div className="sidebar-submenu">{canAccess('site-statistics') && <button className={`sidebar-subitem${section === 'site-statistics' ? ' selected' : ''}`} onClick={() => navigateTo('site-statistics')}>Statistiche sedi</button>}{canAccess('site-list') && <button className={`sidebar-subitem${section === 'site-list' ? ' selected' : ''}`} onClick={() => navigateTo('site-list')}>Lista sedi</button>}</div>}
+          {siteMenuOpen && <div className="sidebar-submenu">{canAccess('site-management') && <button className={`sidebar-subitem${section === 'site-management' ? ' selected' : ''}`} onClick={() => navigateTo('site-management')}>Gestione sedi</button>}{canAccess('site-statistics') && <button className={`sidebar-subitem${section === 'site-statistics' ? ' selected' : ''}`} onClick={() => navigateTo('site-statistics')}>Statistiche sedi</button>}{canAccess('site-list') && <button className={`sidebar-subitem${section === 'site-list' ? ' selected' : ''}`} onClick={() => navigateTo('site-list')}>Lista sedi</button>}</div>}
         </>}
       </nav>
       <div className="sidebar-bottom"><div className="sidebar-settings-row">{canAccess('settings') && <button className={`nav-item settings-link${section === 'settings' ? ' active' : ''}`} onClick={() => { setSettingsTab(null); setDeviceTab(null); navigateTo('settings'); }}><Settings size={18} /><span>Impostazioni</span></button>}<button className="nav-item sidebar-refresh" type="button" onClick={() => void refreshCurrentData()} disabled={refreshing} title="Aggiorna dati senza chiudere la pagina" aria-label="Aggiorna dati senza chiudere la pagina"><RefreshCw className={refreshing ? 'refreshing-icon' : ''} size={18} /></button></div><div className="user-card"><div className="user-avatar">{currentUser?.first_name.slice(0, 1).toUpperCase() ?? data.settings.shop_name.slice(0, 1).toUpperCase()}</div><div><strong>{currentUser ? `${currentUser.first_name} ${currentUser.last_name}`.trim() : 'Gestore'}</strong><small>{currentUser?.role ?? 'Account locale'}</small></div>{data.employees.length > 0 && <button className="icon-button small" title="Blocca e cambia utente" aria-label="Blocca e cambia utente" onClick={() => { trackActivity('Accesso', 'Uscita dal gestionale'); setSelectedProduct(null); setProductAuthorization(null); setStockProduct(null); setCurrentUser(null); setLocked(true); setLoginBarcode(''); setPin(''); }}><LockKeyhole size={15} /></button>}</div></div>
@@ -3222,7 +3252,7 @@ export default function App() {
           <section className="expiry-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section>
           <section className="expiry-alert expired-alert"><div className="expired-alert-top"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Prodotti scaduti</strong><span>{expiredProducts.length ? `${expiredProducts.length} ${expiredProducts.length === 1 ? 'articolo scaduto' : 'articoli scaduti'}` : 'Nessun prodotto scaduto'}</span></div></div><button className="text-button expired-manage-link" onClick={() => navigateTo('expired-products')}>Gestisci articoli scaduti</button></div>{expiredProducts.length > 0 && <div className="expiry-list">{expiredProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section>
         </div>}
-        <div className="product-grid">{inventoryList.map((product) => <button className="product-tile" key={product.id} onClick={() => { if (!isCashierRole(activeRole)) setSelectedProduct(product); }}>{product.photo_data ? <img className="tile-art" src={product.photo_data} alt={`Foto ${product.name}`} /> : <span className="tile-art tile-art-placeholder"><Package size={28} /><small>Foto non caricata</small></span>}<span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="tile-price">{money.format(product.sale_price)}</span><span className={`tile-stock${product.stock <= product.low_stock_threshold ? ' text-low' : ''}`}>{quantityFormat.format(product.stock)} disponibili</span></button>)}</div>{inventoryList.length === 0 && <Empty icon={Package} title="Nessun articolo trovato" detail="Modifica la ricerca o aggiungi un articolo." />}
+        <div className="product-grid">{inventoryList.map((product) => <button className="product-tile" key={product.id} onClick={() => { if (!isCashierRole(activeRole)) setSelectedProduct(product); }}><img className="tile-art" src={product.photo_data || productArtwork(product)} alt="" /><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="tile-price">{money.format(product.sale_price)}</span><span className={`tile-stock${product.stock <= product.low_stock_threshold ? ' text-low' : ''}`}>{quantityFormat.format(product.stock)} disponibili</span></button>)}</div>{inventoryList.length === 0 && <Empty icon={Package} title="Nessun articolo trovato" detail="Modifica la ricerca o aggiungi un articolo." />}
       </div>}
 
       {section === 'expired-products' && <div className="page-content"><div className="page-toolbar"><div><h2>Gestione prodotti scaduti</h2><p>Verifica gli articoli scaduti e registra lo smaltimento.</p></div><button className="button button-outline" onClick={() => navigateTo('inventory')}>Torna al magazzino</button></div><Table headings={['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Data di scadenza', 'Azione']}><>{expiredProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td className="mono">{product.code}</td><td>{product.category}</td><td>{quantityFormat.format(product.stock)} {product.unit ?? 'PEZZO'}</td><td>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</td><td><button className="button button-danger" onClick={() => void disposeExpiredProduct(product)}><Trash2 size={14} /> Butta articolo</button></td></tr>)}</>{!expiredProducts.length && <tr><td colSpan={6} className="empty-cell">Non ci sono prodotti scaduti da gestire.</td></tr>}</Table></div>}
@@ -3258,7 +3288,7 @@ export default function App() {
       {section === 'cash' && <div className="page-content cash-content">{salesDisabled && <div className="security-status"><div className="security-icon"><ShieldCheck size={18} /></div><div><strong>Vendite disabilitate</strong><span>La sede Magazzino non può registrare vendite.</span></div></div>}<div className="cash-layout">
         <section className="cash-products">
           <div className="cash-search-row"><div className="search-field"><Barcode size={17} /><input id="scanner-field" placeholder="Cerca o scansiona un codice a barre…" value={scannerSearch} onChange={(e) => setScannerSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scanCode(scannerSearch); } }} /><button type="button" className="search-clear" aria-label="Cancella ricerca" disabled={!scannerSearch} onClick={() => setScannerSearch('')}><X size={15} /></button></div><button className="icon-button camera-button" title="Scansiona con fotocamera" onClick={() => setCamera(true)}><Camera size={18} /></button></div>
-          <div className="cash-product-grid">{data.products.filter((p) => (p.name.toLowerCase().includes(scannerSearch.toLowerCase()) || p.code.includes(scannerSearch)) && siteStockFor(p.id) > 0).map((product) => { const remainingStock = Math.max(0, siteStockFor(product.id) - (cart.find((item) => item.product_id === product.id)?.quantity ?? 0)); return <button className="cash-product" key={product.id} disabled={salesDisabled || remainingStock === 0} onClick={() => addProductToCart(product)}><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="cash-product-bottom"><b>{money.format(product.sale_price)}{product.unit === 'KG' ? ' / kg' : product.unit === 'LITRO' ? ' / lit.' : ''}</b><small>{quantityFormat.format(remainingStock)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'lit.' : 'pz'}</small></span></button>; })}</div>
+          <div className="cash-product-grid">{data.products.filter((p) => (p.name.toLowerCase().includes(scannerSearch.toLowerCase()) || p.code.includes(scannerSearch)) && siteStockFor(p.id) > 0).map((product) => { const remainingStock = Math.max(0, siteStockFor(product.id) - (cart.find((item) => item.product_id === product.id)?.quantity ?? 0)); return <button className="cash-product" key={product.id} disabled={salesDisabled || remainingStock === 0} onClick={() => addProductToCart(product)}><strong>{product.name}</strong><span className="cash-product-bottom"><b>{money.format(product.sale_price)}{product.unit === 'KG' ? ' / kg' : product.unit === 'LITRO' ? ' / lit.' : ''}</b><small>{quantityFormat.format(remainingStock)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'lit.' : 'pz'}</small></span></button>; })}</div>
         </section>
         <aside className="cart-panel"><div className="cart-heading"><div className="cart-heading-title"><h2>CARRELLO <span>{quantityFormat.format(cart.reduce((sum, item) => sum + item.quantity, 0))}</span></h2></div><button className="icon-button cart-clear-button" title="Svuota carrello" aria-label="Svuota carrello" disabled={!cart.length || salesDisabled} onClick={() => { setCart([]); setManualPromotionId(undefined); setAutomaticPromotionId(undefined); }}><Trash2 size={17} /></button></div><div className="cart-lines">{cart.map((item) => <div className="cart-line" key={item.product_id}><div className="cart-line-name"><strong>{item.name}</strong><small>{quantityFormat.format(item.quantity)} {item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}</small></div><div className="quantity-control"><button disabled={salesDisabled} onClick={() => changeQuantity(item.product_id, -1)} aria-label="Rimuovi uno"><Minus size={13} /></button><span>{quantityFormat.format(item.quantity)}</span><button disabled={salesDisabled} onClick={() => changeQuantity(item.product_id, 1)} aria-label="Aggiungi uno"><Plus size={13} /></button></div><strong className="line-total">{money.format(item.quantity * item.unit_price)}</strong></div>)}{!cart.length && <div className="cart-empty"><ShoppingBasket size={25} /><span>Seleziona gli articoli<br />per iniziare una vendita</span></div>}</div><div className="receipt-summary"><div><span>Subtotale</span><span>{money.format(subtotal)}</span></div><div className="total-row"><strong>TOTALE</strong><strong>{money.format(subtotal)}</strong></div></div><button className="button button-primary checkout-button" disabled={!cart.length || salesDisabled} onClick={() => setCheckoutOpen(true)}>Procedi al pagamento <span>→</span></button></aside>
       </div></div>}
@@ -3310,12 +3340,12 @@ export default function App() {
       </section></div>}
 
       {section === 'employees' && <div className="page-content employee-page">
-        <div className="page-toolbar employee-toolbar"><SearchInput value={employeeSearch} onChange={setEmployeeSearch} placeholder="Cerca dipendente, ruolo o sede…" /><div className="toolbar-actions"><button className="button button-primary" onClick={startEmployeeCreation}><Plus size={16} /> Aggiungi dipendente</button></div></div>
+        <div className="page-toolbar employee-toolbar"><SearchInput value={employeeSearch} onChange={setEmployeeSearch} placeholder="Cerca dipendente, ruolo o sede…" /><div className="toolbar-actions"><button className="button button-outline" onClick={() => void exportEmployeeList()}><ArrowDownToLine size={16} /> Scarica lista dipendenti</button><button className="button button-primary" onClick={startEmployeeCreation}><Plus size={16} /> Aggiungi dipendente</button></div></div>
         <div className="employee-card-grid">{employeeList.map((employee) => <button className="employee-card" key={employee.id} onClick={() => setEmployeeDetails(employee)} aria-label={`Apri informazioni di ${employee.first_name} ${employee.last_name}`}><img className="employee-list-photo" src={employee.photo_data} alt={`Foto di ${employee.first_name} ${employee.last_name}`} /><span><small>Nome</small><strong>{employee.first_name}</strong></span><span><small>Cognome</small><strong>{employee.last_name}</strong></span><span><small>Ruolo</small><strong>{employee.role}</strong></span><span><small>Sede</small><strong>{employee.operational_site}</strong></span></button>)}{!employeeList.length && <Empty icon={ClipboardList} title={data.employees.length ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente registrato.'} detail="" />}</div>
       </div>}
       {section === 'site-statistics' && <div className="page-content accounting-page site-statistics-page"><div className="site-statistics-filters"><SelectField label="Periodo" value={siteStatsPeriod} onChange={setSiteStatsPeriod} options={['Oggi', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Ultimi 6 mesi', 'Tutto', 'Da - A']} /><SelectField label="Sede" value={siteStatsFilter} onChange={setSiteStatsFilter} options={['Tutte', ...data.sites.map((site) => site.name)]} /><>{siteStatsPeriod === 'Da - A' && <><Field label="Da" type="date" value={siteStatsFrom} onChange={(event) => setSiteStatsFrom(event.target.value)} /><Field label="A" type="date" value={siteStatsTo} onChange={(event) => setSiteStatsTo(event.target.value)} /></>}</></div><div className="metric-grid accounting-metrics"><Metric icon={Banknote} label="Entrate sedi" value={money.format(siteStatsIncome)} detail={siteStatsPeriod} /><Metric icon={ArrowDownToLine} label="Uscite sedi" value={money.format(siteStatsExpenses)} detail={siteStatsPeriod} /><Metric icon={TrendingUp} label="Saldo sedi" value={money.format(siteStatsIncome - siteStatsExpenses)} detail="Entrate meno uscite" /><Metric icon={Package} label="Sedi attive" value={String(selectedSiteStats.length)} detail="Sedi nel filtro selezionato" /></div><section className="panel site-summary-panel"><div className="panel-heading"><div><h3>Entrate e uscite per sede</h3><p>{siteStatsPeriod}</p></div></div><Table headings={['Sede', 'Entrate', 'Uscite', 'Saldo', 'Scontrini', 'Carico merce', 'Scarico merce']}><>{selectedSiteStats.map((site) => <tr key={site.id}><td className="cell-primary">{site.name}</td><td className="align-right">{money.format(site.income)}</td><td className="align-right">{money.format(site.expenses)}</td><td className="align-right cell-primary">{money.format(site.balance)}</td><td>{site.receipts}</td><td>{quantityFormat.format(site.stockIn)}</td><td>{quantityFormat.format(site.stockOut)}</td></tr>)}</>{!selectedSiteStats.length && <tr><td colSpan={7} className="empty-cell">Nessuna sede trovata.</td></tr>}</Table></section><SiteStockStatistics sites={data.sites.filter((site) => siteStatsFilter === 'Tutte' || site.name === siteStatsFilter)} siteStocks={data.siteStocks} employees={data.employees} products={data.products} /></div>}
       {section === 'site-create' && siteDraft && <div className="page-content settings-page"><section className="settings-panel"><button className="settings-back" onClick={() => navigateTo('site-list')}><ArrowLeft size={15} /> Lista sedi</button><div className="settings-title"><h2>{siteDraft.id ? 'Modifica sede' : 'Aggiungi sede'}</h2></div><form className="settings-form site-form" onSubmit={(event) => void saveSite(event)}><Field label="Nome sede" value={siteDraft.name} onChange={(event) => setSiteDraft({ ...siteDraft, name: event.target.value })} required /><Field label="Indirizzo" value={siteDraft.address} onChange={(event) => setSiteDraft({ ...siteDraft, address: event.target.value })} /><Field label="Telefono" type="tel" value={siteDraft.phone} onChange={(event) => setSiteDraft({ ...siteDraft, phone: event.target.value })} /><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setSiteDraft(null); navigateTo('site-list'); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Salva sede</button></div></form></section></div>}
-      {section === 'site-list' && <div className="page-content"><div className="page-toolbar"><div><h2>Lista sedi</h2><p>{storeSites.length} sedi registrate</p></div>{canAccess('site-management') && <button className="button button-primary" onClick={() => { setSiteDraft({ name: '', address: '', phone: '' }); navigateTo('site-create'); }}><Plus size={16} /> Aggiungi sede</button>}</div><Table headings={['Sede', 'Tipo', 'Codice di riconoscimento', 'Indirizzo', 'Telefono', 'Dipendenti', 'Azioni']}><>{storeSites.map((site) => <tr key={site.id}><td className="cell-primary">{site.name}</td><td>Punto vendita</td><td className="mono">{site.recognition_code}</td><td>{site.address || '—'}</td><td>{site.phone || '—'}</td><td>{data.employees.filter((employee) => employee.operational_site === site.name).length}</td><td><div className="toolbar-actions">{canAccess('site-management') && <><button className="button button-outline" onClick={() => { setSiteDraft({ id: site.id, name: site.name, address: site.address, phone: site.phone }); navigateTo('site-create'); }}><Pencil size={14} /> Modifica</button><button className="button button-danger" onClick={() => void deleteSite(site.id)}><Trash2 size={14} /> Elimina</button></>}</div></td></tr>)}</></Table></div>}
+      {(section === 'site-list' || section === 'site-management') && <div className="page-content"><div className="page-toolbar"><div><h2>{section === 'site-management' ? 'Gestione sedi' : 'Lista sedi'}</h2><p>{storeSites.length} sedi registrate</p></div>{canAccess('site-management') && <button className="button button-primary" onClick={() => { setSiteDraft({ name: '', address: '', phone: '' }); navigateTo('site-create'); }}><Plus size={16} /> Aggiungi sede</button>}</div><Table headings={['Sede', 'Tipo', 'Codice di riconoscimento', 'Indirizzo', 'Telefono', 'Dipendenti', 'Azioni']}><>{storeSites.map((site) => <tr key={site.id}><td className="cell-primary">{site.name}</td><td>Punto vendita</td><td className="mono">{site.recognition_code}</td><td>{site.address || '—'}</td><td>{site.phone || '—'}</td><td>{data.employees.filter((employee) => employee.operational_site === site.name).length}</td><td><div className="toolbar-actions">{canAccess('site-management') && <><button className="button button-outline" onClick={() => { setSiteDraft({ id: site.id, name: site.name, address: site.address, phone: site.phone }); navigateTo('site-create'); }}><Pencil size={14} /> Modifica</button><button className="button button-danger" onClick={() => void deleteSite(site.id)}><Trash2 size={14} /> Elimina</button></>}</div></td></tr>)}</></Table></div>}
       {section === 'employee-tracker' && <div className="page-content">
         <div id="employee-tracker-print">
           <div className="inventory-history-actions no-print">
@@ -3333,8 +3363,8 @@ export default function App() {
       {section === 'employee-create' && employeeDraft && <div className="page-content settings-page"><section className="settings-panel employee-create-panel"><EmployeeForm initial={employeeDraft} save={saveEmployee} cancel={() => { setEmployeeDraft(null); navigateTo('employees'); }} notify={notify} canDelete={['proprietario', 'direttore'].includes(normalizedRole(activeRole))} sites={data.sites.filter((site) => site.site_type === 'store').map((site) => site.name)} onDelete={async () => { const employee = data.employees.find((item) => item.id === employeeDraft.id); if (employee) startEmployeeAction(employee, 'delete'); }} /></section></div>}
       {section === 'payroll' && <div className="page-content payroll-page">
         <div className="payroll-page-heading"><div><p className="eyebrow">GESTIONE DEL PERSONALE</p><h2>Pagamenti stipendi</h2><p>Controlla lo stato mensile e scarica le ricevute dei pagamenti.</p></div><div className="payroll-summary-chip"><Banknote size={19} /><div><strong>{data.payrollPayments.filter((payment) => payment.pay_month === payrollMonth && normalizedRole(data.employees.find((employee) => employee.id === payment.employee_id)?.role ?? '') !== 'proprietario').length}/{data.employees.filter((employee) => normalizedRole(employee.role) !== 'proprietario').length}</strong><span>stipendi pagati</span></div></div></div>
-        <div className="panel payroll-toolbar"><Field label="Mese di competenza" type="month" value={payrollMonth} onChange={(event) => setPayrollMonth(event.target.value)} /><Field label="Data di pagamento" type="date" value={payrollDate} onChange={(event) => setPayrollDate(event.target.value)} /><button className="button button-primary" onClick={() => void payAllEmployees()}><Banknote size={15} /> Paga tutti gli stipendi</button><button className="button button-outline" onClick={() => { const payments = data.payrollPayments.filter((payment) => payment.pay_month === payrollMonth); void exportPayrollZip(payments).catch((error: unknown) => notify(errorText(error))); }}><ArrowDownToLine size={15} /> Scarica ricevute del mese</button></div>
-        <section className="panel payroll-table-panel"><Table headings={['Dipendente', 'Ruolo', 'Stipendio', 'Metodo', 'Stato', 'Azione']}><>{data.employees.filter((employee) => normalizedRole(employee.role) !== 'proprietario').map((employee) => { const payment = data.payrollPayments.find((item) => item.employee_id === employee.id && item.pay_month === payrollMonth); return <tr key={employee.id}><td className="cell-primary">{employee.first_name} {employee.last_name}</td><td>{employee.role}</td><td>{money.format(employee.salary)}</td><td>{employee.payment_method}</td><td><span className={`stock-badge${payment ? '' : ' low'}`}>{payment ? `Pagato il ${formatLocalDate(payment.payment_date)}` : 'Da pagare'}</span></td><td>{payment ? <button className="button button-outline" onClick={() => savePdf(createSalaryPdf(employee, payment.payment_date, payment.pay_month, payment.amount), `Stipendio-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}-${payment.payment_date}.pdf`)}><ArrowDownToLine size={14} /> Ricevuta</button> : <button className="button button-primary" onClick={() => void payEmployee(employee)}><Check size={14} /> Paga</button>}</td></tr>; })}</>{!data.employees.some((employee) => normalizedRole(employee.role) !== 'proprietario') && <tr><td colSpan={6} className="empty-cell">Nessun dipendente da pagare.</td></tr>}</Table></section>
+        <div className="panel payroll-toolbar"><Field label="Mese di competenza" type="month" value={payrollMonth} onChange={(event) => { setPayrollMonth(event.target.value); setPayrollSelectedEmployees([]); }} /><Field label="Data di pagamento" type="date" value={payrollDate} onChange={(event) => setPayrollDate(event.target.value)} /><button className="button button-outline" onClick={() => setPayrollSelectedEmployees((current) => { const due = data.employees.filter((employee) => normalizedRole(employee.role) !== 'proprietario' && !data.payrollPayments.some((payment) => payment.employee_id === employee.id && payment.pay_month === payrollMonth)).map((employee) => employee.id); return due.every((id) => current.includes(id)) ? current.filter((id) => !due.includes(id)) : [...new Set([...current, ...due])]; })}>Seleziona tutti da pagare</button><button className="button button-primary" disabled={!payrollSelectedEmployees.length} onClick={() => void paySelectedEmployees()}><Banknote size={15} /> {localizedText('Paga selezionati', language)} ({payrollSelectedEmployees.length})</button><button className="button button-outline" onClick={() => { const payments = data.payrollPayments.filter((payment) => payment.pay_month === payrollMonth); void exportPayrollZip(payments).catch((error: unknown) => notify(errorText(error))); }}><ArrowDownToLine size={15} /> Scarica ricevute del mese</button></div>
+        <section className="panel payroll-table-panel"><Table headings={['', 'Dipendente', 'Ruolo', 'Stipendio', 'Metodo', 'Stato', 'Azione']}><>{data.employees.filter((employee) => normalizedRole(employee.role) !== 'proprietario').map((employee) => { const payment = data.payrollPayments.find((item) => item.employee_id === employee.id && item.pay_month === payrollMonth); const selected = payrollSelectedEmployees.includes(employee.id); return <tr key={employee.id}><td><input type="checkbox" aria-label={`Seleziona ${employee.first_name} ${employee.last_name}`} checked={selected} disabled={Boolean(payment)} onChange={() => setPayrollSelectedEmployees((current) => selected ? current.filter((id) => id !== employee.id) : [...current, employee.id])} /></td><td className="cell-primary">{employee.first_name} {employee.last_name}</td><td>{employee.role}</td><td>{money.format(employee.salary)}</td><td>{employee.payment_method}</td><td><span className={`stock-badge${payment ? '' : ' low'}`}>{payment ? `Pagato il ${formatLocalDate(payment.payment_date)}` : 'Da pagare'}</span></td><td>{payment ? <button className="button button-outline" onClick={() => savePdf(createSalaryPdf(employee, payment.payment_date, payment.pay_month, payment.amount), `Stipendio-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}-${payment.payment_date}.pdf`)}><ArrowDownToLine size={14} /> Ricevuta</button> : 'Seleziona per pagare'}</td></tr>; })}</>{!data.employees.some((employee) => normalizedRole(employee.role) !== 'proprietario') && <tr><td colSpan={7} className="empty-cell">Nessun dipendente da pagare.</td></tr>}</Table></section>
       </div>}
       {section === 'expenses' && <div className="page-content accounting-page">
         <section className="panel expense-entry-panel"><div className="panel-heading"><div><h3>Registra una spesa</h3><p>Inserisci descrizione, categoria, importo e data.</p></div></div>
@@ -3372,6 +3402,7 @@ export default function App() {
           <section className="panel"><div className="panel-heading"><div><h3>Valore del magazzino</h3><p>Valorizzazione della giacenza attuale</p></div></div><div className="balance-breakdown"><Detail label="Valore a costo" value={money.format(stockCost)} /><Detail label="Valore potenziale di vendita" value={money.format(stockRetail)} /><Detail label="Articoli in giacenza" value={`${data.products.filter((product) => product.stock > 0).length}`} /><Detail label="Margine potenziale" value={money.format(stockRetail - stockCost)} /></div></section>
         </div>
         <section className="panel balance-pie-panel"><div className="panel-heading"><div><h3>Composizione del venduto</h3><p>{balancePeriod}</p></div></div><div className="balance-pie-layout"><div className="balance-pie-wrap"><ResponsiveContainer width="100%" height={260}><PieChart><Pie data={balancePieParts} dataKey="value" nameKey="name" innerRadius={66} outerRadius={100} paddingAngle={3} label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`} labelLine={false}>{balancePieParts.map((part, index) => <Cell key={part.name} fill={colors[index % colors.length]} />)}</Pie><Tooltip formatter={(value) => money.format(Number(value))} /></PieChart></ResponsiveContainer><div className="balance-pie-center"><span>Valore merce venduta</span><strong>{money.format(balanceRevenue)}</strong></div></div><div className="balance-pie-legend">{balancePieParts.map((part, index) => <div key={part.name}><span className="payment-dot" style={{ backgroundColor: colors[index % colors.length] }} /><span>{part.name}</span><strong>{money.format(part.value)} · {balancePieTotal > 0 ? `${(part.value / balancePieTotal * 100).toFixed(1)}%` : '0%'}</strong></div>)}</div></div></section>
+        <section className="panel balance-operating-expenses-panel"><div className="panel-heading"><div><h3>Dettaglio spese operative</h3><p>{balancePeriod}</p></div><strong>{money.format(balanceOperatingExpenses)}</strong></div><Table headings={['Data', 'Descrizione', 'Categoria', 'Sede', 'Importo']}><>{balanceExpenses.filter((expense) => expense.category !== 'Merce buttata').map((expense) => <tr key={expense.id}><td>{formatLocalDate(expense.expense_date)}</td><td className="cell-primary">{expense.description}</td><td>{expense.category}</td><td>{expense.site || '—'}</td><td className="align-right">{money.format(expense.amount)}</td></tr>)}</>{!balanceExpenses.some((expense) => expense.category !== 'Merce buttata') && <tr><td colSpan={5} className="empty-cell">Nessuna spesa operativa nel periodo selezionato.</td></tr>}</Table></section>
         <section className="panel balance-monthly-panel"><div className="panel-heading"><div><h3>Dettaglio mensile · ultimi 6 mesi</h3><p>Ricavi, costo merce, spese operative, merce buttata e risultato</p></div></div><div className="table-wrap"><table><thead><tr><th>Mese</th><th className="align-right">Ricavi</th><th className="align-right">Costo merce</th><th className="align-right">Spese operative</th><th className="align-right">Valore merce buttata</th><th className="align-right">Risultato</th></tr></thead><tbody>{balanceMonthly.slice(-6).map((month) => <tr key={month.mese}><td className="cell-primary">{month.mese}</td><td className="align-right">{money.format(month.vendite)}</td><td className="align-right">{money.format(month.costiMerce)}</td><td className="align-right">{money.format(month.speseOperative)}</td><td className="align-right">{money.format(month.merceButtata)}</td><td className="align-right cell-primary">{money.format(month.risultato)}</td></tr>)}</tbody></table></div></section>
       </div>}
 
@@ -3413,12 +3444,12 @@ export default function App() {
         <section className="panel category-panel"><div className="panel-heading"><div><h3>Vendite per categoria</h3><p>Valore degli articoli venduti nel periodo selezionato</p></div></div><div className="category-chart"><ResponsiveContainer width="100%" height={230}><PieChart><Pie data={Object.entries(categoriesSales).map(([name, value]) => ({ name, value }))} dataKey="value" nameKey="name" innerRadius={57} outerRadius={88} paddingAngle={3}>{Object.keys(categoriesSales).map((name, i) => <Cell key={name} fill={colors[i % colors.length]} />)}</Pie><Tooltip formatter={(value) => money.format(Number(value))} /></PieChart></ResponsiveContainer><div className="chart-legend">{Object.entries(categoriesSales).length ? Object.entries(categoriesSales).map(([name, value], i) => <div key={name}><span style={{ backgroundColor: colors[i % colors.length] }} /><span>{name}</span><strong>{money.format(value)}</strong></div>) : <span className="muted">Le categorie appariranno dopo la prima vendita.</span>}</div></div></section>
       </div>}
 
-      {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">{settingsTab === null ? <nav className="settings-nav">{[{ name: 'Nome negozio', icon: Store }, { name: 'Sicurezza', icon: ShieldCheck }, { name: 'Archivio dati', icon: Archive }, { name: 'Dispositivi', icon: Barcode }, { name: "Tema dell'app", icon: Palette }, { name: 'Operativo', icon: Check }].filter(({ name }) => normalizedRole(activeRole) === 'proprietario' || !['Nome negozio', 'Sicurezza', 'Archivio dati', "Tema dell'app"].includes(name)).map(({ name, icon: Icon }) => <button key={name} onClick={() => { setSettingsTab(name); setDeviceTab(null); }}><Icon size={17} />{name}</button>)}</nav> : <section className="settings-panel"><button className="settings-back" onClick={() => { if (settingsTab === 'Dispositivi' && deviceTab) setDeviceTab(null); else { setSettingsTab(null); setDeviceTab(null); } }}><ArrowLeft size={15} />{settingsTab === 'Dispositivi' && deviceTab ? 'Dispositivi' : 'Impostazioni'}</button>
+      {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">{settingsTab === null ? <nav className="settings-nav">{[{ name: 'Nome negozio', icon: Store }, { name: 'Sicurezza', icon: ShieldCheck }, { name: 'Archivio dati', icon: Archive }, { name: 'Dispositivi', icon: Barcode }, { name: 'Homepage', icon: House }, { name: 'Operativo', icon: Check }].filter(({ name }) => normalizedRole(activeRole) === 'proprietario' || !['Nome negozio', 'Sicurezza', 'Archivio dati', 'Homepage'].includes(name)).map(({ name, icon: Icon }) => <button key={name} onClick={() => { setSettingsTab(name); setDeviceTab(null); }}><Icon size={17} />{name}</button>)}</nav> : <section className="settings-panel"><button className="settings-back" onClick={() => { if (settingsTab === 'Dispositivi' && deviceTab) setDeviceTab(null); else { setSettingsTab(null); setDeviceTab(null); } }}><ArrowLeft size={15} />{settingsTab === 'Dispositivi' && deviceTab ? 'Dispositivi' : 'Impostazioni'}</button>
         {settingsTab === 'Nome negozio' && <><div className="settings-title"><h2>Info negozio</h2><p>Nome e logo del negozio per il menu e la barra superiore.</p></div><form className="settings-form" onSubmit={saveStoreName}><Field label="Nome attività" value={shopName} onChange={(e) => setShopName(e.target.value)} required /><div className="receipt-preview"><Store size={17} /><span>{shopName || 'Nome negozio'}</span><small>Anteprima intestazione scontrino</small></div><div className="shop-logo-setting"><span className="field-label">Logo del negozio</span>{data.settings.shop_logo && <img src={data.settings.shop_logo} alt="Logo attuale" />}<button className="button button-outline" type="button" onClick={() => void chooseShopLogo()}><Store size={15} /> {data.settings.shop_logo ? 'Sostituisci logo' : 'Scegli logo'}</button></div><button className="button button-primary"><Check size={16} /> Salva nome</button></form></>}
         {settingsTab === 'Sicurezza' && <><div className="settings-title"><h2>Accesso e sicurezza</h2><p>All’avvio viene richiesto il barcode di un dipendente; puoi mantenere il PIN come alternativa.</p></div><div className="security-status"><div className="security-icon"><ShieldCheck size={20} /></div><div><strong>{hasPin ? 'PIN alternativo attivo' : 'Nessun PIN alternativo configurato'}</strong><span>{hasPin ? 'Puoi usare il PIN dalla schermata di accesso.' : 'Configura un PIN da 4 a 8 cifre come alternativa al barcode.'}</span></div></div>{pinChangeStage === null ? <button className="button button-primary" type="button" onClick={startPinChange}><LockKeyhole size={16} />{hasPin ? 'Cambia PIN' : 'Configura PIN'}</button> : <form className="settings-form" onSubmit={(event) => void submitPinChange(event)}>{pinChangeStage === 'old' && <Field label="PIN attuale" type="password" inputMode="numeric" minLength={4} maxLength={8} pattern="[0-9]{4,8}" value={oldPin} onChange={(event) => setOldPin(event.target.value.replace(/\D/g, ''))} required autoFocus />}{pinChangeStage === 'new' && <Field label={hasPin ? 'Nuovo PIN (4–8 cifre)' : 'PIN (4–8 cifre)'} type="password" inputMode="numeric" minLength={4} maxLength={8} pattern="[0-9]{4,8}" value={newPin} onChange={(event) => setNewPin(event.target.value.replace(/\D/g, ''))} required autoFocus />}{pinChangeStage !== 'confirm' && <div className="form-actions"><button className="button button-primary"><LockKeyhole size={16} />{pinChangeStage === 'old' ? 'Verifica PIN' : 'Applica'}</button><button className="button button-outline" type="button" onClick={() => { setPinChangeStage(null); setOldPin(''); setNewPin(''); }}>Annulla</button></div>}</form>}</>}
         {settingsTab === 'Archivio dati' && <><div className="settings-title"><h2>Archivio locale</h2><p>Database SQLite e copie giornaliere dei dati.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Archivio locale attivo</div><div className="database-card"><div className="security-icon"><Archive size={20} /></div><div><strong>Database SQLite</strong><span className="database-path">{data.settings.database_file}</span></div><span className="stock-badge">Attivo</span></div><div className="settings-form"><label className="field"><span>Cartella esportazioni giornaliere</span><div className="folder-input"><input value={archiveFolder} readOnly /><button className="button button-outline" type="button" onClick={() => void chooseFolder()}>Scegli cartella</button></div></label><p className="help-copy">Ogni giorno a mezzanotte vengono aggiornati file TXT e PDF nelle cartelle Magazzino, Cassa, Vendite e Statistiche.</p></div></>}
         {settingsTab === 'Dispositivi' && (deviceTab === null ? <><div className="settings-title"><h2>Dispositivi</h2><p>Seleziona un dispositivo per configurarlo.</p></div><nav className="settings-nav device-menu"><button onClick={() => setDeviceTab('Lettore barcode')}><Barcode size={17} />Lettore di codici a barre</button><button onClick={() => setDeviceTab('Stampante scontrini')}><Printer size={17} />Stampante Wi-Fi</button></nav></> : deviceTab === 'Lettore barcode' ? <><div className="settings-title"><h2>Lettore di codici a barre</h2><p>Configura il lettore collegato al computer.</p></div><div className="device-setting"><div className="device-heading"><div className="security-icon"><Barcode size={20} /></div><div><strong>Lettore di codici a barre</strong><span>{data.settings.barcode_scanner_detected ? 'Rilevato: è stata acquisita almeno una scansione su questo computer.' : 'In attesa della prima lettura del lettore USB/HID.'}</span></div><button className={`toggle-button${data.settings.barcode_scanner_enabled ? ' enabled' : ''}`} type="button" role="switch" aria-checked={data.settings.barcode_scanner_enabled} onClick={() => void toggleBarcodeScanner()}>{data.settings.barcode_scanner_enabled ? 'Attivo' : 'Disattivo'}</button></div><p className="help-copy">I lettori USB che si comportano come tastiera vengono riconosciuti automaticamente quando inviano un codice. La preferenza resta salvata tra gli avvii.</p></div></> : <><div className="settings-title"><h2>Stampante scontrini</h2><p>Collega una stampante rilevata dal sistema.</p></div><div className="device-setting"><div className="device-printer-row"><SelectField label="Stampante collegata" value={data.settings.receipt_printer} onChange={(value) => void saveReceiptPrinter(value)} options={['', ...printers.map((printer) => printer.name)]} labels={['Seleziona stampante', ...printers.map((printer) => printer.displayName || printer.name)]} /><button className="button button-outline" type="button" onClick={() => void window.gestionale.getPrinters().then(setPrinters).catch((error: unknown) => notify(errorText(error)))}><Printer size={15} /> Rileva stampanti</button></div>{!printers.length && <p className="help-copy">Nessuna stampante rilevata. Verifica che sia collegata e installata nel sistema.</p>}{data.settings.receipt_printer && !printers.some((printer) => printer.name === data.settings.receipt_printer) && <p className="help-copy">La stampante salvata non è attualmente disponibile: selezionane una nuova.</p>}</div></>)}
-        {settingsTab === "Tema dell'app" && <><nav className="theme-settings-menu" aria-label="Impostazioni tema"><button className={themePage === 'Homepage' ? 'selected' : ''} type="button" onClick={() => setThemePage('Homepage')}><House size={16} /> Homepage</button><button className={themePage === 'Colore principale' ? 'selected' : ''} type="button" onClick={() => setThemePage('Colore principale')}><Palette size={16} /> Colore principale</button></nav>{themePage === 'Homepage' ? <><div className="homepage-media-frame" ref={homeMediaFrameRef}>{data.settings.home_video ? <video src={data.settings.home_video} autoPlay muted loop playsInline /> : <img src={data.settings.home_image || homeBanner} alt="Anteprima homepage" />}</div><small className="homepage-media-size">Dimensioni: {homeMediaWidthCm} × 5 cm</small><div className="homepage-media-actions"><button className="button button-outline" type="button" onClick={() => void chooseHomepageImage()}><House size={15} /> Sostituisci immagine</button><button className="button button-outline" type="button" onClick={() => void chooseHomepageVideo()}><Video size={15} /> Sostituisci video</button></div></> : <div className="theme-options">{appThemes.map((theme) => <button key={theme.id} type="button" className={`theme-option${appTheme === theme.id ? ' selected' : ''}`} onClick={() => setAppTheme(theme.id)}><span className="theme-swatch" style={{ backgroundColor: theme.color }} /><strong>{theme.label}</strong>{appTheme === theme.id && <Check size={16} />}</button>)}</div>}</>}
+        {settingsTab === 'Homepage' && <><div className="settings-title"><h2>Homepage</h2><p>Personalizza l’immagine o il video mostrato nella pagina iniziale.</p></div><div className="homepage-media-frame" ref={homeMediaFrameRef}>{data.settings.home_video ? <video src={data.settings.home_video} autoPlay muted loop playsInline /> : <img src={data.settings.home_image || homeBanner} alt="Anteprima homepage" />}</div><small className="homepage-media-size">Dimensioni: {homeMediaWidthCm} × 5 cm</small><div className="homepage-media-actions"><button className="button button-outline" type="button" onClick={() => void chooseHomepageImage()}><House size={15} /> Sostituisci immagine</button><button className="button button-outline" type="button" onClick={() => void chooseHomepageVideo()}><Video size={15} /> Sostituisci video</button></div></>}
         {settingsTab === 'Operativo' && <><div className="settings-title"><h2>Stato operativo</h2><p>Stato corrente del gestionale.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Operativo</div></>}
       </section>}</div></div>}
     </main>
@@ -3433,7 +3464,8 @@ export default function App() {
       </div>
       <div className="drawer-footer employee-profile-actions"><div className="employee-profile-action-row"><button className="button button-outline" onClick={() => startEmployeeAction(employeeDetails, 'edit')}><Pencil size={15} /> Modifica dipendente</button><button className="button button-outline" onClick={() => void exportEmployeePdf(employeeDetails)}><ArrowDownToLine size={15} /> Scarica</button></div><div className={`employee-profile-action-row${['proprietario', 'direttore'].includes(normalizedRole(activeRole)) ? '' : ' single-action'}`}>{['proprietario', 'direttore'].includes(normalizedRole(activeRole)) && <button className="button button-danger" onClick={() => startEmployeeAction(employeeDetails, 'delete')}><Trash2 size={15} /> Elimina dipendente</button>}<button className="button button-primary" onClick={() => setEmployeeDetails(null)}>Chiudi</button></div></div>
     </Modal>}
-    {employeeAction && <Modal title={employeeAction.action === 'edit' ? 'Verifica dipendente' : 'Conferma eliminazione dipendente'} close={() => { setEmployeeAction(null); setEmployeeActionBarcode(''); }}><form className="settings-form" onSubmit={(event) => void confirmEmployeeAction(event)}><p>{language === 'ar' ? employeeAction.action === 'delete' ? `لحذف ${employeeAction.employee.first_name} ${employeeAction.employee.last_name}، أدخل الرمز الشريطي الخاص به. سيتم حذف سجلات الرواتب أيضًا.` : `أدخل الرمز الشريطي لـ ${employeeAction.employee.first_name} ${employeeAction.employee.last_name} للتحقق من التعديل.` : employeeAction.action === 'delete' ? `Per eliminare ${employeeAction.employee.first_name} ${employeeAction.employee.last_name}, inserisci il suo barcode. Verranno eliminate anche le registrazioni dei suoi stipendi.` : `Inserisci il barcode di ${employeeAction.employee.first_name} ${employeeAction.employee.last_name} per verificare la modifica.`}</p><Field label="Barcode dipendente" value={employeeActionBarcode} onChange={(event) => setEmployeeActionBarcode(event.target.value.trim())} required autoFocus /><div className="form-actions"><button className={`button ${employeeAction.action === 'delete' ? 'button-danger' : 'button-primary'}`}><Check size={16} />{employeeAction.action === 'delete' ? 'Conferma eliminazione' : 'Verifica barcode'}</button><button className="button button-outline" type="button" onClick={() => { setEmployeeAction(null); setEmployeeActionBarcode(''); }}>Annulla</button></div></form></Modal>}
+    {trackerAccessOpen && <Modal title="Verifica accesso tracker" close={() => { setTrackerAccessOpen(false); setTrackerAccessBarcode(''); }}><form className="settings-form employee-action-form" onSubmit={(event) => void confirmTrackerAccess(event)}><p>Per accedere alla lista delle attività dei dipendenti, verifica un barcode valido.</p><Field label="Barcode dipendente" value={trackerAccessBarcode} onChange={(event) => setTrackerAccessBarcode(event.target.value.trim())} required autoFocus /><div className="form-actions"><button className="button button-primary"><Barcode size={16} /> Verifica barcode</button><button className="button button-outline" type="button" onClick={() => { setTrackerAccessOpen(false); setTrackerAccessBarcode(''); }}>Annulla</button></div></form></Modal>}
+    {employeeAction && <Modal title={employeeAction.action === 'edit' ? 'Verifica dipendente' : 'Conferma eliminazione dipendente'} close={() => { setEmployeeAction(null); setEmployeeActionBarcode(''); }}><form className="settings-form employee-action-form" onSubmit={(event) => void confirmEmployeeAction(event)}><p>{language === 'ar' ? employeeAction.action === 'delete' ? `لحذف ${employeeAction.employee.first_name} ${employeeAction.employee.last_name}، أدخل الرمز الشريطي الخاص به. سيتم حذف سجلات الرواتب أيضًا.` : `أدخل الرمز الشريطي لـ ${employeeAction.employee.first_name} ${employeeAction.employee.last_name} للتحقق من التعديل.` : employeeAction.action === 'delete' ? `Per eliminare ${employeeAction.employee.first_name} ${employeeAction.employee.last_name}, inserisci il suo barcode. Verranno eliminate anche le registrazioni dei suoi stipendi.` : `Inserisci il barcode di ${employeeAction.employee.first_name} ${employeeAction.employee.last_name} per verificare la modifica.`}</p><Field label="Barcode dipendente" value={employeeActionBarcode} onChange={(event) => setEmployeeActionBarcode(event.target.value.trim())} required autoFocus /><div className="form-actions"><button className={`button ${employeeAction.action === 'delete' ? 'button-danger' : 'button-primary'}`}><Check size={16} />{employeeAction.action === 'delete' ? 'Conferma eliminazione' : 'Verifica barcode'}</button><button className="button button-outline" type="button" onClick={() => { setEmployeeAction(null); setEmployeeActionBarcode(''); }}>Annulla</button></div></form></Modal>}
     {pinChangeStage === 'confirm' && <Modal title="Conferma modifica PIN" close={() => { setPinChangeStage(null); setOldPin(''); setNewPin(''); }}><div className="pin-confirm-dialog"><p>Confermi di voler applicare il nuovo PIN?</p><div className="form-actions"><button className="button button-primary" onClick={() => void applyPinChange()}><Check size={16} /> Applica</button><button className="button button-outline" onClick={() => { setPinChangeStage(null); setOldPin(''); setNewPin(''); }}>Annulla</button></div></div></Modal>}
     {voucherViewBatch && <Modal title={`Codici buono · Gruppo ${voucherViewBatch.id}`} close={() => setVoucherViewBatch(null)} wide><div className="voucher-preview-heading"><strong>{voucherViewBatch.discount_percentage}% di sconto</strong><span>{formatLocalDate(voucherViewBatch.starts_at)} — {formatLocalDate(voucherViewBatch.ends_at)}</span></div><Table headings={['Codice', 'Barcode', 'Sconto', 'Inizio', 'Scadenza']}><>{voucherViewBatch.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td><BarcodeImage value={code} /></td><td>{voucherViewBatch.discount_percentage}%</td><td>{formatLocalDate(voucherViewBatch.starts_at)}</td><td>{formatLocalDate(voucherViewBatch.ends_at)}</td></tr>)}</></Table></Modal>}
     {pendingUnknownCode && <Modal title="Articolo non presente" wide close={() => { setPendingUnknownCode(''); setScannerSearch(''); }}><div className="unknown-code-message"><CircleAlert size={26} /><p>Il codice a barre <strong>{pendingUnknownCode}</strong> non è presente tra gli articoli.</p><span>Puoi aggiungerlo come nuovo articolo: il codice acquisito sarà già inserito nel modulo.</span><div className="form-actions"><button className="button button-quiet" onClick={() => { setPendingUnknownCode(''); setScannerSearch(''); }}>Annulla</button><button className="button button-primary" onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct, code: pendingUnknownCode }); setPendingUnknownCode(''); }}><Plus size={16} /> Aggiungi articolo</button></div></div></Modal>}

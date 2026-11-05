@@ -1628,6 +1628,39 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     });
     pay();
   });
+  ipcMain.handle('payroll:pay-selected', (event, input: { employee_ids: number[]; pay_month: string; payment_date: string }) => {
+    requireSession(event.sender.id, ['proprietario', 'contabilita']);
+    if (!input || !Array.isArray(input.employee_ids) || !input.employee_ids.length
+      || !input.employee_ids.every((id) => Number.isInteger(id) && id > 0)
+      || new Set(input.employee_ids).size !== input.employee_ids.length
+      || !/^\d{4}-\d{2}$/.test(input.pay_month) || !isValidLocalDate(input.payment_date)) {
+      throw new Error('Dipendenti, mese o data del pagamento non validi.');
+    }
+    const placeholders = input.employee_ids.map(() => '?').join(', ');
+    const employees = database.prepare(`SELECT id, first_name, last_name, salary, payment_method, operational_site, role
+      FROM employees WHERE id IN (${placeholders})`).all(...input.employee_ids) as
+      Array<{ id: number; first_name: string; last_name: string; salary: number; payment_method: 'Bonifico' | 'Contanti'; operational_site: string; role: string }>;
+    if (employees.length !== input.employee_ids.length) throw new Error('Uno o più dipendenti selezionati non esistono.');
+    if (employees.some((employee) => normalizedEmployeeRole(employee.role) === 'proprietario')) {
+      throw new Error('Il Proprietario non riceve uno stipendio.');
+    }
+    const alreadyPaid = database.prepare(`SELECT employee_id FROM payroll_payments
+      WHERE pay_month = ? AND employee_id IN (${placeholders})`).all(input.pay_month, ...input.employee_ids);
+    if (alreadyPaid.length) throw new Error('Uno o più dipendenti selezionati hanno già ricevuto lo stipendio per questo mese.');
+    const pay = database.transaction(() => {
+      const insertPayment = database.prepare(`INSERT INTO payroll_payments
+        (employee_id, pay_month, amount, payment_date, payment_method) VALUES (?, ?, ?, ?, ?)`);
+      const insertExpense = database.prepare(`INSERT INTO expenses (description, category, amount, expense_date, created_at, site)
+        VALUES (?, 'Stipendi', ?, ?, ?, ?)`);
+      const createdAt = new Date().toISOString();
+      for (const employee of employees) {
+        insertPayment.run(employee.id, input.pay_month, employee.salary, input.payment_date, employee.payment_method);
+        insertExpense.run(`Stipendio ${employee.first_name} ${employee.last_name} · ${input.pay_month}`,
+          employee.salary, input.payment_date, createdAt, employee.operational_site);
+      }
+    });
+    pay();
+  });
   ipcMain.handle('voucher:validate', (_event, code: string): VoucherValidation => {
     const normalized = typeof code === 'string' ? code.trim() : '';
     if (!normalized) return { valid: false, message: 'Codice buono sconto non valido.' };

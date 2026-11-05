@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('gestionale', {
   disposeExpiredProduct: (productId: number) => ipcRenderer.invoke('product:dispose-expired', productId),
   paySalary: (input: PayrollPaymentInput) => ipcRenderer.invoke('payroll:pay', input),
   payAllSalaries: (input: { pay_month: string; payment_date: string }) => ipcRenderer.invoke('payroll:pay-all', input),
+  paySelectedSalaries: (input: { employee_ids: number[]; pay_month: string; payment_date: string }) => ipcRenderer.invoke('payroll:pay-selected', input),
   saveSetting: (key: 'shop_name' | 'shop_address' | 'shop_phone' | 'shop_email' | 'shop_tax_id' | 'archive_folder' | 'receipt_printer' | 'receipt_printer_thermal' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => ipcRenderer.invoke('settings:save', key, value),
   getPrinters: (): Promise<Printer[]> => ipcRenderer.invoke('devices:printers'),
   printReceipt: (target: 'regular' | 'thermal' = 'regular'): Promise<void> => ipcRenderer.invoke('receipt:print', target),
