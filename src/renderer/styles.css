@@ -218,7 +218,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .cash-product { display: flex; min-height: 0; aspect-ratio: 1; flex-direction: column; align-items: flex-start; justify-content: space-between; padding: 11px; border: 1px solid var(--line); border-radius: 5px; background: white; cursor: pointer; text-align: left; transition: border-color .15s, background .15s; }
 .cash-product:hover { border-color: #e4c4a7; background: #fffdfa; }
 .cash-product:disabled { cursor: not-allowed; opacity: .55; }
-.cash-product > strong { display: -webkit-box; overflow: hidden; width: 100%; margin: 4px 0 11px; font-size: 30px; font-weight: 700; line-height: 1.3; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.cash-product > strong { display: -webkit-box; overflow: hidden; width: 100%; margin: 4px 0 11px; font-size: 15px; font-weight: 700; line-height: 1.3; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .cash-product-bottom { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 5px; }
 .cash-product-bottom b { color: var(--green); font-size: 12px; }
 .cash-product-bottom small { color: #99a19a; font-size: 9px; }
@@ -527,8 +527,8 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .lock-screen::before { background-image: repeating-linear-gradient(135deg, transparent 0 18px, rgb(0 0 0 / 46%) 18px 20px, transparent 20px 38px); mask-image: repeating-linear-gradient(45deg, #000 0 8px, transparent 8px 14px); animation: lock-lines-scroll 7s linear infinite; }
 .lock-screen::after { background-image: repeating-linear-gradient(135deg, transparent 0 18px, rgb(0 0 0 / 23%) 18px 20px, transparent 20px 38px); mask-image: repeating-linear-gradient(45deg, #000 0 8px, transparent 8px 14px); animation: lock-lines-scroll 7s linear infinite reverse; }
 .lock-screen > * { position: relative; z-index: 1; }
-@keyframes lock-lines-scroll { to { background-position: 38px 38px; } }
-@media (prefers-reduced-motion: reduce) { .lock-screen::after { animation: none; } }
+@keyframes lock-lines-scroll { from { background-position: 0 0; } to { background-position: 53.74px 0; } }
+@media (prefers-reduced-motion: reduce) { .lock-screen::before, .lock-screen::after { animation: none; } }
 .lock-panel { width: min(380px, calc(100vw - 30px)); padding: 31px; border: 1px solid var(--line); border-radius: 6px; background: white; box-shadow: var(--shadow); }
 .setup-screen { overflow: auto; padding: 20px 0; place-items: start center; }
 .setup-panel { width: min(920px, calc(100vw - 30px)); max-height: calc(100vh - 40px); overflow: auto; }
@@ -829,6 +829,16 @@ body { color: var(--ink); }
 .payroll-table-panel .table-wrap { border: 0; border-radius: 5px; }
 .payroll-table-panel thead { background: #f2f7f1; }
 .payroll-table-panel tbody tr:hover { background: #f5faf4; }
+.payroll-page { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+.payroll-employee-list { min-width: 0; overflow: hidden; padding: 0; }
+.payroll-employee-list .panel-heading, .payroll-confirmation .panel-heading { padding: 18px; }
+.payroll-employee-list .table-wrap { max-height: 70vh; overflow: auto; border: 0; border-radius: 0; }
+.payroll-employee-list table { min-width: 480px; }
+.payroll-employee-list th:first-child, .payroll-employee-list td:first-child { width: 36px; text-align: center; }
+.payroll-employee-role { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; font-weight: 400; }
+.payroll-confirmation { min-width: 0; padding: 0; }
+.payroll-confirmation-controls { display: grid; gap: 12px; padding: 0 18px 18px; }
+.payroll-confirmation-controls > .button { width: 100%; white-space: normal; }
 .barcode-image { width: 132px; height: 32px; }
 .voucher-codes .barcode-image { width: 132px; height: 32px; }
 .home-banner { display: block; width: 100%; height: 5cm; margin-bottom: 13px; border: 1px solid var(--line); border-radius: 6px; object-fit: cover; }
@@ -1167,7 +1177,15 @@ body svg text, body svg tspan { fill: #000 !important; }
 .employee-payroll-layout .employee-card { min-height: 0; padding: 12px; }
 .employee-payroll-layout .employee-list-photo { width: 64px; height: 64px; }
 .ranking-table-scroll { max-height: 330px; overflow: auto; }
-.ranking-table-scroll .table-wrap { min-height: 0; }
+.ranking-table-scroll { overscroll-behavior: contain; touch-action: pan-y; }
+.ranking-table-scroll:focus-visible { outline: 3px solid rgb(22 133 220 / 28%); outline-offset: -3px; }
+.ranking-table-scroll .table-wrap { min-height: 0; overflow: visible; border: 0; }
+.home-page > .metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.employee-payroll-layout .employee-card-grid { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+.employee-payroll-layout .employee-card { grid-template-columns: 48px repeat(4, minmax(0, 1fr)); align-items: center; gap: 8px; padding: 9px; }
+.employee-payroll-layout .employee-list-photo { width: 44px; height: 44px; }
+.employee-payroll-layout .employee-card > span { min-width: 0; }
+.employee-payroll-layout .employee-card > span > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .receipt-shop { font-size: 25px; }
 .receipt-shop + .receipt-spacer { height: 36px; }
 .receipt-datetime, .receipt-number-line { text-align: center; }
@@ -1187,4 +1205,12 @@ body svg text, body svg tspan { fill: #000 !important; }
 @media (max-width: 900px) {
   .employee-payroll-layout { grid-template-columns: minmax(0, 1fr); }
   .employee-payroll-panel .payroll-table-panel { max-height: none; }
+  .payroll-page { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 850px) {
+  .home-page > .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .home-page > .metric-grid { grid-template-columns: minmax(0, 1fr); }
+  .employee-payroll-layout .employee-card { grid-template-columns: 42px repeat(2, minmax(0, 1fr)); }
 }
