@@ -103,7 +103,8 @@ const arabicUiTranslations: Record<string, string> = {
   'Lo scontrino viene registrato nel database locale.': 'يتم تسجيل الإيصال في قاعدة البيانات المحلية.', 'Pagamento': 'الدفع', 'Carta': 'بطاقة',
   'Bancomat': 'بطاقة خصم', 'Buono': 'قسيمة', 'Scontrino #': 'الإيصال رقم ', 'Numero scontrino:': 'رقم الإيصال:', 'Grazie per averci scelto!': 'شكرًا لاختياركم لنا!',
   'Stampa scontrino': 'طباعة الإيصال', 'Nessuno scontrino trovato con questo numero.': 'لم يتم العثور على هذا الإيصال.',
-  'Esporta report vendite': 'تصدير تقرير المبيعات', 'Esporta report contabilità e finanza': 'تصدير تقرير المحاسبة والمالية', 'Esporta tutto': 'تصدير الكل',
+  'Esporta report vendite': 'تصدير تقرير المبيعات', 'Esporta report contabilità e finanza': 'تصدير تقرير المحاسبة والمالية', 'Esporta tutto': 'تصدير الكل', 'Esporta archivio completo': 'تصدير الأرشيف الكامل',
+  'Scarica tutti i dati e le impostazioni in un file JSON.': 'نزّل جميع البيانات والإعدادات في ملف JSON.',
   'Rispetta il filtro di tempo': 'استخدم عامل تصفية الوقت', 'Tutte le vendite →': 'كل المبيعات ←', 'Tutti': 'الكل', 'Oggi': 'اليوم', 'Ieri': 'أمس',
   'Ultima settimana': 'الأسبوع الماضي', 'Ultimo mese': 'الشهر الماضي', 'Ultimi 3 mesi': 'آخر 3 أشهر', 'Ultimi 6 mesi': 'آخر 6 أشهر', 'Ultimo anno': 'العام الماضي', 'Da - A': 'من - إلى',
   'Vai al magazzino →': 'الانتقال إلى المخزن ←', 'Valore del magazzino': 'قيمة المخزون', 'Valorizzazione della giacenza attuale': 'قيمة المخزون الحالي',
@@ -2241,6 +2242,7 @@ export default function App() {
       const doc = new jsPDF({ orientation: 'portrait' });
       if (rtl) await addArabicPdfFont(doc);
       doc.setR2L(rtl);
+      const latinShopName = rtl && /^[\x20-\x7E]*$/.test(data.settings.shop_name);
       const textX = rtl ? data.settings.shop_logo ? 168 : 198 : data.settings.shop_logo ? 43 : 14;
       doc.setFillColor(22, 133, 220);
       doc.rect(0, 0, 210, 36, 'F');
@@ -2250,7 +2252,9 @@ export default function App() {
       doc.setTextColor(255, 255, 255);
       doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'bold');
       doc.setFontSize(16);
+      if (latinShopName) doc.setR2L(false);
       doc.text(reportText(data.settings.shop_name), textX, 15, rtl ? { align: 'right' } : undefined);
+      if (latinShopName) doc.setR2L(true);
       doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'normal');
       doc.setFontSize(9);
       const reportTitle = rtl
@@ -2295,7 +2299,9 @@ export default function App() {
           const footer = rtl
             ? `${data.settings.shop_name} · الصفحة ${doc.getNumberOfPages()}`
             : `${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`;
+          if (latinShopName) doc.setR2L(false);
           doc.text(reportText(footer), rtl ? 202 : 8, 290, rtl ? { align: 'right' } : undefined);
+          if (latinShopName) doc.setR2L(true);
         },
       });
       doc.save(rtl ? `تقرير-المبيعات-${todayKey}.pdf` : `report-vendite-${respectTimeFilters ? salesPeriod.toLowerCase().replaceAll(' ', '-') : 'tutto'}-${todayKey}.pdf`);
@@ -2323,6 +2329,28 @@ export default function App() {
     link.download = rtl ? `المخزون-${todayKey}.csv` : `magazzino-${todayKey}.csv`;
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const exportLocalArchiveJson = () => {
+    if (!data) return;
+    try {
+      const exportedAt = new Date();
+      const archive = {
+        format: 'gestionale-supermercato',
+        version: 1,
+        exportedAt: exportedAt.toISOString(),
+        data,
+      };
+      const blob = new Blob([JSON.stringify(archive, null, 2)], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `archivio-gestionale-${exportedAt.toISOString().replaceAll(':', '-').replace(/\.\d{3}Z$/, 'Z')}.json`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      notify('Archivio esportato in JSON.');
+    } catch (error) {
+      notify(errorText(error));
+    }
   };
   const exportInventoryReport = async () => {
     if (!data) return;
@@ -3210,6 +3238,8 @@ export default function App() {
       const doc = new jsPDF({ orientation: 'portrait' });
       if (rtl) await addArabicPdfFont(doc);
       doc.setR2L(rtl);
+      const reportText = (value: string) => rtl ? doc.processArabic(value) : value;
+      const latinShopName = rtl && /^[\x20-\x7E]*$/.test(data.settings.shop_name);
       const pageWidth = doc.internal.pageSize.getWidth();
       doc.setFillColor(22, 133, 220);
       doc.rect(8, 7, pageWidth - 16, 13, 'F');
@@ -3221,12 +3251,14 @@ export default function App() {
         const logoX = rtl ? Math.max(12, pageWidth - 12 - doc.getTextWidth(reportTitle) - 14) : 10;
         doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', logoX, 8, 10, 10);
       }
-      doc.text(reportTitle, rtl ? pageWidth - 12 : data.settings.shop_logo ? 24 : 12, 16, rtl ? { align: 'right' } : undefined);
+      doc.text(reportText(reportTitle), rtl ? pageWidth - 12 : data.settings.shop_logo ? 24 : 12, 16, rtl ? { align: 'right' } : undefined);
       doc.setFillColor(22, 133, 220);
       doc.rect(8, 21, pageWidth - 16, 9, 'F');
       doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'normal');
       doc.setFontSize(8);
-      doc.text(`${data.settings.shop_name} · ${receiptDate.format(new Date())}`, rtl ? pageWidth - 12 : 12, 27, rtl ? { align: 'right' } : undefined);
+      if (latinShopName) doc.setR2L(false);
+      doc.text(reportText(`${data.settings.shop_name} · ${receiptDate.format(new Date())}`), rtl ? pageWidth - 12 : 12, 27, rtl ? { align: 'right' } : undefined);
+      if (latinShopName) doc.setR2L(true);
       const headers = rtl
         ? ['ملاحظة', 'الشخص', 'الكمية', 'الحركة', 'المنتج', 'التاريخ والوقت']
         : ['Data e ora', 'Articolo', 'Movimento', 'Quantità', 'Persona', 'Nota'];
@@ -3237,10 +3269,10 @@ export default function App() {
       ]);
       autoTable(doc, {
         startY: 34,
-        head: [rtl ? [...headers].reverse() : headers],
-        body: rows.map((row) => rtl ? row.reverse() : row),
-        styles: { font: rtl ? 'DejaVuSans' : 'helvetica', fontSize: 8, cellPadding: 2, textColor: [0, 0, 0] },
-        headStyles: { fillColor: [22, 133, 220], textColor: [255, 255, 255], fontStyle: 'bold' },
+        head: [headers.map(reportText)],
+        body: rows.map((row) => (rtl ? row.reverse() : row).map(reportText)),
+        styles: { font: rtl ? 'DejaVuSans' : 'helvetica', fontSize: 8, cellPadding: 2, textColor: [0, 0, 0], halign: rtl ? 'right' : 'left' },
+        headStyles: { fillColor: [22, 133, 220], textColor: [255, 255, 255], fontStyle: 'bold', halign: rtl ? 'right' : 'left' },
         margin: { left: 8, right: 8, bottom: 12 },
       });
       doc.save(rtl ? `سجل-المخزن-${todayKey}.pdf` : `storico-magazzino-${todayKey}.pdf`);
@@ -3415,13 +3447,7 @@ export default function App() {
 
       {section === 'employees' && <div className="page-content employee-page">
         <div className="page-toolbar employee-toolbar"><SearchInput value={employeeSearch} onChange={setEmployeeSearch} placeholder="Cerca dipendente, ruolo o sede…" /><div className="toolbar-actions"><button className="button button-primary" onClick={startEmployeeCreation}><Plus size={16} /> Aggiungi dipendente</button></div></div>
-        <div className="employee-payroll-layout">
-          <section className="employee-list-panel"><div className="employee-card-grid">{employeeList.map((employee) => <button className="employee-card" key={employee.id} onClick={() => setEmployeeDetails(employee)} aria-label={`Apri informazioni di ${employee.first_name} ${employee.last_name}`}><img className="employee-list-photo" src={employee.photo_data} alt={`Foto di ${employee.first_name} ${employee.last_name}`} /><span><small>Nome</small><strong>{employee.first_name}</strong></span><span><small>Cognome</small><strong>{employee.last_name}</strong></span><span><small>Ruolo</small><strong>{employee.role}</strong></span><span><small>Sede</small><strong>{employee.operational_site}</strong></span></button>)}{!employeeList.length && <Empty icon={ClipboardList} title={data.employees.length ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente registrato.'} detail="" />}</div></section>
-          <section className="panel employee-payroll-panel"><div className="panel-heading"><div><h3>Conferma pagamenti</h3><p>Seleziona i dipendenti e conferma i pagamenti del mese.</p></div></div>
-            <div className="payroll-toolbar"><Field label="Mese di competenza" type="month" value={payrollMonth} onChange={(event) => { setPayrollMonth(event.target.value); setPayrollSelectedEmployees([]); }} /><Field label="Data di pagamento" type="date" value={payrollDate} onChange={(event) => setPayrollDate(event.target.value)} /><button className="button button-outline" onClick={() => setPayrollSelectedEmployees((current) => { const due = data.employees.filter((employee) => normalizedRole(employee.role) !== 'proprietario' && !data.payrollPayments.some((payment) => payment.employee_id === employee.id && payment.pay_month === payrollMonth)).map((employee) => employee.id); return due.every((id) => current.includes(id)) ? current.filter((id) => !due.includes(id)) : [...new Set([...current, ...due])]; })}>Seleziona tutti da pagare</button><button className="button button-primary" disabled={!payrollSelectedEmployees.length} onClick={() => void paySelectedEmployees()}><Banknote size={15} /> {localizedText('Paga selezionati', language)} ({payrollSelectedEmployees.length})</button><button className="button button-outline" onClick={() => { const payments = data.payrollPayments.filter((payment) => payment.pay_month === payrollMonth); void exportPayrollZip(payments).catch((error: unknown) => notify(errorText(error))); }}><ArrowDownToLine size={15} /> Scarica ricevute del mese</button></div>
-            <section className="payroll-table-panel"><Table headings={['', 'Dipendente', 'Ruolo', 'Stipendio', 'Metodo', 'Stato', 'Azione']}><>{data.employees.filter((employee) => normalizedRole(employee.role) !== 'proprietario').map((employee) => { const payment = data.payrollPayments.find((item) => item.employee_id === employee.id && item.pay_month === payrollMonth); const selected = payrollSelectedEmployees.includes(employee.id); return <tr key={employee.id}><td><input type="checkbox" aria-label={`Seleziona ${employee.first_name} ${employee.last_name}`} checked={selected} disabled={Boolean(payment)} onChange={() => setPayrollSelectedEmployees((current) => selected ? current.filter((id) => id !== employee.id) : [...current, employee.id])} /></td><td className="cell-primary">{employee.first_name} {employee.last_name}</td><td>{employee.role}</td><td>{money.format(employee.salary)}</td><td>{employee.payment_method}</td><td><span className={`stock-badge${payment ? '' : ' low'}`}>{payment ? `Pagato il ${formatLocalDate(payment.payment_date)}` : 'Da pagare'}</span></td><td>{payment ? <button className="button button-outline" onClick={() => savePdf(createSalaryPdf(employee, payment.payment_date, payment.pay_month, payment.amount), `Stipendio-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}-${payment.payment_date}.pdf`)}><ArrowDownToLine size={14} /> Ricevuta</button> : 'Seleziona per pagare'}</td></tr>; })}</>{!data.employees.some((employee) => normalizedRole(employee.role) !== 'proprietario') && <tr><td colSpan={7} className="empty-cell">Nessun dipendente da pagare.</td></tr>}</Table></section>
-          </section>
-        </div>
+        <section className="employee-list-panel"><div className="employee-card-grid">{employeeList.map((employee) => <button className="employee-card" key={employee.id} onClick={() => setEmployeeDetails(employee)} aria-label={`Apri informazioni di ${employee.first_name} ${employee.last_name}`}><img className="employee-list-photo" src={employee.photo_data} alt={`Foto di ${employee.first_name} ${employee.last_name}`} /><span><small>Nome</small><strong>{employee.first_name}</strong></span><span><small>Cognome</small><strong>{employee.last_name}</strong></span><span><small>Ruolo</small><strong>{employee.role}</strong></span><span><small>Sede</small><strong>{employee.operational_site}</strong></span></button>)}{!employeeList.length && <Empty icon={ClipboardList} title={data.employees.length ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente registrato.'} detail="" />}</div></section>
       </div>}
       {section === 'site-statistics' && <div className="page-content accounting-page site-statistics-page"><div className="site-statistics-filters"><SelectField label="Periodo" value={siteStatsPeriod} onChange={setSiteStatsPeriod} options={['Oggi', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Ultimi 6 mesi', 'Tutto', 'Da - A']} /><SelectField label="Sede" value={siteStatsFilter} onChange={setSiteStatsFilter} options={['Tutte', ...data.sites.map((site) => site.name)]} /><>{siteStatsPeriod === 'Da - A' && <><Field label="Da" type="date" value={siteStatsFrom} onChange={(event) => setSiteStatsFrom(event.target.value)} /><Field label="A" type="date" value={siteStatsTo} onChange={(event) => setSiteStatsTo(event.target.value)} /></>}</></div><div className="metric-grid accounting-metrics"><Metric icon={Banknote} label="Entrate sedi" value={money.format(siteStatsIncome)} detail={siteStatsPeriod} /><Metric icon={ArrowDownToLine} label="Uscite sedi" value={money.format(siteStatsExpenses)} detail={siteStatsPeriod} /><Metric icon={TrendingUp} label="Saldo sedi" value={money.format(siteStatsIncome - siteStatsExpenses)} detail="Entrate meno uscite" /><Metric icon={Package} label="Sedi attive" value={String(selectedSiteStats.length)} detail="Sedi nel filtro selezionato" /></div><section className="panel site-summary-panel"><div className="panel-heading"><div><h3>Entrate e uscite per sede</h3><p>{siteStatsPeriod}</p></div></div><Table headings={['Sede', 'Entrate', 'Uscite', 'Saldo', 'Scontrini', 'Carico merce', 'Scarico merce']}><>{selectedSiteStats.map((site) => <tr key={site.id}><td className="cell-primary">{site.name}</td><td className="align-right">{money.format(site.income)}</td><td className="align-right">{money.format(site.expenses)}</td><td className="align-right cell-primary">{money.format(site.balance)}</td><td>{site.receipts}</td><td>{quantityFormat.format(site.stockIn)}</td><td>{quantityFormat.format(site.stockOut)}</td></tr>)}</>{!selectedSiteStats.length && <tr><td colSpan={7} className="empty-cell">Nessuna sede trovata.</td></tr>}</Table></section><SiteStockStatistics sites={data.sites.filter((site) => siteStatsFilter === 'Tutte' || site.name === siteStatsFilter)} siteStocks={data.siteStocks} employees={data.employees} products={data.products} /></div>}
       {section === 'site-create' && siteDraft && <div className="page-content settings-page"><section className="settings-panel"><button className="settings-back" onClick={() => navigateTo('site-list')}><ArrowLeft size={15} /> Lista sedi</button><div className="settings-title"><h2>{siteDraft.id ? 'Modifica sede' : 'Aggiungi sede'}</h2></div><form className="settings-form site-form" onSubmit={(event) => void saveSite(event)}><Field label="Nome sede" value={siteDraft.name} onChange={(event) => setSiteDraft({ ...siteDraft, name: event.target.value })} required /><Field label="Indirizzo" value={siteDraft.address} onChange={(event) => setSiteDraft({ ...siteDraft, address: event.target.value })} /><Field label="Telefono" type="tel" value={siteDraft.phone} onChange={(event) => setSiteDraft({ ...siteDraft, phone: event.target.value })} /><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setSiteDraft(null); navigateTo('site-list'); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Salva sede</button></div></form></section></div>}
@@ -3540,6 +3566,7 @@ export default function App() {
         {settingsTab === 'Info Negozio' && <><div className="settings-title"><h2>Info Negozio</h2><p>Nome e logo del negozio per il menu e la barra superiore.</p></div><form className="settings-form" onSubmit={saveStoreName}><Field label="Nome attività" value={shopName} onChange={(e) => setShopName(e.target.value)} required /><Field label="Numero negozio" value={shopNumber} onChange={(e) => setShopNumber(e.target.value)} /><div className="receipt-preview"><Store size={17} /><span>{shopName || 'Nome negozio'}</span><small>Anteprima intestazione scontrino</small></div><div className="shop-logo-setting"><span className="field-label">Logo del negozio</span>{data.settings.shop_logo && <img src={data.settings.shop_logo} alt="Logo attuale" />}<button className="button button-outline" type="button" onClick={() => void chooseShopLogo()}><Store size={15} /> {data.settings.shop_logo ? 'Sostituisci logo' : 'Scegli logo'}</button></div><button className="button button-primary"><Check size={16} /> Salva nome</button></form></>}
         {settingsTab === 'Sicurezza' && <><div className="settings-title"><h2>Accesso e sicurezza</h2><p>All’avvio viene richiesto il barcode di un dipendente; puoi mantenere il PIN come alternativa.</p></div><div className="security-status"><div className="security-icon"><ShieldCheck size={20} /></div><div><strong>{hasPin ? 'PIN alternativo attivo' : 'Nessun PIN alternativo configurato'}</strong><span>{hasPin ? 'Puoi usare il PIN dalla schermata di accesso.' : 'Configura un PIN da 4 a 8 cifre come alternativa al barcode.'}</span></div></div>{pinChangeStage === null ? <button className="button button-primary" type="button" onClick={startPinChange}><LockKeyhole size={16} />{hasPin ? 'Cambia PIN' : 'Configura PIN'}</button> : <form className="settings-form" onSubmit={(event) => void submitPinChange(event)}>{pinChangeStage === 'old' && <Field label="PIN attuale" type="password" inputMode="numeric" minLength={4} maxLength={8} pattern="[0-9]{4,8}" value={oldPin} onChange={(event) => setOldPin(event.target.value.replace(/\D/g, ''))} required autoFocus />}{pinChangeStage === 'new' && <Field label={hasPin ? 'Nuovo PIN (4–8 cifre)' : 'PIN (4–8 cifre)'} type="password" inputMode="numeric" minLength={4} maxLength={8} pattern="[0-9]{4,8}" value={newPin} onChange={(event) => setNewPin(event.target.value.replace(/\D/g, ''))} required autoFocus />}{pinChangeStage !== 'confirm' && <div className="form-actions"><button className="button button-primary"><LockKeyhole size={16} />{pinChangeStage === 'old' ? 'Verifica PIN' : 'Applica'}</button><button className="button button-outline" type="button" onClick={() => { setPinChangeStage(null); setOldPin(''); setNewPin(''); }}>Annulla</button></div>}</form>}</>}
         {settingsTab === 'Archivio dati' && <><div className="settings-title"><h2>Archivio locale</h2><p>Database SQLite e copie giornaliere dei dati.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Archivio locale attivo</div><div className="database-card"><div className="security-icon"><Archive size={20} /></div><div><strong>Database SQLite</strong><span className="database-path">{data.settings.database_file}</span></div><span className="stock-badge">Attivo</span></div><div className="settings-form"><label className="field"><span>Cartella esportazioni giornaliere</span><div className="folder-input"><input value={archiveFolder} readOnly /><button className="button button-outline" type="button" onClick={() => void chooseFolder()}>Scegli cartella</button></div></label><p className="help-copy">Ogni giorno a mezzanotte vengono aggiornati file TXT e PDF nelle cartelle Magazzino, Cassa, Vendite e Statistiche.</p></div></>}
+        {settingsTab === 'Archivio dati' && <div className="settings-form"><p className="help-copy">Scarica tutti i dati e le impostazioni in un file JSON.</p><button className="button button-primary" type="button" onClick={exportLocalArchiveJson}><ArrowDownToLine size={16} /> Esporta archivio completo</button></div>}
         {settingsTab === 'Dispositivi' && (deviceTab === null ? <><div className="settings-title"><h2>Dispositivi</h2><p>Seleziona un dispositivo per configurarlo.</p></div><nav className="settings-nav device-menu"><button onClick={() => setDeviceTab('Lettore barcode')}><Barcode size={17} />Lettore di codici a barre</button><button onClick={() => setDeviceTab('Stampante scontrini')}><Printer size={17} />Stampante Wi-Fi</button></nav></> : deviceTab === 'Lettore barcode' ? <><div className="settings-title"><h2>Lettore di codici a barre</h2><p>Configura il lettore collegato al computer.</p></div><div className="device-setting"><div className="device-heading"><div className="security-icon"><Barcode size={20} /></div><div><strong>Lettore di codici a barre</strong><span>{data.settings.barcode_scanner_detected ? 'Rilevato: è stata acquisita almeno una scansione su questo computer.' : 'In attesa della prima lettura del lettore USB/HID.'}</span></div><button className={`toggle-button${data.settings.barcode_scanner_enabled ? ' enabled' : ''}`} type="button" role="switch" aria-checked={data.settings.barcode_scanner_enabled} onClick={() => void toggleBarcodeScanner()}>{data.settings.barcode_scanner_enabled ? 'Attivo' : 'Disattivo'}</button></div><p className="help-copy">I lettori USB che si comportano come tastiera vengono riconosciuti automaticamente quando inviano un codice. La preferenza resta salvata tra gli avvii.</p></div></> : <><div className="settings-title"><h2>Stampante scontrini</h2><p>Collega una stampante rilevata dal sistema.</p></div><div className="device-setting"><div className="device-printer-row"><SelectField label="Stampante collegata" value={data.settings.receipt_printer} onChange={(value) => void saveReceiptPrinter(value)} options={['', ...printers.map((printer) => printer.name)]} labels={['Seleziona stampante', ...printers.map((printer) => printer.displayName || printer.name)]} /><button className="button button-outline" type="button" onClick={() => void window.gestionale.getPrinters().then(setPrinters).catch((error: unknown) => notify(errorText(error)))}><Printer size={15} /> Rileva stampanti</button></div>{!printers.length && <p className="help-copy">Nessuna stampante rilevata. Verifica che sia collegata e installata nel sistema.</p>}{data.settings.receipt_printer && !printers.some((printer) => printer.name === data.settings.receipt_printer) && <p className="help-copy">La stampante salvata non è attualmente disponibile: selezionane una nuova.</p>}</div></>)}
         {settingsTab === 'Homepage' && <><div className="settings-title"><h2>Homepage</h2><p>Personalizza l’immagine o il video mostrato nella pagina iniziale.</p></div><div className="homepage-media-frame" ref={homeMediaFrameRef}>{data.settings.home_video ? <video src={data.settings.home_video} autoPlay muted loop playsInline /> : <img src={data.settings.home_image || homeBanner} alt="Anteprima homepage" />}</div><small className="homepage-media-size">Dimensioni: {homeMediaWidthCm} × 5 cm</small><div className="homepage-media-actions"><button className="button button-outline" type="button" onClick={() => void chooseHomepageImage()}><House size={15} /> Sostituisci immagine</button><button className="button button-outline" type="button" onClick={() => void chooseHomepageVideo()}><Video size={15} /> Sostituisci video</button></div></>}
         {settingsTab === 'Operativo' && <><div className="settings-title"><h2>Stato operativo</h2><p>Stato corrente del gestionale.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Operativo</div></>}
