@@ -8,13 +8,12 @@ import { pathToFileURL } from 'node:url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
 import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, Employee, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, Sale, SaleItem, Site, SiteInput, SiteStock, StockDistributionRecord, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
-import { deleteSite, migrateSites, saveSite, WAREHOUSE_SITE_NAME } from './site-service';
+import { deleteSite, migrateSites, saveSite } from './site-service';
 
 let database: Database.Database;
 let mainWindow: BrowserWindow;
 let databaseFile = '';
 let salesRetentionInterval: NodeJS.Timeout | undefined;
-const warehouseSiteName = WAREHOUSE_SITE_NAME;
 const authenticatedSessions = new Map<number, AuthenticatedEmployee>();
 const trialSessions = new Set<number>();
 const saleActionAuthorizations = new Map<number, { barcode: string; expiresAt: number }>();
@@ -382,7 +381,7 @@ function initDatabase(): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, product_name TEXT NOT NULL,
       movement_type TEXT NOT NULL CHECK(movement_type IN ('Carico', 'Scarico')),
       quantity REAL NOT NULL, created_at TEXT NOT NULL, person TEXT NOT NULL DEFAULT '',
-      destination TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', site TEXT NOT NULL DEFAULT '${warehouseSiteName}'
+      destination TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', site TEXT NOT NULL DEFAULT ''
     );
     CREATE TABLE IF NOT EXISTS stock_distributions (
       id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, from_site TEXT NOT NULL,
@@ -474,7 +473,7 @@ function initDatabase(): void {
     database.exec("ALTER TABLE stock_movements ADD COLUMN destination TEXT NOT NULL DEFAULT ''");
   }
   if (!stockMovementColumns.some((column) => column.name === 'site')) {
-    database.exec(`ALTER TABLE stock_movements ADD COLUMN site TEXT NOT NULL DEFAULT '${warehouseSiteName}'`);
+    database.exec("ALTER TABLE stock_movements ADD COLUMN site TEXT NOT NULL DEFAULT ''");
   }
   const loyaltyCardColumns = database.prepare('PRAGMA table_info(loyalty_cards)').all() as Array<{ name: string }>;
   if (!loyaltyCardColumns.some((column) => column.name === 'barcode')) {
@@ -555,15 +554,16 @@ function initDatabase(): void {
     const insert = database.prepare('INSERT INTO products (code, name, category, sale_price, purchase_price, stock, low_stock_threshold) VALUES (@code, @name, @category, @sale_price, @purchase_price, @stock, @low_stock_threshold)');
     database.transaction(() => seedProducts.forEach((product) => insert.run(product)))();
   }
-  const inventorySeedSite = database.prepare("SELECT id FROM sites WHERE site_type = 'warehouse' ORDER BY id LIMIT 1").get() as { id: number } | undefined
-    ?? database.prepare("SELECT id FROM sites WHERE site_type = 'store' ORDER BY id LIMIT 1").get() as { id: number } | undefined;
+  const inventorySeedSite = database.prepare('SELECT id FROM sites ORDER BY id LIMIT 1').get() as { id: number } | undefined;
   if (inventorySeedSite) {
     database.prepare(`INSERT OR IGNORE INTO site_inventory (product_id, site_id, stock)
       SELECT products.id, ?, products.stock FROM products
       WHERE NOT EXISTS (SELECT 1 FROM site_inventory WHERE site_inventory.product_id = products.id)`).run(inventorySeedSite.id);
   }
-  database.prepare(`UPDATE products SET stock = (SELECT COALESCE(SUM(stock), 0)
-    FROM site_inventory WHERE site_inventory.product_id = products.id)`).run();
+  if (inventorySeedSite) {
+    database.prepare(`UPDATE products SET stock = (SELECT COALESCE(SUM(stock), 0)
+      FROM site_inventory WHERE site_inventory.product_id = products.id)`).run();
+  }
   database.prepare("DELETE FROM settings WHERE key = 'pin_hash'").run();
   if (setting('setup_complete') === 'true' && setting('owner_password_reset') !== '1') {
     database.prepare("UPDATE employees SET initial_password_hash = '' WHERE lower(trim(role)) = 'proprietario'").run();
@@ -609,7 +609,7 @@ function distributionPdf(data: DistributionPdfData): Promise<Buffer> {
 
 function receiptNumber(): string {
   for (let attempt = 0; attempt < 5000; attempt += 1) {
-    const candidate = String(randomInt(10000, 100000));
+    const candidate = String(randomInt(1000000, 10000000));
     if (!database.prepare('SELECT 1 FROM sales WHERE receipt_no = ?').get(candidate)) return candidate;
   }
   throw new Error('Impossibile generare un numero scontrino univoco.');
@@ -637,10 +637,8 @@ function siteIdByName(name: string): number {
 }
 
 function defaultStockSite(): { id: number; name: string } {
-  const site = database.prepare("SELECT id, name FROM sites WHERE site_type = 'warehouse' ORDER BY id LIMIT 1").get() as
-    { id: number; name: string } | undefined
-    ?? database.prepare("SELECT id, name FROM sites WHERE site_type = 'store' ORDER BY id LIMIT 1").get() as
-      { id: number; name: string } | undefined;
+  const site = database.prepare('SELECT id, name FROM sites ORDER BY id LIMIT 1').get() as
+    { id: number; name: string } | undefined;
   if (!site) throw new Error('Registra almeno una sede prima di gestire le giacenze.');
   return site;
 }
@@ -918,7 +916,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   });
   ipcMain.handle('product:save', (event, product: ProductInput) => {
     requireSession(event.sender.id, ['proprietario', 'direttore']);
-    if (!(database.prepare("SELECT 1 FROM sites WHERE site_type = 'store' LIMIT 1").get())) {
+    if (!(database.prepare('SELECT 1 FROM sites LIMIT 1').get())) {
       throw new Error('Registra almeno una sede prima di aggiungere articoli.');
     }
     const expiryDate = product.expiry_date ? new Date(`${product.expiry_date}T00:00:00`) : null;
@@ -1066,11 +1064,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       throw new Error('Seleziona sedi diverse e almeno un articolo con quantità valida.');
     }
     if (session.barcode !== movement.employee_barcode.trim()) throw new Error('Il barcode non corrisponde al dipendente connesso.');
-    const fromSite = database.prepare('SELECT name, site_type FROM sites WHERE id = ?').get(movement.fromSiteId) as { name: string; site_type: 'store' | 'warehouse' } | undefined;
-    const toSite = database.prepare('SELECT name, site_type FROM sites WHERE id = ?').get(movement.toSiteId) as { name: string; site_type: 'store' | 'warehouse' } | undefined;
+    const fromSite = database.prepare('SELECT name FROM sites WHERE id = ?').get(movement.fromSiteId) as { name: string } | undefined;
+    const toSite = database.prepare('SELECT name FROM sites WHERE id = ?').get(movement.toSiteId) as { name: string } | undefined;
     if (!fromSite || !toSite) throw new Error('Sede di partenza o di destinazione non trovata.');
-    if (fromSite.site_type !== 'warehouse' || fromSite.name !== warehouseSiteName) throw new Error(`La sede di partenza deve essere ${warehouseSiteName}.`);
-    if (toSite.site_type !== 'store') throw new Error('La sede di destinazione deve essere un punto vendita.');
     const employee = database.prepare('SELECT id, first_name, last_name, role FROM employees WHERE barcode = ?')
       .get(movement.employee_barcode.trim()) as { id: number; first_name: string; last_name: string; role: string } | undefined;
     if (!employee) throw new Error('Barcode personale non riconosciuto. Scansiona il badge di un dipendente registrato.');
@@ -1108,8 +1104,8 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     let writtenDistributionFile = '';
     try {
       database.transaction(() => {
-        const currentFromSite = database.prepare('SELECT name, site_type FROM sites WHERE id = ?').get(movement.fromSiteId) as typeof fromSite;
-        const currentToSite = database.prepare('SELECT name, site_type FROM sites WHERE id = ?').get(movement.toSiteId) as typeof toSite;
+        const currentFromSite = database.prepare('SELECT name FROM sites WHERE id = ?').get(movement.fromSiteId) as typeof fromSite;
+        const currentToSite = database.prepare('SELECT name FROM sites WHERE id = ?').get(movement.toSiteId) as typeof toSite;
         const currentRecipient = database.prepare('SELECT first_name, last_name, role, operational_site FROM employees WHERE id = ?')
           .get(recipient.id) as typeof recipient;
         if (!currentFromSite || !currentToSite || !currentRecipient
@@ -1199,8 +1195,8 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         ? (database.prepare('SELECT operational_site FROM employees WHERE id = ?').get(employee.id) as { operational_site: string }).operational_site
         : (database.prepare("SELECT name FROM sites WHERE site_type = 'store' ORDER BY id LIMIT 1").get() as { name: string } | undefined)?.name;
       if (!employeeSite) throw new Error('Crea prima una sede operativa per registrare le vendite.');
-      const site = database.prepare('SELECT name, site_type FROM sites WHERE name = ?').get(employeeSite) as { name: string; site_type: 'store' | 'warehouse' } | undefined;
-      if (!site || site.site_type !== 'store') throw new Error('La sede Magazzino non è abilitata alla registrazione delle vendite.');
+      const site = database.prepare('SELECT name FROM sites WHERE name = ?').get(employeeSite) as { name: string } | undefined;
+      if (!site) throw new Error('La sede assegnata al dipendente non esiste.');
       const voucher = voucherCode ? findValidVoucher(voucherCode) : undefined;
       if (voucherCode && !voucher) throw new Error('Buono sconto non valido, scaduto o già utilizzato.');
       const voucherDiscount = voucher
@@ -1506,14 +1502,13 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       || (database.prepare('SELECT COUNT(*) AS count FROM employees').get() as { count: number }).count > 0) {
       throw new Error('La configurazione iniziale è già stata completata.');
     }
-    const existing = database.prepare('SELECT id, site_type FROM sites WHERE name = ?').get(input?.name?.trim()) as
-      { id: number; site_type: 'store' | 'warehouse' } | undefined;
-    if (existing?.site_type === 'warehouse') throw new Error('Il nome scelto è già usato dal Magazzino.');
+    const existing = database.prepare('SELECT id FROM sites WHERE name = ?').get(input?.name?.trim()) as
+      { id: number } | undefined;
     saveSite(database, existing ? { ...input, id: existing.id } : input);
   });
   ipcMain.handle('employee:save', (event, employee: EmployeeInput) => {
     const requiredText: Array<keyof EmployeeInput> = [
-      'first_name', 'last_name', 'gender', 'home_address', 'email', 'phone', 'operational_site',
+      'first_name', 'last_name', 'gender', 'home_address', 'email', 'phone',
       'role', 'shift', 'payment_method',
     ];
     const isDataUrl = (value: string, mime: RegExp, maxBytes: number) => {
@@ -1564,6 +1559,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     if (!candidate || (candidate.id !== undefined && (!Number.isInteger(candidate.id) || candidate.id < 1))
       || (editing && !existingEmployee)
       || requiredText.some((field) => typeof candidate[field] !== 'string' || !candidate[field]!.trim())
+      || typeof candidate.operational_site !== 'string'
+      || (!candidate.operational_site.trim() && (Boolean(database.prepare('SELECT 1 FROM sites LIMIT 1').get())
+        || normalizedEmployeeRole(candidate.role) !== 'proprietario'))
       || !Number.isInteger(candidate.age) || candidate.age < 16 || candidate.age > 100
       || !Number.isFinite(candidate.salary) || candidate.salary < 0
       || !['Bonifico', 'Contanti'].includes(candidate.payment_method)
