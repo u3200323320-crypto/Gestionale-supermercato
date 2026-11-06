@@ -476,7 +476,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .receipt-head span:nth-child(n+2), .receipt-item span:nth-child(n+2) { text-align: right; }
 .receipt-dash { margin: 7px 0; border-top: 1px dashed #8c928d; }
 .receipt-dash { margin: 7px 0; border-top: 1px dashed #8c928d; }
-.receipt-number-line + .receipt-dash { margin-top: 14px; }
+.receipt-number-line + .receipt-dash { margin-top: 24px; }
 .receipt-total { display: flex; justify-content: space-between; margin: 8px 0; font-size: 19px; }
 .receipt-total strong:last-child { font-family: 'Manrope', sans-serif; font-size: 19px; }
 .receipt-print svg { display: block; max-width: 100%; margin: 0 auto; }
@@ -738,7 +738,7 @@ html[dir='rtl'] .stats-metrics > .metric-card:last-child .metric-action { flex: 
 .employee-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; }
 .employee-toolbar > .search-field { max-width: none; }
 .employee-card-grid { display: grid; max-width: 1180px; }
-.employee-card { display: grid; min-width: 0; grid-template-columns: 46px repeat(4, minmax(0, 1fr)); align-items: center; gap: 14px; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--ink); cursor: pointer; text-align: left; }
+.employee-card { display: grid; min-width: 0; grid-template-columns: 46px repeat(4, minmax(0, 1fr)); align-items: center; gap: 14px; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: white; color: var(--ink); cursor: pointer; text-align: left; }
 .employee-card:hover { background: #f5f8f5; }
 .employee-card .employee-list-photo { width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 50%; object-fit: cover; }
 .employee-card > span { display: grid; max-width: 100%; gap: 2px; }
@@ -847,8 +847,6 @@ body { color: var(--ink); }
 .payroll-confirmation-heading > div { text-align: center; }
 .payroll-confirmation-controls { display: grid; gap: 12px; padding: 0 18px 18px; }
 .payroll-confirmation-controls > .button { width: 100%; white-space: normal; }
-.selected-payroll-list { display: grid; gap: 5px; padding: 10px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 11px; }
-.selected-payroll-list > strong { color: var(--muted); font-size: 10px; }
 .barcode-image { width: 132px; height: 32px; }
 .voucher-codes .barcode-image { width: 132px; height: 32px; }
 .home-banner { display: block; width: 100%; height: 5cm; margin-bottom: 13px; border: 1px solid var(--line); border-radius: 6px; object-fit: cover; }
@@ -899,8 +897,6 @@ body { color: var(--ink); }
 .homepage-media-frame img, .homepage-media-frame video { display: block; width: 100%; height: 100%; object-fit: cover; }
 .homepage-media-size { display: block; margin-top: 6px; font-size: 9px; }
 .homepage-media-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.pin-confirm-dialog { display: grid; gap: 18px; padding: 18px; }
-.pin-confirm-dialog .form-actions { margin: 0; }
 .employee-profile-actions .button-danger { flex: 1; }
 .theme-option strong { font-weight: inherit; }
 
@@ -996,7 +992,10 @@ body { color: var(--ink); }
 [data-theme='dark'] .button-quiet:hover,
 [data-theme='dark'] .icon-button:hover,
 [data-theme='dark'] .settings-nav button:hover,
-[data-theme='dark'] .employee-card:hover { background-color: #2b3730; }
+[data-theme='dark'] .employee-card { background-color: white; color: #273329; }
+[data-theme='dark'] .employee-card strong { color: #273329; }
+[data-theme='dark'] .employee-card small { color: #536158; }
+[data-theme='dark'] .employee-card:hover { background-color: #f5f8f5; }
 [data-theme='dark'] .table-wrap th { background-color: #29332d; color: var(--ink); }
 [data-theme='dark'] .table-wrap td { border-color: var(--line); color: var(--ink); }
 [data-theme='dark'] .table-wrap tr:nth-child(even) { background-color: #1d2520; }
@@ -1085,6 +1084,7 @@ body { color: var(--ink); }
 .distribution-order-actions { display: grid; gap: 8px; padding-top: 12px; }
 .distribution-authorization { display: grid; gap: 16px; padding: 20px; }
 .distribution-authorization p { font-size: 12px; line-height: 1.6; }
+.distribution-authorization .distribution-confirm-prompt { padding: 12px; border: 1px solid var(--line); border-radius: 4px; background: var(--green-soft); color: var(--green-dark) !important; font-weight: 600; }
 .distribution-authorization-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .distribution-authorization-actions .button { width: 100%; }
 .product-authorization-form { grid-template-columns: 1fr; }
@@ -1181,7 +1181,7 @@ body svg text, body svg tspan { fill: #000 !important; }
 .employee-list-panel { width: 100%; min-width: 0; }
 .ranking-table-scroll { max-height: 330px; overflow: auto; }
 .ranking-table-scroll { max-height: 200px; overflow: auto; }
-.distribution-history { display: grid; gap: 7px; margin-top: 18px; }
+.distribution-history { display: grid; gap: 7px; }
 .distribution-history h3 { font-size: 12px; }
 .distribution-history > p { color: var(--muted); font-size: 10px; }
 .distribution-history-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; cursor: pointer; }

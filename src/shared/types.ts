@@ -235,13 +235,10 @@ declare global {
   gestionale: {
     getState: () => Promise<AppState>;
     onSalesExpired: (callback: () => void) => () => void;
-    hasPin: () => Promise<boolean>;
-    verifyPin: (pin: string) => Promise<AuthenticatedEmployee | null>;
-    checkPin: (pin: string) => Promise<boolean>;
     verifyEmployeeBarcode: (barcode: string) => Promise<boolean>;
+    authorizeTracker: (barcode: string) => Promise<boolean>;
     loginEmployee: (barcode: string) => Promise<AuthenticatedEmployee | null>;
     logout: () => Promise<void>;
-    setPin: (pin: string) => Promise<void>;
     saveProduct: (product: ProductInput) => Promise<void>;
     updateStock: (productId: number, stock: number) => Promise<void>;
     moveStock: (movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; employee_barcode: string; destination?: string; note: string }) => Promise<void>;

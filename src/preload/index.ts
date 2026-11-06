@@ -8,14 +8,11 @@ contextBridge.exposeInMainWorld('gestionale', {
     ipcRenderer.on('sales:expired', listener);
     return () => ipcRenderer.removeListener('sales:expired', listener);
   },
-  hasPin: () => ipcRenderer.invoke('pin:has'),
-  verifyPin: (pin: string): Promise<AuthenticatedEmployee | null> => ipcRenderer.invoke('pin:verify', pin),
-  checkPin: (pin: string): Promise<boolean> => ipcRenderer.invoke('pin:check', pin),
   verifyEmployeeBarcode: (barcode: string) => ipcRenderer.invoke('employee:authorize', barcode),
+  authorizeTracker: (barcode: string): Promise<boolean> => ipcRenderer.invoke('employee:authorize-tracker', barcode),
   loginEmployee: (barcode: string): Promise<AuthenticatedEmployee | null> => ipcRenderer.invoke('employee:login', barcode),
   logout: () => ipcRenderer.invoke('session:logout'),
   recordEmployeeActivity: (input: { employee_barcode: string; section: string; action: string; detail?: string }) => ipcRenderer.invoke('employee:activity', input),
-  setPin: (pin: string) => ipcRenderer.invoke('pin:set', pin),
   saveProduct: (product: ProductInput) => ipcRenderer.invoke('product:save', product),
   updateStock: (productId: number, stock: number) => ipcRenderer.invoke('product:stock', productId, stock),
   moveStock: (movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; employee_barcode: string; destination?: string; note: string }) => ipcRenderer.invoke('product:move-stock', movement),

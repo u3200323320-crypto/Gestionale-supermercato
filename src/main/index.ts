@@ -1,9 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import Database from 'better-sqlite3';
 import PDFDocument from 'pdfkit';
-import { randomInt, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { randomInt, randomBytes, randomUUID, scryptSync } from 'node:crypto';
 import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
@@ -564,12 +564,52 @@ function initDatabase(): void {
   }
   database.prepare(`UPDATE products SET stock = (SELECT COALESCE(SUM(stock), 0)
     FROM site_inventory WHERE site_inventory.product_id = products.id)`).run();
+  database.prepare("DELETE FROM settings WHERE key = 'pin_hash'").run();
+  if (setting('setup_complete') === 'true' && setting('owner_password_reset') !== '1') {
+    database.prepare("UPDATE employees SET initial_password_hash = '' WHERE lower(trim(role)) = 'proprietario'").run();
+    setSetting('owner_password_reset', '1');
+  }
   removeExpiredRecords();
+}
+
+type DistributionPdfData = {
+  created_at: string;
+  from_site: string;
+  to_site: string;
+  sender: string;
+  recipient: string;
+  items: Array<{ name: string; code: string; unit: string; quantity: number }>;
+};
+
+function distributionPdf(data: DistributionPdfData): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const document = new PDFDocument({ size: 'A4', margin: 48 });
+    const chunks: Buffer[] = [];
+    document.on('data', (chunk: Buffer | string) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    document.once('error', reject);
+    document.once('end', () => resolve(Buffer.concat(chunks)));
+    document.fontSize(18).text('Documento di distribuzione', { align: 'center' });
+    document.moveDown();
+    document.fontSize(10).text(`Data: ${new Date(data.created_at).toLocaleString('it-IT')}`);
+    document.text(`Sede di partenza: ${data.from_site}`);
+    document.text(`Sede di destinazione: ${data.to_site}`);
+    document.text(`Mittente: ${data.sender}`);
+    document.text(`Destinatario: ${data.recipient}`);
+    document.moveDown();
+    document.fontSize(11).text('Articoli', { underline: true });
+    document.moveDown(0.5);
+    data.items.forEach((item, index) => {
+      document.fontSize(10).text(`${index + 1}. ${item.name} (${item.code})`);
+      document.text(`Quantita: ${item.quantity} ${item.unit}`);
+      document.moveDown(0.4);
+    });
+    document.end();
+  });
 }
 
 function receiptNumber(): string {
   for (let attempt = 0; attempt < 5000; attempt += 1) {
-    const candidate = String(randomInt(100000, 1000000));
+    const candidate = String(randomInt(10000, 100000));
     if (!database.prepare('SELECT 1 FROM sales WHERE receipt_no = ?').get(candidate)) return candidate;
   }
   throw new Error('Impossibile generare un numero scontrino univoco.');
@@ -840,44 +880,14 @@ if (!hasSingleInstanceLock) {
 if (hasSingleInstanceLock) app.whenReady().then(() => {
   initDatabase();
   ipcMain.handle('state:get', (event) => stateForSession(sessionForSender(event.sender.id)));
-  ipcMain.handle('pin:has', () => Boolean(setting('pin_hash')));
-  ipcMain.handle('pin:verify', (event, pin: string) => {
-    const stored = setting('pin_hash');
-    if (!stored) return null;
-    const [salt, hash] = stored.split(':');
-    const valid = timingSafeEqual(scryptSync(pin, salt, 64), Buffer.from(hash, 'hex'));
-    if (!valid) {
-      authenticatedSessions.delete(event.sender.id);
-      trialSessions.delete(event.sender.id);
-      return null;
-    }
-    const candidates = database.prepare(`SELECT employees.id, employees.first_name, employees.last_name, employees.role, employees.barcode, employees.operational_site
-      FROM employees JOIN sites ON sites.name = employees.operational_site
-      WHERE sites.site_type = 'store' ORDER BY employees.id`).all() as Array<AuthenticatedEmployee & { operational_site: string }>;
-    const fallbackEmployee = candidates.find((employee) => normalizedEmployeeRole(employee.role) === 'cassiere');
-    if (!fallbackEmployee) throw new Error('Il PIN è valido, ma non esiste un dipendente di cassa assegnato a una sede operativa.');
-    const authenticatedEmployee: AuthenticatedEmployee = {
-      id: fallbackEmployee.id,
-      first_name: fallbackEmployee.first_name,
-      last_name: fallbackEmployee.last_name,
-      role: fallbackEmployee.role,
-      barcode: fallbackEmployee.barcode,
-    };
-    authenticatedSessions.set(event.sender.id, authenticatedEmployee);
-    trialSessions.delete(event.sender.id);
-    return authenticatedEmployee;
-  });
-  ipcMain.handle('pin:check', (event, pin: string) => {
-    requireSession(event.sender.id, ['proprietario']);
-    if (typeof pin !== 'string' || !/^\d{4,8}$/.test(pin)) throw new Error('Inserisci il PIN attuale da 4 a 8 cifre.');
-    const stored = setting('pin_hash');
-    if (!stored) return false;
-    const [salt, hash] = stored.split(':');
-    return timingSafeEqual(scryptSync(pin, salt, 64), Buffer.from(hash, 'hex'));
-  });
   ipcMain.handle('employee:authorize', (event, barcode: string) => {
     requireSession(event.sender.id, ['proprietario', 'direttore']);
     return isEmployeeBarcode(barcode);
+  });
+  ipcMain.handle('employee:authorize-tracker', (event, barcode: string) => {
+    requireSession(event.sender.id, ['proprietario', 'direttore']);
+    const employee = employeeForLogin(barcode);
+    return Boolean(employee && ['proprietario', 'direttore'].includes(normalizedEmployeeRole(employee.role)));
   });
   ipcMain.handle('employee:login', (event, barcode: string) => {
     const employee = employeeForLogin(barcode);
@@ -905,12 +915,6 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     }
     if (session.barcode !== input.employee_barcode.trim()) throw new Error('La sessione non corrisponde al dipendente che registra l’attività.');
     recordEmployeeActivity(input.employee_barcode, input.section.trim(), input.action.trim(), input.detail?.trim() ?? '');
-  });
-  ipcMain.handle('pin:set', (event, pin: string) => {
-    requireSession(event.sender.id, ['proprietario']);
-    if (!/^\d{4,8}$/.test(pin)) throw new Error('Il PIN deve contenere da 4 a 8 cifre.');
-    const salt = randomBytes(16).toString('hex');
-    setSetting('pin_hash', `${salt}:${scryptSync(pin, salt, 64).toString('hex')}`);
   });
   ipcMain.handle('product:save', (event, product: ProductInput) => {
     requireSession(event.sender.id, ['proprietario', 'direttore']);
@@ -1048,11 +1052,10 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       );
     })();
   });
-  ipcMain.handle('product:transfer-stock', (event, movement: {
+  ipcMain.handle('product:transfer-stock', async (event, movement: {
     fromSiteId: number; toSiteId: number; recipientEmployeeId: number; items: Array<{ productId: number; quantity: number }>; employee_barcode: string;
-  }) => {
+  } | null) => {
     const session = requireSession(event.sender.id, ['proprietario', 'direttore']);
-    if (session.barcode !== movement?.employee_barcode?.trim()) throw new Error('La sessione non corrisponde al dipendente che conferma il prelievo.');
     if (!movement || !Number.isInteger(movement.fromSiteId) || !Number.isInteger(movement.toSiteId)
       || movement.fromSiteId === movement.toSiteId || !Number.isInteger(movement.recipientEmployeeId) || movement.recipientEmployeeId < 1
       || !Array.isArray(movement.items) || movement.items.length < 1
@@ -1062,54 +1065,77 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       || typeof movement.employee_barcode !== 'string' || !movement.employee_barcode.trim()) {
       throw new Error('Seleziona sedi diverse e almeno un articolo con quantità valida.');
     }
+    if (session.barcode !== movement.employee_barcode.trim()) throw new Error('Il barcode non corrisponde al dipendente connesso.');
+    const fromSite = database.prepare('SELECT name, site_type FROM sites WHERE id = ?').get(movement.fromSiteId) as { name: string; site_type: 'store' | 'warehouse' } | undefined;
+    const toSite = database.prepare('SELECT name, site_type FROM sites WHERE id = ?').get(movement.toSiteId) as { name: string; site_type: 'store' | 'warehouse' } | undefined;
+    if (!fromSite || !toSite) throw new Error('Sede di partenza o di destinazione non trovata.');
+    if (fromSite.site_type !== 'warehouse' || fromSite.name !== warehouseSiteName) throw new Error(`La sede di partenza deve essere ${warehouseSiteName}.`);
+    if (toSite.site_type !== 'store') throw new Error('La sede di destinazione deve essere un punto vendita.');
+    const employee = database.prepare('SELECT id, first_name, last_name, role FROM employees WHERE barcode = ?')
+      .get(movement.employee_barcode.trim()) as { id: number; first_name: string; last_name: string; role: string } | undefined;
+    if (!employee) throw new Error('Barcode personale non riconosciuto. Scansiona il badge di un dipendente registrato.');
+    if (!['proprietario', 'direttore'].includes(normalizedEmployeeRole(employee.role))) {
+      throw new Error('Solo il Proprietario o il Direttore può confermare un trasferimento.');
+    }
+    if (employee.id !== session.id) throw new Error('Il mittente deve corrispondere al dipendente connesso.');
+    const recipient = database.prepare('SELECT id, first_name, last_name, role, operational_site FROM employees WHERE id = ?')
+      .get(movement.recipientEmployeeId) as { id: number; first_name: string; last_name: string; role: string; operational_site: string } | undefined;
+    if (!recipient || (normalizedEmployeeRole(recipient.role) !== 'proprietario' && recipient.operational_site !== toSite.name)) {
+      throw new Error('Seleziona un destinatario assegnato alla sede di destinazione o un Proprietario.');
+    }
+    const senderName = `${employee.first_name} ${employee.last_name}`.trim();
+    const recipientName = `${recipient.first_name} ${recipient.last_name}`.trim();
+    const createdAt = new Date().toISOString();
+    const distributionItems = movement.items.map((item) => {
+      const product = database.prepare('SELECT name, code, unit FROM products WHERE id = ?').get(item.productId) as { name: string; code: string; unit: string } | undefined;
+      if (!product) throw new Error('Articolo non trovato.');
+      if (siteInventory(item.productId, movement.fromSiteId) < item.quantity) {
+        throw new Error(`Quantità insufficiente per ${product.name} nella sede ${fromSite.name}.`);
+      }
+      return { product_id: item.productId, ...product, quantity: item.quantity };
+    });
+    const fileContents = await distributionPdf({
+      created_at: createdAt,
+      from_site: fromSite.name,
+      to_site: toSite.name,
+      sender: senderName,
+      recipient: recipientName,
+      items: distributionItems,
+    });
+    const distributionDirectory = join(app.getPath('userData'), 'Distribuzioni');
+    mkdirSync(distributionDirectory, { recursive: true });
+    const filePath = join(distributionDirectory, `distribuzione-${Date.now()}-${randomUUID()}.pdf`);
     let writtenDistributionFile = '';
     try {
       database.transaction(() => {
-      const fromSite = database.prepare('SELECT name, site_type FROM sites WHERE id = ?').get(movement.fromSiteId) as { name: string; site_type: 'store' | 'warehouse' } | undefined;
-      const toSite = database.prepare('SELECT name, site_type FROM sites WHERE id = ?').get(movement.toSiteId) as { name: string; site_type: 'store' | 'warehouse' } | undefined;
-      if (!fromSite || !toSite) throw new Error('Sede di partenza o di destinazione non trovata.');
-      if (fromSite.site_type !== 'warehouse' || fromSite.name !== warehouseSiteName) throw new Error(`La sede di partenza deve essere ${warehouseSiteName}.`);
-      if (toSite.site_type !== 'store') throw new Error('La sede di destinazione deve essere un punto vendita.');
-      const employee = database.prepare('SELECT id, first_name, last_name, role FROM employees WHERE barcode = ?')
-        .get(movement.employee_barcode.trim()) as { id: number; first_name: string; last_name: string; role: string } | undefined;
-      if (!employee) throw new Error('Barcode personale non riconosciuto. Scansiona il badge di un dipendente registrato.');
-      if (!['proprietario', 'direttore'].includes(normalizedEmployeeRole(employee.role))) {
-        throw new Error('Solo il Proprietario o il Direttore può confermare un trasferimento.');
-      }
-      if (employee.id !== session.id) throw new Error('Il mittente deve corrispondere al dipendente connesso.');
-      const recipient = database.prepare('SELECT first_name, last_name FROM employees WHERE id = ? AND operational_site = ?')
-        .get(movement.recipientEmployeeId, toSite.name) as { first_name: string; last_name: string } | undefined;
-      if (!recipient) throw new Error('Seleziona un destinatario assegnato alla sede di destinazione.');
-      const senderName = `${employee.first_name} ${employee.last_name}`.trim();
-      const recipientName = `${recipient.first_name} ${recipient.last_name}`.trim();
-      const createdAt = new Date().toISOString();
-      const distributionItems: Array<{ product_id: number; name: string; code: string; unit: string; quantity: number }> = [];
-      for (const item of movement.items) {
-        const product = database.prepare('SELECT name, code, unit FROM products WHERE id = ?').get(item.productId) as { name: string; code: string; unit: string } | undefined;
-        if (!product) throw new Error('Articolo non trovato.');
-        if (siteInventory(item.productId, movement.fromSiteId) < item.quantity) {
-          throw new Error(`Quantità insufficiente per ${product.name} nella sede ${fromSite.name}.`);
+        const currentFromSite = database.prepare('SELECT name, site_type FROM sites WHERE id = ?').get(movement.fromSiteId) as typeof fromSite;
+        const currentToSite = database.prepare('SELECT name, site_type FROM sites WHERE id = ?').get(movement.toSiteId) as typeof toSite;
+        const currentRecipient = database.prepare('SELECT first_name, last_name, role, operational_site FROM employees WHERE id = ?')
+          .get(recipient.id) as typeof recipient;
+        if (!currentFromSite || !currentToSite || !currentRecipient
+          || currentFromSite.name !== fromSite.name || currentToSite.name !== toSite.name
+          || `${currentRecipient.first_name} ${currentRecipient.last_name}`.trim() !== recipientName
+          || (normalizedEmployeeRole(currentRecipient.role) !== 'proprietario' && currentRecipient.operational_site !== toSite.name)) {
+          throw new Error('I dati della distribuzione sono cambiati. Riprova la conferma.');
         }
-        adjustSiteInventory(item.productId, movement.fromSiteId, -item.quantity);
-        adjustSiteInventory(item.productId, movement.toSiteId, item.quantity);
-        distributionItems.push({ product_id: item.productId, ...product, quantity: item.quantity });
-        const note = `Trasferimento da ${fromSite.name} a ${toSite.name} · Inviato da ${senderName} · Ricevuto da ${recipientName}`;
-        recordStockMovement(item.productId, product.name, 'Scarico', item.quantity, note, senderName, toSite.name, fromSite.name);
-        recordStockMovement(item.productId, product.name, 'Carico', item.quantity, note, recipientName, fromSite.name, toSite.name);
-      }
-      const filePath = join(app.getPath('userData'), 'Distribuzioni', `distribuzione-${Date.now()}-${randomUUID()}.json`);
-      mkdirSync(dirname(filePath), { recursive: true });
-      writeFileSync(filePath, JSON.stringify({
-        created_at: createdAt,
-        from_site: fromSite.name,
-        to_site: toSite.name,
-        sender: senderName,
-        recipient: recipientName,
-        items: distributionItems,
-      }, null, 2), { flag: 'wx' });
-      writtenDistributionFile = filePath;
-      database.prepare('INSERT INTO stock_distributions (created_at, from_site, to_site, sender, recipient, file_path) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(createdAt, fromSite.name, toSite.name, senderName, recipientName, filePath);
+        for (const item of distributionItems) {
+          const currentProduct = database.prepare('SELECT name, code, unit FROM products WHERE id = ?').get(item.product_id) as { name: string; code: string; unit: string } | undefined;
+          if (!currentProduct || currentProduct.name !== item.name || currentProduct.code !== item.code || currentProduct.unit !== item.unit) {
+            throw new Error('I dati di un articolo sono cambiati. Riprova la conferma.');
+          }
+          if (siteInventory(item.product_id, movement.fromSiteId) < item.quantity) {
+            throw new Error(`Quantità insufficiente per ${item.name} nella sede ${fromSite.name}.`);
+          }
+          adjustSiteInventory(item.product_id, movement.fromSiteId, -item.quantity);
+          adjustSiteInventory(item.product_id, movement.toSiteId, item.quantity);
+          const note = `Trasferimento da ${fromSite.name} a ${toSite.name} · Inviato da ${senderName} · Ricevuto da ${recipientName}`;
+          recordStockMovement(item.product_id, item.name, 'Scarico', item.quantity, note, senderName, toSite.name, fromSite.name);
+          recordStockMovement(item.product_id, item.name, 'Carico', item.quantity, note, recipientName, fromSite.name, toSite.name);
+        }
+        writeFileSync(filePath, fileContents, { flag: 'wx' });
+        writtenDistributionFile = filePath;
+        database.prepare('INSERT INTO stock_distributions (created_at, from_site, to_site, sender, recipient, file_path) VALUES (?, ?, ?, ?, ?, ?)')
+          .run(createdAt, fromSite.name, toSite.name, senderName, recipientName, filePath);
       })();
     } catch (error) {
       if (writtenDistributionFile && existsSync(writtenDistributionFile)) unlinkSync(writtenDistributionFile);
@@ -1122,7 +1148,29 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     const record = database.prepare('SELECT file_path FROM stock_distributions WHERE id = ?').get(id) as { file_path: string } | undefined;
     const distributionDirectory = join(app.getPath('userData'), 'Distribuzioni');
     if (!record || dirname(record.file_path) !== distributionDirectory || !existsSync(record.file_path)) throw new Error('File della distribuzione non trovato.');
-    const error = await shell.openPath(record.file_path);
+    let filePath = record.file_path;
+    if (extname(filePath).toLowerCase() !== '.pdf') {
+      const legacy = JSON.parse(readFileSync(filePath, 'utf8')) as DistributionPdfData;
+      if (typeof legacy.created_at !== 'string' || typeof legacy.from_site !== 'string'
+        || typeof legacy.to_site !== 'string' || typeof legacy.sender !== 'string'
+        || typeof legacy.recipient !== 'string' || !Array.isArray(legacy.items)
+        || legacy.items.some((item) => !item || typeof item.name !== 'string' || typeof item.code !== 'string'
+          || typeof item.unit !== 'string' || !Number.isFinite(item.quantity))) {
+        throw new Error('Il file della distribuzione non contiene dati validi.');
+      }
+      const fileContents = await distributionPdf(legacy);
+      const pdfPath = join(distributionDirectory, `distribuzione-${Date.now()}-${randomUUID()}.pdf`);
+      writeFileSync(pdfPath, fileContents, { flag: 'wx' });
+      try {
+        database.prepare('UPDATE stock_distributions SET file_path = ? WHERE id = ?').run(pdfPath, id);
+      } catch (error) {
+        if (existsSync(pdfPath)) unlinkSync(pdfPath);
+        throw error;
+      }
+      unlinkSync(filePath);
+      filePath = pdfPath;
+    }
+    const error = await shell.openPath(filePath);
     if (error) throw new Error(`Impossibile aprire il file: ${error}`);
   });
   ipcMain.handle('sale:checkout', (event, sale: CheckoutInput) => {
