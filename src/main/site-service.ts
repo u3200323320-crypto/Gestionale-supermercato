@@ -33,32 +33,39 @@ function mergeSiteInventory(database: Database.Database, targetSiteId: number, s
 
 export function migrateSites(database: Database.Database): void {
   database.transaction(() => {
-    const warehouseDeleted = (database.prepare('SELECT value FROM settings WHERE key = ?')
-      .get('system_warehouse_deleted') as { value: string } | undefined)?.value === 'true';
-    if (!warehouseDeleted) {
-      const legacyWarehouses = database.prepare("SELECT id, name FROM sites WHERE name = 'Magazzino centrale' ORDER BY id")
-        .all() as Array<{ id: number; name: string }>;
-      for (const legacy of legacyWarehouses) {
-        const currentWarehouse = database.prepare('SELECT id FROM sites WHERE name = ?').get(WAREHOUSE_SITE_NAME) as { id: number } | undefined;
-        if (!currentWarehouse) {
-          database.prepare("UPDATE sites SET name = ?, site_type = 'warehouse' WHERE id = ?").run(WAREHOUSE_SITE_NAME, legacy.id);
-          moveSiteReferences(database, legacy.name, WAREHOUSE_SITE_NAME);
-          continue;
-        }
-        mergeSiteInventory(database, currentWarehouse.id, legacy.id);
+    const legacyWarehouses = database.prepare("SELECT id, name FROM sites WHERE name = 'Magazzino centrale' ORDER BY id")
+      .all() as Array<{ id: number; name: string }>;
+    for (const legacy of legacyWarehouses) {
+      const currentWarehouse = database.prepare('SELECT id FROM sites WHERE name = ?').get(WAREHOUSE_SITE_NAME) as { id: number } | undefined;
+      if (!currentWarehouse) {
+        database.prepare("UPDATE sites SET name = ?, site_type = 'warehouse' WHERE id = ?").run(WAREHOUSE_SITE_NAME, legacy.id);
         moveSiteReferences(database, legacy.name, WAREHOUSE_SITE_NAME);
-        database.prepare('DELETE FROM sites WHERE id = ?').run(legacy.id);
+        continue;
       }
+      mergeSiteInventory(database, currentWarehouse.id, legacy.id);
+      moveSiteReferences(database, legacy.name, WAREHOUSE_SITE_NAME);
+      database.prepare('DELETE FROM sites WHERE id = ?').run(legacy.id);
+    }
 
-      const warehouse = database.prepare("SELECT id FROM sites WHERE site_type = 'warehouse' LIMIT 1").get() as { id: number } | undefined;
-      if (!warehouse) {
-        const namedWarehouse = database.prepare('SELECT id FROM sites WHERE name = ?').get(WAREHOUSE_SITE_NAME) as { id: number } | undefined;
-        if (namedWarehouse) {
-          database.prepare("UPDATE sites SET site_type = 'warehouse' WHERE id = ?").run(namedWarehouse.id);
-        } else {
-          database.prepare("INSERT INTO sites (name, address, phone, created_at, site_type, recognition_code) VALUES (?, '', '', ?, 'warehouse', '')")
-            .run(WAREHOUSE_SITE_NAME, new Date().toISOString());
-        }
+    let warehouse = database.prepare("SELECT id, name FROM sites WHERE site_type = 'warehouse' ORDER BY id LIMIT 1").get() as { id: number; name: string } | undefined;
+    if (!warehouse) {
+      const namedWarehouse = database.prepare('SELECT id FROM sites WHERE name = ?').get(WAREHOUSE_SITE_NAME) as { id: number } | undefined;
+      if (namedWarehouse) {
+        database.prepare("UPDATE sites SET site_type = 'warehouse' WHERE id = ?").run(namedWarehouse.id);
+      } else {
+        database.prepare("INSERT INTO sites (name, address, phone, created_at, site_type, recognition_code) VALUES (?, '', '', ?, 'warehouse', '')")
+          .run(WAREHOUSE_SITE_NAME, new Date().toISOString());
+      }
+    } else if (warehouse.name !== WAREHOUSE_SITE_NAME) {
+      const namedWarehouse = database.prepare('SELECT id FROM sites WHERE name = ?').get(WAREHOUSE_SITE_NAME) as { id: number } | undefined;
+      if (namedWarehouse) {
+        mergeSiteInventory(database, namedWarehouse.id, warehouse.id);
+        moveSiteReferences(database, warehouse.name, WAREHOUSE_SITE_NAME);
+        database.prepare('DELETE FROM sites WHERE id = ?').run(warehouse.id);
+        database.prepare("UPDATE sites SET site_type = 'warehouse' WHERE id = ?").run(namedWarehouse.id);
+      } else {
+        database.prepare("UPDATE sites SET name = ? WHERE id = ?").run(WAREHOUSE_SITE_NAME, warehouse.id);
+        moveSiteReferences(database, warehouse.name, WAREHOUSE_SITE_NAME);
       }
     }
 
@@ -91,7 +98,19 @@ export function migrateSites(database: Database.Database): void {
       if (code !== site.recognition_code) updateCode.run(code, site.id);
     }
     database.exec('CREATE UNIQUE INDEX IF NOT EXISTS sites_recognition_code_unique ON sites(recognition_code)');
-    const inventorySite = database.prepare("SELECT id FROM sites WHERE site_type = 'warehouse' ORDER BY id LIMIT 1").get() as { id: number } | undefined
+    const mainWarehouse = database.prepare("SELECT id FROM sites WHERE site_type = 'warehouse' ORDER BY id LIMIT 1").get() as { id: number } | undefined;
+    const stockMigrated = (database.prepare('SELECT value FROM settings WHERE key = ?')
+      .get('warehouse_stock_migrated') as { value: string } | undefined)?.value === 'true';
+    if (mainWarehouse && !stockMigrated) {
+      database.prepare(`INSERT INTO site_inventory (product_id, site_id, stock)
+        SELECT inventory.product_id, ?, inventory.stock FROM site_inventory inventory
+        JOIN sites ON sites.id = inventory.site_id WHERE sites.site_type != 'warehouse'
+        ON CONFLICT(product_id, site_id) DO UPDATE SET stock = site_inventory.stock + excluded.stock`).run(mainWarehouse.id);
+      database.prepare('DELETE FROM site_inventory WHERE site_id != ?').run(mainWarehouse.id);
+      database.prepare(`INSERT INTO settings (key, value) VALUES ('warehouse_stock_migrated', 'true')
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run();
+    }
+    const inventorySite = mainWarehouse
       ?? database.prepare("SELECT id FROM sites WHERE site_type = 'store' ORDER BY id LIMIT 1").get() as { id: number } | undefined;
     if (inventorySite) {
       database.prepare(`INSERT OR IGNORE INTO site_inventory (product_id, site_id, stock)
@@ -115,6 +134,7 @@ export function saveSite(database: Database.Database, input: SiteInput): void {
       const existing = database.prepare('SELECT name, site_type FROM sites WHERE id = ?').get(input.id) as
         { name: string; site_type: 'store' | 'warehouse' } | undefined;
       if (!existing) throw new Error('Sede non trovata.');
+      if (existing.site_type === 'warehouse' && name !== WAREHOUSE_SITE_NAME) throw new Error('La sede Magazzino non può essere rinominata.');
       database.transaction(() => {
         database.prepare('UPDATE sites SET name = ?, address = ?, phone = ? WHERE id = ?')
           .run(name, input.address.trim(), input.phone.trim(), input.id);
@@ -139,6 +159,7 @@ export function deleteSite(database: Database.Database, siteId: number): void {
   const site = database.prepare('SELECT id, name, site_type FROM sites WHERE id = ?').get(siteId) as
     { id: number; name: string; site_type: 'store' | 'warehouse' } | undefined;
   if (!site) throw new Error('Sede non trovata.');
+  if (site.site_type === 'warehouse') throw new Error('La sede Magazzino è necessaria e non può essere eliminata.');
   const fallbackSite = database.prepare("SELECT id, name FROM sites WHERE id != ? ORDER BY CASE site_type WHEN 'store' THEN 0 ELSE 1 END, id LIMIT 1")
     .get(siteId) as { id: number; name: string } | undefined;
   const assignedEmployees = (database.prepare('SELECT COUNT(*) AS count FROM employees WHERE operational_site = ?')
@@ -154,10 +175,6 @@ export function deleteSite(database: Database.Database, siteId: number): void {
     database.prepare('DELETE FROM refunds WHERE site = ?').run(site.name);
     database.prepare('DELETE FROM stock_movements WHERE site = ? OR destination = ?').run(site.name, site.name);
     database.prepare('DELETE FROM sites WHERE id = ?').run(siteId);
-    if (site.site_type === 'warehouse') {
-      database.prepare(`INSERT INTO settings (key, value) VALUES ('system_warehouse_deleted', 'true')
-        ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run();
-    }
     database.prepare(`UPDATE products SET stock = (
       SELECT COALESCE(SUM(stock), 0) FROM site_inventory WHERE site_inventory.product_id = products.id
     )`).run();

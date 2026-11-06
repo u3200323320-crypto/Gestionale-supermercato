@@ -7,7 +7,7 @@ import { basename, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
-import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, Employee, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, Sale, SaleItem, Site, SiteInput, SiteStock, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
+import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, Employee, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, Sale, SaleItem, Site, SiteInput, SiteStock, StockDistributionRecord, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
 import { deleteSite, migrateSites, saveSite, WAREHOUSE_SITE_NAME } from './site-service';
 
 let database: Database.Database;
@@ -195,12 +195,14 @@ function state() {
   removeExpiredVouchers();
   removeExpiredRecords();
   const employees = database.prepare(`SELECT id, first_name, last_name, age, gender, home_address, email, phone, operational_site,
-    role, shift, salary, payment_method, iban, recognition_code, barcode, photo_data, documents_data, contract_pdf_data, created_at
+    role, shift, salary, payment_method, iban, recognition_code, barcode, photo_data, documents_data, contract_pdf_data,
+    contract_start_date, contract_end_date, created_at
     FROM employees ORDER BY last_name, first_name`).all() as Employee[];
   return {
     products: (database.prepare('SELECT * FROM products ORDER BY name').all() as Array<Omit<Product, 'expiry_enabled'> & { expiry_enabled: number }>).map((product) => ({ ...product, expiry_enabled: Boolean(product.expiry_enabled) })),
     sales: allSales(),
     stockMovements: database.prepare('SELECT * FROM stock_movements ORDER BY created_at DESC, id DESC').all(),
+    stockDistributions: database.prepare('SELECT id, created_at, from_site, to_site, sender, recipient, file_path FROM stock_distributions ORDER BY created_at DESC, id DESC').all() as StockDistributionRecord[],
     siteStocks: database.prepare(`SELECT inventory.product_id, inventory.site_id, sites.name AS site_name, inventory.stock
       FROM site_inventory inventory JOIN sites ON sites.id = inventory.site_id
       ORDER BY sites.name, inventory.product_id`).all(),
@@ -292,6 +294,7 @@ function stateForSession(session?: AuthenticatedEmployee): ReturnType<typeof sta
       products: [],
       sales: [],
       stockMovements: [],
+      stockDistributions: [],
       siteStocks: [],
       expenses: [],
       promotions: [],
@@ -323,6 +326,7 @@ function stateForSession(session?: AuthenticatedEmployee): ReturnType<typeof sta
       items: sale.items.map((item: SaleItem) => ({ ...item, purchase_price: 0 })),
     })),
     stockMovements: [],
+    stockDistributions: [],
     siteStocks: (snapshot.siteStocks as SiteStock[]).filter((stock) => stock.site_name === ownSiteName),
     expenses: [],
     promotions: [],
@@ -380,6 +384,10 @@ function initDatabase(): void {
       quantity REAL NOT NULL, created_at TEXT NOT NULL, person TEXT NOT NULL DEFAULT '',
       destination TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', site TEXT NOT NULL DEFAULT '${warehouseSiteName}'
     );
+    CREATE TABLE IF NOT EXISTS stock_distributions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, from_site TEXT NOT NULL,
+      to_site TEXT NOT NULL, sender TEXT NOT NULL, recipient TEXT NOT NULL, file_path TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS site_inventory (
       product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
       site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
@@ -413,7 +421,7 @@ function initDatabase(): void {
       phone TEXT NOT NULL, operational_site TEXT NOT NULL, role TEXT NOT NULL, shift TEXT NOT NULL, salary REAL NOT NULL,
       iban TEXT NOT NULL, recognition_code TEXT NOT NULL UNIQUE, barcode TEXT NOT NULL UNIQUE,
       photo_data TEXT NOT NULL, documents_data TEXT NOT NULL, contract_pdf_data TEXT NOT NULL, created_at TEXT NOT NULL,
-      payment_method TEXT NOT NULL DEFAULT 'Contanti'
+      payment_method TEXT NOT NULL DEFAULT 'Contanti', contract_start_date TEXT NOT NULL DEFAULT '', contract_end_date TEXT NOT NULL DEFAULT ''
     );
     CREATE TABLE IF NOT EXISTS customers (
       id INTEGER PRIMARY KEY AUTOINCREMENT, first_name TEXT NOT NULL, last_name TEXT NOT NULL,
@@ -449,6 +457,9 @@ function initDatabase(): void {
   const employeeColumns = database.prepare('PRAGMA table_info(employees)').all() as Array<{ name: string }>;
   if (!employeeColumns.some((column) => column.name === 'payment_method')) {
     database.exec("ALTER TABLE employees ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'Contanti'");
+  }
+  for (const column of ['contract_start_date', 'contract_end_date']) {
+    if (!employeeColumns.some((item) => item.name === column)) database.exec(`ALTER TABLE employees ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`);
   }
   database.exec(`UPDATE employees
     SET recognition_code = REPLACE(recognition_code, 'DIP-', 'DIP'),
@@ -558,7 +569,7 @@ function initDatabase(): void {
 
 function receiptNumber(): string {
   for (let attempt = 0; attempt < 5000; attempt += 1) {
-    const candidate = String(randomInt(10000, 100000));
+    const candidate = String(randomInt(100000, 1000000));
     if (!database.prepare('SELECT 1 FROM sales WHERE receipt_no = ?').get(candidate)) return candidate;
   }
   throw new Error('Impossibile generare un numero scontrino univoco.');
@@ -1017,7 +1028,10 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         .get(movement.employee_barcode.trim()) as { first_name: string; last_name: string; operational_site: string } | undefined;
       if (!employee) throw new Error('Barcode personale non riconosciuto. Scansiona il badge di un dipendente registrato.');
       const delta = movement.type === 'Carico' ? movement.quantity : -movement.quantity;
-      const siteId = siteIdByName(employee.operational_site);
+      const movementSite = movement.type === 'Carico'
+        ? defaultStockSite()
+        : { id: siteIdByName(employee.operational_site), name: employee.operational_site };
+      const siteId = movementSite.id;
       if (movement.type === 'Scarico' && siteInventory(movement.productId, siteId) < movement.quantity) {
         throw new Error('La quantità da scaricare supera la giacenza disponibile in questa sede.');
       }
@@ -1030,49 +1044,86 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         movement.note.trim(),
         `${employee.first_name} ${employee.last_name}`,
         movement.type === 'Scarico' ? movement.destination?.trim() ?? '' : '',
-        employee.operational_site,
+        movementSite.name,
       );
     })();
   });
   ipcMain.handle('product:transfer-stock', (event, movement: {
-    fromSiteId: number; toSiteId: number; items: Array<{ productId: number; quantity: number }>; employee_barcode: string;
+    fromSiteId: number; toSiteId: number; recipientEmployeeId: number; items: Array<{ productId: number; quantity: number }>; employee_barcode: string;
   }) => {
     const session = requireSession(event.sender.id, ['proprietario', 'direttore']);
     if (session.barcode !== movement?.employee_barcode?.trim()) throw new Error('La sessione non corrisponde al dipendente che conferma il prelievo.');
     if (!movement || !Number.isInteger(movement.fromSiteId) || !Number.isInteger(movement.toSiteId)
-      || movement.fromSiteId === movement.toSiteId || !Array.isArray(movement.items) || movement.items.length < 1
+      || movement.fromSiteId === movement.toSiteId || !Number.isInteger(movement.recipientEmployeeId) || movement.recipientEmployeeId < 1
+      || !Array.isArray(movement.items) || movement.items.length < 1
       || movement.items.length > 500 || movement.items.some((item) => !Number.isInteger(item.productId)
         || item.productId < 1 || !Number.isFinite(item.quantity) || item.quantity <= 0)
       || new Set(movement.items.map((item) => item.productId)).size !== movement.items.length
       || typeof movement.employee_barcode !== 'string' || !movement.employee_barcode.trim()) {
       throw new Error('Seleziona sedi diverse e almeno un articolo con quantità valida.');
     }
-    database.transaction(() => {
+    let writtenDistributionFile = '';
+    try {
+      database.transaction(() => {
       const fromSite = database.prepare('SELECT name, site_type FROM sites WHERE id = ?').get(movement.fromSiteId) as { name: string; site_type: 'store' | 'warehouse' } | undefined;
       const toSite = database.prepare('SELECT name, site_type FROM sites WHERE id = ?').get(movement.toSiteId) as { name: string; site_type: 'store' | 'warehouse' } | undefined;
       if (!fromSite || !toSite) throw new Error('Sede di partenza o di destinazione non trovata.');
-      const warehouse = database.prepare("SELECT id FROM sites WHERE site_type = 'warehouse' LIMIT 1").get();
-      if (warehouse && fromSite.site_type !== 'warehouse') throw new Error(`La sede di partenza deve essere ${warehouseSiteName}.`);
-      const employee = database.prepare('SELECT first_name, last_name, role FROM employees WHERE barcode = ?')
-        .get(movement.employee_barcode.trim()) as { first_name: string; last_name: string; role: string } | undefined;
+      if (fromSite.site_type !== 'warehouse' || fromSite.name !== warehouseSiteName) throw new Error(`La sede di partenza deve essere ${warehouseSiteName}.`);
+      if (toSite.site_type !== 'store') throw new Error('La sede di destinazione deve essere un punto vendita.');
+      const employee = database.prepare('SELECT id, first_name, last_name, role FROM employees WHERE barcode = ?')
+        .get(movement.employee_barcode.trim()) as { id: number; first_name: string; last_name: string; role: string } | undefined;
       if (!employee) throw new Error('Barcode personale non riconosciuto. Scansiona il badge di un dipendente registrato.');
       if (!['proprietario', 'direttore'].includes(normalizedEmployeeRole(employee.role))) {
         throw new Error('Solo il Proprietario o il Direttore può confermare un trasferimento.');
       }
-      const person = `${employee.first_name} ${employee.last_name}`.trim();
+      if (employee.id !== session.id) throw new Error('Il mittente deve corrispondere al dipendente connesso.');
+      const recipient = database.prepare('SELECT first_name, last_name FROM employees WHERE id = ? AND operational_site = ?')
+        .get(movement.recipientEmployeeId, toSite.name) as { first_name: string; last_name: string } | undefined;
+      if (!recipient) throw new Error('Seleziona un destinatario assegnato alla sede di destinazione.');
+      const senderName = `${employee.first_name} ${employee.last_name}`.trim();
+      const recipientName = `${recipient.first_name} ${recipient.last_name}`.trim();
+      const createdAt = new Date().toISOString();
+      const distributionItems: Array<{ product_id: number; name: string; code: string; unit: string; quantity: number }> = [];
       for (const item of movement.items) {
-        const product = database.prepare('SELECT name FROM products WHERE id = ?').get(item.productId) as { name: string } | undefined;
+        const product = database.prepare('SELECT name, code, unit FROM products WHERE id = ?').get(item.productId) as { name: string; code: string; unit: string } | undefined;
         if (!product) throw new Error('Articolo non trovato.');
         if (siteInventory(item.productId, movement.fromSiteId) < item.quantity) {
           throw new Error(`Quantità insufficiente per ${product.name} nella sede ${fromSite.name}.`);
         }
         adjustSiteInventory(item.productId, movement.fromSiteId, -item.quantity);
         adjustSiteInventory(item.productId, movement.toSiteId, item.quantity);
-        const note = `Trasferimento da ${fromSite.name} a ${toSite.name}`;
-        recordStockMovement(item.productId, product.name, 'Scarico', item.quantity, note, person, toSite.name, fromSite.name);
-        recordStockMovement(item.productId, product.name, 'Carico', item.quantity, note, person, fromSite.name, toSite.name);
+        distributionItems.push({ product_id: item.productId, ...product, quantity: item.quantity });
+        const note = `Trasferimento da ${fromSite.name} a ${toSite.name} · Inviato da ${senderName} · Ricevuto da ${recipientName}`;
+        recordStockMovement(item.productId, product.name, 'Scarico', item.quantity, note, senderName, toSite.name, fromSite.name);
+        recordStockMovement(item.productId, product.name, 'Carico', item.quantity, note, recipientName, fromSite.name, toSite.name);
       }
-    })();
+      const filePath = join(app.getPath('userData'), 'Distribuzioni', `distribuzione-${Date.now()}-${randomUUID()}.json`);
+      mkdirSync(dirname(filePath), { recursive: true });
+      writeFileSync(filePath, JSON.stringify({
+        created_at: createdAt,
+        from_site: fromSite.name,
+        to_site: toSite.name,
+        sender: senderName,
+        recipient: recipientName,
+        items: distributionItems,
+      }, null, 2), { flag: 'wx' });
+      writtenDistributionFile = filePath;
+      database.prepare('INSERT INTO stock_distributions (created_at, from_site, to_site, sender, recipient, file_path) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(createdAt, fromSite.name, toSite.name, senderName, recipientName, filePath);
+      })();
+    } catch (error) {
+      if (writtenDistributionFile && existsSync(writtenDistributionFile)) unlinkSync(writtenDistributionFile);
+      throw error;
+    }
+  });
+  ipcMain.handle('distribution:open-record', async (event, id: number) => {
+    requireSession(event.sender.id, ['proprietario', 'direttore']);
+    if (!Number.isInteger(id) || id < 1) throw new Error('Distribuzione non valida.');
+    const record = database.prepare('SELECT file_path FROM stock_distributions WHERE id = ?').get(id) as { file_path: string } | undefined;
+    const distributionDirectory = join(app.getPath('userData'), 'Distribuzioni');
+    if (!record || dirname(record.file_path) !== distributionDirectory || !existsSync(record.file_path)) throw new Error('File della distribuzione non trovato.');
+    const error = await shell.openPath(record.file_path);
+    if (error) throw new Error(`Impossibile aprire il file: ${error}`);
   });
   ipcMain.handle('sale:checkout', (event, sale: CheckoutInput) => {
     const session = requireSession(event.sender.id);
@@ -1469,8 +1520,11 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       || !Number.isFinite(candidate.salary) || candidate.salary < 0
       || !['Bonifico', 'Contanti'].includes(candidate.payment_method)
       || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate.email)
-      || (!editing && (initialPassword.length < 8 || initialPassword.length > 128))
+      || (!editing && initialPassword.length > 0 && (initialPassword.length < 8 || initialPassword.length > 128))
       || (initialPassword.length > 0 && (initialPassword.length < 8 || initialPassword.length > 128))
+      || (candidate.contract_start_date !== '' && !isValidLocalDate(candidate.contract_start_date))
+      || (candidate.contract_end_date !== '' && !isValidLocalDate(candidate.contract_end_date))
+      || (candidate.contract_start_date && candidate.contract_end_date && candidate.contract_end_date < candidate.contract_start_date)
       || (candidate.payment_method === 'Bonifico' && !/^[A-Z0-9 ]{15,34}$/i.test(candidate.iban))
       || (candidate.payment_method === 'Contanti' && candidate.iban !== '')
       || (!editing && (!/^DIP\d{8}$/.test(candidate.recognition_code) || candidate.barcode !== candidate.recognition_code))
@@ -1493,7 +1547,8 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
           first_name=@first_name, last_name=@last_name, age=@age, gender=@gender, home_address=@home_address, email=@email,
           phone=@phone, operational_site=@operational_site, role=@role, shift=@shift, salary=@salary, payment_method=@payment_method,
           iban=@iban, recognition_code=@recognition_code, barcode=@barcode, photo_data=@photo_data, documents_data=@documents_data,
-          contract_pdf_data=@contract_pdf_data, initial_password_hash=COALESCE(@initial_password_hash, initial_password_hash)
+          contract_pdf_data=@contract_pdf_data, contract_start_date=@contract_start_date, contract_end_date=@contract_end_date,
+          initial_password_hash=COALESCE(@initial_password_hash, initial_password_hash)
           WHERE id=@id`).run({ ...employeeDetails, id, initial_password_hash: passwordHash ?? null });
         if (!result.changes) throw new Error('Dipendente non trovato.');
         if (authenticatedSessions.get(event.sender.id)?.id === id) {
@@ -1503,13 +1558,15 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       } else {
         database.prepare(`INSERT INTO employees (
           first_name, last_name, age, gender, home_address, email, initial_password_hash, phone, operational_site,
-          role, shift, salary, payment_method, iban, recognition_code, barcode, photo_data, documents_data, contract_pdf_data, created_at
+          role, shift, salary, payment_method, iban, recognition_code, barcode, photo_data, documents_data, contract_pdf_data,
+          contract_start_date, contract_end_date, created_at
         ) VALUES (
           @first_name, @last_name, @age, @gender, @home_address, @email, @initial_password_hash, @phone, @operational_site,
-          @role, @shift, @salary, @payment_method, @iban, @recognition_code, @barcode, @photo_data, @documents_data, @contract_pdf_data, @created_at
+          @role, @shift, @salary, @payment_method, @iban, @recognition_code, @barcode, @photo_data, @documents_data, @contract_pdf_data,
+          @contract_start_date, @contract_end_date, @created_at
         )`).run({
           ...employeeDetails,
-          initial_password_hash: passwordHash,
+          initial_password_hash: passwordHash ?? '',
           created_at: new Date().toISOString(),
         });
         if (firstAccount) {
@@ -1724,8 +1781,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       && (database.prepare('SELECT COUNT(*) AS count FROM employees').get() as { count: number }).count === 0
       && setupKeys.includes(key);
     const session = firstSetup ? undefined : requireSession(event.sender.id);
-    if (key !== 'receipt_printer' && key !== 'receipt_printer_thermal' && key !== 'barcode_scanner_enabled' && key !== 'barcode_scanner_detected'
-      && !firstSetup && normalizedEmployeeRole(session?.role ?? '') !== 'proprietario') throw new Error('Solo il Proprietario può modificare questa impostazione.');
+    if (!firstSetup && normalizedEmployeeRole(session?.role ?? '') !== 'proprietario') throw new Error('Solo il Proprietario può modificare questa impostazione.');
     setSetting(key, value);
   });
   ipcMain.handle('devices:printers', async (event) => {

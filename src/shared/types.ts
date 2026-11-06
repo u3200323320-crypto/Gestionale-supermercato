@@ -87,6 +87,16 @@ export interface StockMovement {
   note: string;
 }
 
+export interface StockDistributionRecord {
+  id: number;
+  created_at: string;
+  from_site: string;
+  to_site: string;
+  sender: string;
+  recipient: string;
+  file_path: string;
+}
+
 export interface EmployeeActivity {
   id: number;
   employee_id: number;
@@ -154,6 +164,8 @@ export interface Employee {
   photo_data: string;
   documents_data: string;
   contract_pdf_data: string;
+  contract_start_date: string;
+  contract_end_date: string;
   created_at: string;
 }
 
@@ -196,6 +208,7 @@ export interface AppState {
   refunds: Refund[];
   settings: { shop_name: string; shop_number: string; shop_logo?: string; home_image?: string; home_video?: string; shop_address: string; shop_phone: string; shop_email: string; shop_tax_id: string; setup_complete: boolean; auth_trial_expires_at: string; archive_folder: string; database_file: string; receipt_printer: string; receipt_printer_thermal: string; barcode_scanner_enabled: boolean; barcode_scanner_detected: boolean };
   stockMovements: StockMovement[];
+  stockDistributions: StockDistributionRecord[];
   siteStocks: SiteStock[];
   expenses: Expense[];
   sites: Site[];
@@ -232,7 +245,8 @@ declare global {
     saveProduct: (product: ProductInput) => Promise<void>;
     updateStock: (productId: number, stock: number) => Promise<void>;
     moveStock: (movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; employee_barcode: string; destination?: string; note: string }) => Promise<void>;
-    transferStock: (movement: { fromSiteId: number; toSiteId: number; items: Array<{ productId: number; quantity: number }>; employee_barcode: string }) => Promise<void>;
+    transferStock: (movement: { fromSiteId: number; toSiteId: number; recipientEmployeeId: number; items: Array<{ productId: number; quantity: number }>; employee_barcode: string }) => Promise<void>;
+    openDistributionRecord: (id: number) => Promise<void>;
     checkout: (sale: CheckoutInput) => Promise<Sale>;
     validateVoucher: (code: string) => Promise<VoucherValidation>;
     savePromotion: (promotion: PromotionInput) => Promise<void>;
