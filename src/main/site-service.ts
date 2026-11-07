@@ -21,6 +21,8 @@ function moveSiteReferences(database: Database.Database, oldName: string, newNam
   database.prepare('UPDATE expenses SET site = ? WHERE site = ?').run(newName, oldName);
   database.prepare('UPDATE stock_movements SET site = ? WHERE site = ?').run(newName, oldName);
   database.prepare('UPDATE stock_movements SET destination = ? WHERE destination = ?').run(newName, oldName);
+  database.prepare('UPDATE stock_distributions SET from_site = ? WHERE from_site = ?').run(newName, oldName);
+  database.prepare('UPDATE stock_distributions SET to_site = ? WHERE to_site = ?').run(newName, oldName);
 }
 
 function mergeSiteInventory(database: Database.Database, targetSiteId: number, sourceSiteId: number): void {

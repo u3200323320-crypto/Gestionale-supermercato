@@ -227,6 +227,7 @@ function state() {
       shop_phone: setting('shop_phone'),
       shop_email: setting('shop_email'),
       shop_tax_id: setting('shop_tax_id'),
+      currency: setting('currency', 'EUR'),
       setup_complete: setting('setup_complete', employees.length ? 'true' : 'false') === 'true',
       auth_trial_expires_at: setting('auth_trial_expires_at'),
       shop_logo: setting('shop_logo'),
@@ -666,7 +667,6 @@ function recordStockMovement(productId: number, productName: string, type: 'Cari
 }
 
 const archiveNumber = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 2 });
-const archiveMoney = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
 const archiveDateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' });
 
 interface ArchiveSection {
@@ -688,6 +688,7 @@ function removeLegacyTextBackups(folder: string): void {
 
 function archiveDay(day: string): Promise<void> {
   const [dayStart, dayEnd] = localDayBounds(day);
+  const archiveMoney = new Intl.NumberFormat('it-IT', { style: 'currency', currency: setting('currency', 'EUR') });
   const folder = setting('archive_folder', join(app.getPath('documents'), 'Gestionale-Archivio'));
   const shopName = setting('shop_name', 'Gestione Supermercato');
   const products = database.prepare('SELECT code, name, category, unit, sale_price, purchase_price, stock FROM products ORDER BY name').all() as Array<Record<string, string | number>>;
@@ -1647,7 +1648,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     }
     const employee = database.prepare('SELECT id, role FROM employees WHERE id = ?').get(employeeId) as { id: number; role: string } | undefined;
     if (!employee) throw new Error('Dipendente non trovato.');
-    if (normalizedEmployeeRole(employee.role) === 'proprietario') throw new Error('L’account Proprietario non può essere eliminato.');
+    if (employeeId === session.id) throw new Error('Non puoi eliminare l’account con cui hai effettuato l’accesso.');
     database.transaction(() => {
       database.prepare('DELETE FROM payroll_payments WHERE employee_id = ?').run(employeeId);
       database.prepare('DELETE FROM employees WHERE id = ?').run(employeeId);
@@ -1821,7 +1822,8 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     return { valid: true, discount_percentage: voucher.discount_percentage };
   });
   ipcMain.handle('settings:save', (event, key: string, value: string) => {
-    if (!['shop_name', 'shop_number', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id', 'archive_folder', 'receipt_printer', 'receipt_printer_thermal', 'barcode_scanner_enabled', 'barcode_scanner_detected'].includes(key)) throw new Error('Impostazione non valida.');
+    if (!['shop_name', 'shop_number', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id', 'currency', 'archive_folder', 'receipt_printer', 'receipt_printer_thermal', 'barcode_scanner_enabled', 'barcode_scanner_detected'].includes(key)) throw new Error('Impostazione non valida.');
+    if (key === 'currency' && !['EUR', 'USD', 'EGP', 'GBP', 'CHF', 'SAR', 'AED'].includes(value)) throw new Error('Moneta non valida.');
     const setupKeys = ['shop_name', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id'];
     const firstSetup = !authenticatedSessions.has(event.sender.id)
       && (database.prepare('SELECT COUNT(*) AS count FROM employees').get() as { count: number }).count === 0

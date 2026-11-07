@@ -13,7 +13,7 @@ import homeBanner from './home-banner.svg';
 import type { AppState, AuthenticatedEmployee, Employee, EmployeeInput, Expense, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, Sale, SaleItem, Section, Site, SiteInput, SiteStock } from '../shared/types';
 
 let money: Pick<Intl.NumberFormat, 'format'> = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
-const arabicMoneyNumber = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+let appCurrencySymbol = '€';
 let dateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' });
 let receiptDate = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short' });
 let receiptTime = new Intl.DateTimeFormat('it-IT', { timeStyle: 'short' });
@@ -49,7 +49,7 @@ type AppLanguage = 'it' | 'ar';
 const arabicUiTranslations: Record<string, string> = {
   'ACCESSO AL GESTIONALE': 'تسجيل الدخول إلى النظام', 'Inserisci il PIN di sicurezza': 'أدخل رمز الأمان', 'PIN di sicurezza': 'رمز الأمان',
   'Accedi': 'دخول', 'Accedi con barcode': 'الدخول باستخدام الرمز الشريطي', 'Scansiona il barcode del dipendente per accedere': 'امسح الرمز الشريطي للموظف لتسجيل الدخول',
-  'Barcode dipendente': 'الرمز الشريطي للموظف', 'Verifica barcode': 'تحقق من الرمز الشريطي', 'Homepage': 'الرئيسية', 'Magazzino': 'المخزن',
+  'Barcode dipendente': 'الرمز الشريطي للموظف', 'Verifica barcode': 'تحقق من الرمز الشريطي', 'Homepage': 'الرئيسية', 'Immagine Homepage': 'صورة الصفحة الرئيسية', 'Magazzino': 'المخزن',
   'Storico Magazzino': 'سجل المخزن', 'Carica e scarica merce': 'إدخال وإخراج البضائع', 'Cassa': 'نقطة البيع',
   'Vendite': 'المبيعات', 'Statistiche': 'الإحصاءات', 'Bilancio gestionale': 'الميزانية الإدارية', 'Spese': 'المصروفات',
   'Modifica o Elimina': 'تعديل أو حذف', 'Offerta': 'العروض', 'Promozioni': 'العروض الترويجية', 'Crea buoni sconto': 'إنشاء قسائم الخصم',
@@ -77,7 +77,7 @@ const arabicUiTranslations: Record<string, string> = {
   'Indirizzo email': 'البريد الإلكتروني', 'Password iniziale': 'كلمة المرور الأولية', 'Numero di telefono': 'رقم الهاتف', 'Sede Operativa': 'فرع العمل',
   'Seleziona ruolo': 'اختر الدور', 'Turno': 'الوردية', 'Seleziona turno': 'اختر الوردية', 'Mattina': 'صباحًا', 'Pomeriggio': 'مساءً',
   'Notte': 'ليلًا', 'Turno unico': 'وردية واحدة', 'Variabile': 'متغير', 'Metodo di pagamento': 'طريقة الدفع', 'Contanti': 'نقدًا', 'Bonifico': 'تحويل بنكي',
-  'IBAN': 'رقم الحساب المصرفي الدولي',   'Stipendio (€)': 'الراتب (EGP)', 'Codice riconoscimento': 'رمز التعريف', 'Barcode di riconoscimento': 'الرمز الشريطي للتعريف',
+  'IBAN': 'رقم الحساب المصرفي الدولي',   'Stipendio (€)': 'الراتب (€)', 'Codice riconoscimento': 'رمز التعريف', 'Barcode di riconoscimento': 'الرمز الشريطي للتعريف',
   'Elimina dipendente': 'حذف الموظف', 'Crea dipendente': 'إنشاء موظف', 'Nome offerta': 'اسم العرض', 'Sconto': 'الخصم', 'Applicazione': 'التطبيق',
   'Durata offerta': 'مدة العرض', 'Requisito minimo': 'الحد الأدنى المطلوب', 'Nessuno': 'لا يوجد', 'Spesa minima': 'الحد الأدنى للشراء',
   'Crea promozione': 'إنشاء عرض ترويجي', 'Modifica': 'تعديل', 'Elimina': 'حذف', 'Vendite di oggi': 'مبيعات اليوم', 'Netto vendite': 'صافي المبيعات',
@@ -209,7 +209,7 @@ const arabicUiTranslations: Record<string, string> = {
   'Rimuovi articolo dalla vendita': 'إزالة المنتج من البيع', 'Nuova quantità': 'كمية جديدة',
   'Conferma giacenza': 'تأكيد المخزون', 'Autorizza modifica articolo': 'السماح بتعديل المنتج', 'Autorizza nuova quantità': 'السماح بالكمية الجديدة',
   'Articoli': 'المنتجات', 'Posizione': 'الموقع',
-  'Conferma e salva': 'تأكيد وحفظ', 'Nuovo totale': 'الإجمالي الجديد', 'Sconto in euro': 'الخصم (EGP)', 'Pagamento:': 'الدفع:', 'Risparmio:': 'التوفير:',
+  'Conferma e salva': 'تأكيد وحفظ', 'Nuovo totale': 'الإجمالي الجديد', 'Sconto in euro': 'الخصم (€)', 'Pagamento:': 'الدفع:', 'Risparmio:': 'التوفير:',
   'Ok': 'حسنًا', 'F2': 'F2', 'ITALIANO': 'الإيطالية', 'Chiudi': 'إغلاق', 'Cancella ricerca': 'مسح البحث', 'Non applicata (massimo 1)': 'غير مطبقة (بحد أقصى 1)',
   'Non risultano articoli rimanenti in magazzino.': 'لا توجد منتجات متبقية في المخزن.', 'Le categorie appariranno dopo la prima vendita.': 'ستظهر الفئات بعد أول عملية بيع.',
   'Puoi aggiungerlo come nuovo articolo: il codice acquisito sarà già inserito nel modulo.': 'يمكنك إضافته كمنتج جديد؛ سيتم إدخال الرمز الممسوح مسبقًا في النموذج.',
@@ -242,8 +242,8 @@ const arabicUiTranslations: Record<string, string> = {
   'Pezzi registrati oggi': 'القطع المسجلة اليوم', 'Transazioni più recenti': 'أحدث المعاملات',
   'Da riordinare': 'منتجات لإعادة الطلب', 'articoli sotto soglia': 'منتجات دون الحد الأدنى',
   'Cerca articolo, persona o nota…': 'ابحث عن منتج أو شخص أو ملاحظة…',
-  'Carico': 'إضافة مخزون', 'Scarico': 'سحب من المخزون', 'Sconto (€)': 'الخصم (EGP)',
-  'Spesa minima (€)': 'الحد الأدنى للإنفاق (EGP)', 'Importo (€)': 'المبلغ (EGP)',
+  'Carico': 'إضافة مخزون', 'Scarico': 'سحب من المخزون', 'Sconto (€)': 'الخصم (€)',
+  'Spesa minima (€)': 'الحد الأدنى للإنفاق (€)', 'Importo (€)': 'المبلغ (€)',
   'Report vendite': 'تقرير المبيعات', 'Esportato il': 'تم التصدير في', 'Applica al report': 'تطبيق على التقرير',
   'Cerca o scansiona un codice a barre…': 'ابحث عن رمز شريطي أو امسحه ضوئيًا…',
   'Scansiona con fotocamera': 'المسح بالكاميرا', 'Rimuovi uno': 'إزالة قطعة واحدة', 'Aggiungi uno': 'إضافة قطعة واحدة',
@@ -323,7 +323,7 @@ const AppLanguageContext = createContext<AppLanguage>('it');
 const AppDynamicNamesContext = createContext<Set<string>>(new Set());
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const localizedText = (value: string, language: AppLanguage, dynamicNames = new Set<string>()) => {
-  if (language !== 'ar') return value;
+  if (language !== 'ar') return value.replaceAll('€', appCurrencySymbol);
   if (dynamicNames.has(value.trim())) return value;
   const exact = arabicUiTranslations[value.trim()];
   const translated = exact ? value.replace(value.trim(), exact) : Object.entries(arabicUiTranslations)
@@ -333,7 +333,7 @@ const localizedText = (value: string, language: AppLanguage, dynamicNames = new 
       new RegExp(`(^|[^\\p{L}\\p{N}])(${escapeRegExp(source)})(?=$|[^\\p{L}\\p{N}])`, 'giu'),
       (_match, prefix: string, match: string) => `${prefix}${dynamicNames.has(match) ? match : translated}`,
     ), value);
-  return translated.replaceAll('€', 'EGP');
+  return translated.replaceAll('€', appCurrencySymbol);
 };
 const localizedStockNote = (value: string, language: AppLanguage) => {
   if (language !== 'ar') return value;
@@ -707,7 +707,7 @@ function ProductForm({ initial, save, close, categories, addCategory, deleteCate
 
 export default function App() {
   const [data, setData] = useState<AppState | null>(null);
-  const [section, setSection] = useState<Section>('cash');
+  const [section, setSection] = useState<Section>('home');
   const [openSidebarMenu, setOpenSidebarMenu] = useState<'inventory' | 'offers' | 'statistics' | 'employees' | 'sites' | null>(null);
   const siteMenuOpen = openSidebarMenu === 'sites';
   const [customerFirstName, setCustomerFirstName] = useState('');
@@ -790,6 +790,7 @@ export default function App() {
   const [cart, setCart] = useState<SaleItem[]>([]);
   const [scannerSearch, setScannerSearch] = useState('');
   const [inventorySearch, setInventorySearch] = useState('');
+  const [inventorySiteId, setInventorySiteId] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [employeeDraft, setEmployeeDraft] = useState<EmployeeInput | null>(null);
@@ -844,6 +845,7 @@ export default function App() {
   const [pendingUnknownCode, setPendingUnknownCode] = useState('');
   const [shopName, setShopName] = useState('');
   const [shopNumber, setShopNumber] = useState('');
+  const [currencyCode, setCurrencyCode] = useState('EUR');
   const [setupStep, setSetupStep] = useState<'shop' | 'owner'>('shop');
   const [setupShopName, setSetupShopName] = useState('');
   const [setupShopAddress, setSetupShopAddress] = useState('');
@@ -862,7 +864,7 @@ export default function App() {
   const cursorGlowRef = useRef<HTMLDivElement>(null);
   const homeMediaFrameRef = useRef<HTMLDivElement>(null);
 
-  const refresh = async () => { const next = await window.gestionale.getState(); setData(next); setShopName(next.settings.shop_name); setShopNumber(next.settings.shop_number); setArchiveFolder(next.settings.archive_folder); return next; };
+  const refresh = async () => { const next = await window.gestionale.getState(); setData(next); setShopName(next.settings.shop_name); setShopNumber(next.settings.shop_number); setCurrencyCode(next.settings.currency); setArchiveFolder(next.settings.archive_folder); return next; };
   useEffect(() => {
     if (!data) return;
     setExpenseSite((current) => data.sites.some((site) => site.name === current) ? current : '');
@@ -885,6 +887,13 @@ export default function App() {
   const salesDisabled = !activeSiteName;
   const activeSiteId = data?.sites.find((site) => site.name === activeSiteName)?.id;
   const storeSites = data?.sites ?? [];
+  const currencySymbol = new Intl.NumberFormat(language === 'ar' ? 'ar-EG-u-nu-latn' : 'it-IT', {
+    style: 'currency',
+    currency: data?.settings.currency ?? 'EUR',
+  }).formatToParts(0).find((part) => part.type === 'currency')?.value ?? (data?.settings.currency ?? 'EUR');
+  const currencyChoices: Array<[string, string]> = language === 'ar'
+    ? [['EUR', 'اليورو (EUR)'], ['USD', 'الدولار الأمريكي (USD)'], ['EGP', 'الجنيه المصري (EGP)'], ['GBP', 'الجنيه البريطاني (GBP)'], ['CHF', 'الفرنك السويسري (CHF)'], ['SAR', 'الريال السعودي (SAR)'], ['AED', 'الدرهم الإماراتي (AED)']]
+    : [['EUR', 'Euro (EUR)'], ['USD', 'Dollaro statunitense (USD)'], ['EGP', 'Sterlina egiziana (EGP)'], ['GBP', 'Sterlina britannica (GBP)'], ['CHF', 'Franco svizzero (CHF)'], ['SAR', 'Riyal saudita (SAR)'], ['AED', 'Dirham emiratino (AED)']];
   const distributionRecipients = data?.employees.filter((employee) =>
     employee.operational_site === data.sites.find((site) => String(site.id) === distributionToSiteId)?.name
       || normalizedRole(employee.role) === 'proprietario') ?? [];
@@ -966,6 +975,7 @@ export default function App() {
       const next = await refresh();
       setShopName(next.settings.shop_name);
       setShopNumber(next.settings.shop_number);
+      setCurrencyCode(next.settings.currency);
       setSetupOwnerDraft({ ...newEmployeeDraft(next.employees), role: 'Proprietario', operational_site: '' });
       setExpenseSite('');
       setSetupStep('owner');
@@ -987,7 +997,7 @@ export default function App() {
     if (currentUser && employee.id !== undefined && currentUser.id === employee.id) {
       setCurrentUser({ ...currentUser, first_name: employee.first_name, last_name: employee.last_name, role: employee.role.trim() });
     }
-    setSection(firstOwner ? 'site-list' : employee.id ? 'home' : 'employees');
+    setSection(firstOwner || employee.id ? 'home' : 'employees');
     if (firstOwner) setSetupOwnerDraft(null);
     setOpenSidebarMenu(null);
     setEmployeeDraft(null);
@@ -997,7 +1007,9 @@ export default function App() {
   const deleteEmployee = async (employee: Employee) => {
     try {
       await window.gestionale.deleteEmployee(employee.id, currentUser?.barcode ?? '');
-      trackActivity('Dipendenti', 'Dipendente eliminato', `${employee.first_name} ${employee.last_name}`.trim());
+      if (currentUser?.id !== employee.id) {
+        trackActivity('Dipendenti', 'Dipendente eliminato', `${employee.first_name} ${employee.last_name}`.trim());
+      }
       const next = await refresh();
       setEmployeeDetails(null);
       setEmployeeDraft(null);
@@ -1348,6 +1360,7 @@ export default function App() {
       setData(next);
       setShopName(next.settings.shop_name);
       setShopNumber(next.settings.shop_number);
+      setCurrencyCode(next.settings.currency);
       setSetupShopName(next.settings.shop_name === 'Il tuo supermercato' ? '' : next.settings.shop_name);
       setSetupShopAddress(next.settings.shop_address);
       setSetupShopPhone(next.settings.shop_phone);
@@ -1362,6 +1375,11 @@ export default function App() {
     };
     void initialize().catch((error: unknown) => notify(errorText(error)));
   }, []);
+  useEffect(() => {
+    if (inventorySiteId !== 'all' && data && !data.sites.some((site) => String(site.id) === inventorySiteId)) {
+      setInventorySiteId('all');
+    }
+  }, [data, inventorySiteId]);
   useEffect(() => window.gestionale.onSalesExpired(() => {
     void refresh().catch((error: unknown) => notify(errorText(error)));
   }), []);
@@ -1417,9 +1435,10 @@ export default function App() {
     window.localStorage.setItem('app-language', language);
     const locale = language === 'ar' ? 'ar-EG-u-nu-latn' : 'it-IT';
     appLocale = locale;
-    money = language === 'ar'
-      ? { format: (amount: number) => `${arabicMoneyNumber.format(amount)} EGP` }
-      : new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' });
+    const currency = data?.settings.currency ?? 'EUR';
+    const currencyFormatter = new Intl.NumberFormat(locale, { style: 'currency', currency });
+    money = currencyFormatter;
+    appCurrencySymbol = currencyFormatter.formatToParts(0).find((part) => part.type === 'currency')?.value ?? currency;
     dateTime = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' });
     receiptDate = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric' });
     receiptTime = new Intl.DateTimeFormat(locale, { timeStyle: 'short' });
@@ -1430,7 +1449,7 @@ export default function App() {
     quantityFormat = new Intl.NumberFormat(locale, { maximumFractionDigits: 3 });
     receiptQuantity = quantityFormat;
     setCurrentTime(new Date());
-  }, [language]);
+  }, [language, data?.settings.currency]);
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date()), 30_000);
     return () => window.clearInterval(timer);
@@ -1450,7 +1469,7 @@ export default function App() {
       requestAnimationFrame(() => document.getElementById('scanner-field')?.focus());
     }
   }, [section, camera, pendingUnknownCode, productForm]);
-  useEffect(() => { if (receipt) { const barcode = document.getElementById('receipt-barcode'); if (barcode) JsBarcode(barcode, receipt.receipt_no, { format: 'CODE128', width: 2.1, height: 48, displayValue: false, margin: 0 }); } }, [receipt]);
+  useEffect(() => { if (receipt) { const barcode = document.getElementById('receipt-barcode'); if (barcode) JsBarcode(barcode, receipt.receipt_no, { format: 'CODE128', width: 2.3, height: 48, displayValue: false, margin: 0 }); } }, [receipt]);
   useEffect(() => {
     if (!voucherPrintBatch) return;
     const clearPrintBatch = () => setVoucherPrintBatch(null);
@@ -2114,6 +2133,7 @@ export default function App() {
     try {
       await window.gestionale.saveSetting('shop_name', shopName.trim() || 'Il tuo supermercato');
       await window.gestionale.saveSetting('shop_number', shopNumber.trim());
+      await window.gestionale.saveSetting('currency', currencyCode);
       await refresh();
       notify('Informazioni negozio aggiornate.');
     } catch (error) {
@@ -2276,28 +2296,6 @@ export default function App() {
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  const exportLocalArchiveJson = () => {
-    if (!data) return;
-    try {
-      const exportedAt = new Date();
-      const archive = {
-        format: 'gestionale-supermercato',
-        version: 1,
-        exportedAt: exportedAt.toISOString(),
-        data,
-      };
-      const blob = new Blob([JSON.stringify(archive, null, 2)], { type: 'application/json;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `archivio-gestionale-${exportedAt.toISOString().replaceAll(':', '-').replace(/\.\d{3}Z$/, 'Z')}.json`;
-      link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      notify('Archivio esportato in JSON.');
-    } catch (error) {
-      notify(errorText(error));
-    }
-  };
   const exportInventoryReport = async () => {
     if (!data) return;
     try {
@@ -2307,7 +2305,7 @@ export default function App() {
       if (rtl) await addArabicPdfFont(doc);
       doc.setR2L(rtl);
       const reportText = (value: string) => rtl ? doc.processArabic(value) : value;
-      const reportMoney = (amount: number) => rtl ? `${arabicMoneyNumber.format(amount)} EGP` : money.format(amount);
+      const reportMoney = (amount: number) => money.format(amount);
       const latinShopName = rtl && /^[\x20-\x7E]*$/.test(data.settings.shop_name);
       const stockValue = data.products.reduce((sum, item) => sum + item.stock * item.purchase_price, 0);
       const stockSaleValue = data.products.reduce((sum, item) => sum + item.stock * item.sale_price, 0);
@@ -2338,10 +2336,10 @@ export default function App() {
         alternateRowStyles: { fillColor: [244, 247, 244] },
         margin: { left: 8, right: 8, bottom: 22 },
         willDrawCell: ({ section, cell }) => {
-          if (rtl && section === 'body' && typeof cell.raw === 'string' && cell.raw.endsWith('EGP')) doc.setR2L(false);
+          if (rtl && section === 'body' && typeof cell.raw === 'string' && cell.raw.includes(currencySymbol)) doc.setR2L(false);
         },
         didDrawCell: ({ section, cell }) => {
-          if (rtl && section === 'body' && typeof cell.raw === 'string' && cell.raw.endsWith('EGP')) doc.setR2L(true);
+          if (rtl && section === 'body' && typeof cell.raw === 'string' && cell.raw.includes(currencySymbol)) doc.setR2L(true);
         },
         didDrawPage: () => {
           doc.setFontSize(8);
@@ -2520,7 +2518,7 @@ export default function App() {
       const sheetAlignment = rtl
         ? '<alignment horizontal="right" readingOrder="2" vertical="center" wrapText="1"/>'
         : '<alignment horizontal="left" vertical="center" wrapText="1"/>';
-      const currencyNumberFormat = rtl ? '#,##0.00 &quot;EGP&quot;' : '#,##0.00 &quot;€&quot;';
+      const currencyNumberFormat = `#,##0.00 &quot;${currencySymbol.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}&quot;`;
       const numberAlignment = rtl ? ' applyAlignment="1"' : '';
       const numberAlignmentXml = rtl ? sheetAlignment : '';
       const zip = new JSZip();
@@ -2946,15 +2944,23 @@ export default function App() {
   const expiredProducts = data?.products.filter((product) =>
     product.expiry_enabled && product.expiry_date && product.expiry_date < todayKey && product.stock > 0
   ) ?? [];
-  const inventoryList = data?.products.filter((item) =>
-    (item.name.toLowerCase().includes(inventorySearch.toLowerCase()) || item.code.includes(inventorySearch))
-    && (category === 'Tutte' || item.category === category)
-    && (inventoryStatus === 'out' ? item.stock === 0 : item.stock > 0)
-    && (inventoryStatus === 'all'
-      || (inventoryStatus === 'available' && item.stock > item.low_stock_threshold)
-      || (inventoryStatus === 'low' && item.stock > 0 && item.stock <= item.low_stock_threshold)
-      || (inventoryStatus === 'out' && item.stock === 0))
-  ) ?? [];
+  const inventoryStockFor = (productId: number) => {
+    if (inventorySiteId !== 'all') return siteStockFor(productId, Number(inventorySiteId));
+    const stocks = data?.siteStocks.filter((stock) => stock.product_id === productId) ?? [];
+    return stocks.length
+      ? stocks.reduce((sum, stock) => sum + stock.stock, 0)
+      : data?.products.find((product) => product.id === productId)?.stock ?? 0;
+  };
+  const inventoryList = data?.products.filter((item) => {
+    const stock = inventoryStockFor(item.id);
+    return (item.name.toLowerCase().includes(inventorySearch.toLowerCase()) || item.code.includes(inventorySearch))
+      && (category === 'Tutte' || item.category === category)
+      && (inventoryStatus === 'all' || (inventoryStatus === 'out' ? stock === 0 : stock > 0))
+      && (inventoryStatus === 'all'
+        || (inventoryStatus === 'available' && stock > item.low_stock_threshold)
+        || (inventoryStatus === 'low' && stock > 0 && stock <= item.low_stock_threshold)
+        || (inventoryStatus === 'out' && stock === 0));
+  }) ?? [];
   const employeeList = data?.employees.filter((employee) =>
     [employee.first_name, employee.last_name, employee.role, employee.shift, employee.operational_site, employee.email]
       .some((value) => value.toLocaleLowerCase('it').includes(employeeSearch.trim().toLocaleLowerCase('it')))
@@ -3299,12 +3305,12 @@ export default function App() {
 
       {section === 'inventory' && <div className="page-content">
         <div className="page-toolbar inventory-toolbar"><div><h2>Articoli in magazzino</h2><p>{data.products.length} articoli registrati{!storeSites.length && ' · Registra una sede prima di aggiungere articoli'}</p></div>{!isCashierRole(activeRole) && <div className="toolbar-actions"><button className="button button-outline" onClick={exportInventoryCsv}><ArrowDownToLine size={16} /> {language === 'ar' ? 'تصدير CSV' : 'Esporta CSV'}</button><button className="button button-outline" onClick={exportInventoryReport}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-primary" disabled={!storeSites.length} onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct }); }}><Plus size={16} /> Aggiungi nuovo articolo</button></div>}</div>
-        <div className="filter-row"><SearchInput value={inventorySearch} onChange={setInventorySearch} placeholder="Cerca per nome o codice…" /><label className="select-wrap"><span>Categoria</span><select value={category} onChange={(e) => setCategory(e.target.value)}><option>Tutte</option>{categories.map((item) => <option key={item}>{item}</option>)}</select><ChevronDown size={14} /></label><details className="inventory-filter-dropdown"><summary className="select-wrap"><span>Disponibilità: {inventoryFilters.find((item) => item.value === inventoryStatus)?.label}</span><ChevronDown size={14} /></summary><div className="inventory-status-filters" role="group" aria-label="Filtra prodotti per disponibilità">{inventoryFilters.map(({ value, label }) => <button key={value} className={`status-filter${inventoryStatus === value ? ' active' : ''}`} aria-pressed={inventoryStatus === value} onClick={(event) => { setInventoryStatus(value); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{label}</button>)}</div></details></div>
+        <div className="filter-row"><SearchInput value={inventorySearch} onChange={setInventorySearch} placeholder="Cerca per nome o codice…" /><label className="select-wrap"><span>Categoria</span><select value={category} onChange={(e) => setCategory(e.target.value)}><option>Tutte</option>{categories.map((item) => <option key={item}>{item}</option>)}</select><ChevronDown size={14} /></label><details className="inventory-filter-dropdown"><summary className="select-wrap"><span>Disponibilità: {inventoryFilters.find((item) => item.value === inventoryStatus)?.label}</span><ChevronDown size={14} /></summary><div className="inventory-status-filters" role="group" aria-label="Filtra prodotti per disponibilità">{inventoryFilters.map(({ value, label }) => <button key={value} className={`status-filter${inventoryStatus === value ? ' active' : ''}`} aria-pressed={inventoryStatus === value} onClick={(event) => { setInventoryStatus(value); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{label}</button>)}</div></details><details className="inventory-filter-dropdown"><summary className="select-wrap"><span>Sede: {inventorySiteId === 'all' ? 'Tutte' : storeSites.find((site) => String(site.id) === inventorySiteId)?.name}</span><ChevronDown size={14} /></summary><div className="inventory-status-filters" role="group" aria-label="Filtra prodotti per sede"><button className={`status-filter${inventorySiteId === 'all' ? ' active' : ''}`} aria-pressed={inventorySiteId === 'all'} onClick={(event) => { setInventorySiteId('all'); event.currentTarget.closest('details')?.removeAttribute('open'); }}>Tutte</button>{storeSites.map((site) => <button key={site.id} className={`status-filter${inventorySiteId === String(site.id) ? ' active' : ''}`} aria-pressed={inventorySiteId === String(site.id)} onClick={(event) => { setInventorySiteId(String(site.id)); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{site.name}</button>)}</div></details></div>
         {!isCashierRole(activeRole) && <div className="expiry-panels">
           <section className="expiry-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section>
           <section className="expiry-alert expired-alert"><div className="expired-alert-top"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Prodotti scaduti</strong><span>{expiredProducts.length ? `${expiredProducts.length} ${expiredProducts.length === 1 ? 'articolo scaduto' : 'articoli scaduti'}` : 'Nessun prodotto scaduto'}</span></div></div><button className="text-button expired-manage-link" onClick={() => navigateTo('expired-products')}>Gestisci articoli scaduti</button></div>{expiredProducts.length > 0 && <div className="expiry-list">{expiredProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section>
         </div>}
-        <div className="product-grid">{inventoryList.map((product) => <button className="product-tile" key={product.id} onClick={() => { if (!isCashierRole(activeRole)) setSelectedProduct(product); }}><img className="tile-art" src={product.photo_data || productArtwork(product)} alt="" /><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="tile-price">{money.format(product.sale_price)}</span><span className={`tile-stock${product.stock <= product.low_stock_threshold ? ' text-low' : ''}`}>{quantityFormat.format(product.stock)} disponibili</span></button>)}</div>{inventoryList.length === 0 && <Empty icon={Package} title="Nessun articolo trovato" detail="Modifica la ricerca o aggiungi un articolo." />}
+        <div className="product-grid">{inventoryList.map((product) => { const stock = inventoryStockFor(product.id); return <button className="product-tile" key={product.id} onClick={() => { if (!isCashierRole(activeRole)) setSelectedProduct(product); }}><img className="tile-art" src={product.photo_data || productArtwork(product)} alt="" /><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="tile-price">{money.format(product.sale_price)}</span><span className={`tile-stock${stock <= product.low_stock_threshold ? ' text-low' : ''}`}>{quantityFormat.format(stock)} disponibili</span></button>; })}</div>{inventoryList.length === 0 && <Empty icon={Package} title="Nessun articolo trovato" detail="Modifica la ricerca o aggiungi un articolo." />}
       </div>}
 
       {section === 'expired-products' && <div className="page-content"><div className="page-toolbar"><div><h2>Gestione prodotti scaduti</h2><p>Verifica gli articoli scaduti e registra lo smaltimento.</p></div><button className="button button-outline" onClick={() => navigateTo('inventory')}>Torna al magazzino</button></div><Table headings={['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Data di scadenza', 'Azione']}><>{expiredProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td className="mono">{product.code}</td><td>{product.category}</td><td>{quantityFormat.format(product.stock)} {product.unit ?? 'PEZZO'}</td><td>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</td><td><button className="button button-danger" onClick={() => void disposeExpiredProduct(product)}><Trash2 size={14} /> Butta articolo</button></td></tr>)}</>{!expiredProducts.length && <tr><td colSpan={6} className="empty-cell">Non ci sono prodotti scaduti da gestire.</td></tr>}</Table></div>}
@@ -3505,15 +3511,14 @@ export default function App() {
         <section className="panel product-sales-panel"><div className="panel-heading"><div><h3>Prodotti più e meno venduti</h3></div></div><div className="ranking-table-scroll" tabIndex={0} aria-label="Classifica prodotti scorrevole"><Table headings={['Posizione', 'Prodotto', 'Quantità venduta', 'Ricavi']}><>{productSalesRanking.map((product, index) => <tr key={product.id}><td>{index + 1}</td><td className="cell-primary">{product.name}</td><td>{quantityFormat.format(product.quantitySold)} {product.unit === 'PEZZO' ? 'pz' : product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : ''}</td><td>{money.format(product.revenue)}</td></tr>)}</>{!productSalesRanking.length && <tr><td colSpan={4} className="empty-cell">Nessun prodotto registrato.</td></tr>}</Table></div></section>
         <div className="metric-grid stats-metrics"><Metric icon={Banknote} label="Vendite" value={money.format(soldTotal)} detail="Incassi registrati nel periodo" /><Metric icon={CreditCard} label="Acquisto merce venduta" value={money.format(soldCost)} detail="Costo degli articoli venduti" /><Metric icon={TrendingUp} label="Netto stimato" value={money.format(estimatedNet)} detail="Ricavi meno costo del venduto e spese" /><Metric icon={ArrowDownToLine} label="Rimborsi" value={money.format(statisticsRefundTotal)} detail="Rimborsi registrati nel periodo" /><Metric className="stats-wide-card" icon={Trash2} label="Valore merce buttata" value={money.format(statisticsWasteLoss)} detail="Valore merce buttata nel periodo" /><Metric className="stats-wide-card" icon={ShoppingBasket} label="Quantità vendite" value={`${soldUnits.toLocaleString(appLocale)} ${language === 'ar' ? 'of' : 'di'} ${totalTrackedUnits.toLocaleString(appLocale)}`} valueDir="ltr" detail="Articoli venduti rispetto a quelli ancora in magazzino" action={<button className="text-button metric-action" onClick={() => setUnsoldListOpen(true)}>{language === 'ar' ? 'عرض القائمة' : 'Vedi lista'}</button>} /></div>
         <div className="metric-grid inventory-values"><Metric icon={Package} label="Valore vendita in magazzino" value={money.format(stockRetail)} detail="Valore al prezzo di vendita" compact /><Metric icon={Archive} label="Valore acquisto in magazzino" value={money.format(stockCost)} detail="Costo delle scorte attuali" compact /><Metric icon={TrendingUp} label="Netto potenziale" value={money.format(stockRetail - stockCost)} detail="Margine potenziale delle scorte" compact /></div>
-        <div className="analytics-grid"><section className="panel calendar-panel"><div className="panel-heading"><div><h3>Calendario vendite</h3><p>Incasso per giorno</p></div><div className="month-controls"><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}>‹</button><strong>{calendarMonth.toLocaleDateString(appLocale, { month: 'long', year: 'numeric' })}</strong><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}>›</button></div></div><div className="calendar-grid">{['L', 'M', 'M', 'G', 'V', 'S', 'D'].map((day, index) => <span className="calendar-weekday" key={`${day}${index}`}>{day}</span>)}{calendarDays().map((day, index) => { const date = day ? new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day) : null; const revenue = date ? statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()).reduce((sum, sale) => sum + sale.total, 0) : 0; return <div key={index} className={`calendar-day${revenue ? ' has-sales' : ''}${date?.toDateString() === new Date().toDateString() ? ' today' : ''}`}>{day && <><span>{day}</span>{revenue > 0 && <small>{money.format(revenue)}</small>}</>}</div>; })}</div></section><section className="panel chart-panel"><div className="panel-heading"><div><h3>Vendite giornaliere</h3><p>Ultimi sette giorni nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><BarChart data={chartDays} margin={{ top: 14, right: 8, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="giorno" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value}${language === 'ar' ? ' EGP' : '€'}`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Bar dataKey="totale" fill="var(--green)" radius={[4, 4, 0, 0]} maxBarSize={34} /></BarChart></ResponsiveContainer></section></div>
-        <div className="analytics-grid statistics-extra"><section className="panel chart-panel"><div className="panel-heading"><div><h3>Andamento mensile</h3><p>Incasso per mese nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><LineChart data={monthlySales} margin={{ top: 14, right: 12, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="mese" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value}${language === 'ar' ? ' EGP' : '€'}`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Line type="monotone" dataKey="totale" stroke="var(--green)" strokeWidth={3} dot={{ fill: 'var(--green)', r: 4 }} /></LineChart></ResponsiveContainer></section><section className="panel payment-panel"><div className="panel-heading"><div><h3>Pagamenti per metodo</h3><p>Totale incassato nel periodo</p></div></div><div className="payment-totals">{Object.entries(paymentTotals).length ? Object.entries(paymentTotals).map(([method, amount], index) => <div key={method}><span className="payment-dot" style={{ backgroundColor: colors[index % colors.length] }} /><span>{method}</span><strong>{money.format(amount)}</strong></div>) : <span className="muted">Nessun pagamento nel periodo selezionato.</span>}</div></section></div>
+        <div className="analytics-grid"><section className="panel calendar-panel"><div className="panel-heading"><div><h3>Calendario vendite</h3><p>Incasso per giorno</p></div><div className="month-controls"><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}>‹</button><strong>{calendarMonth.toLocaleDateString(appLocale, { month: 'long', year: 'numeric' })}</strong><button className="icon-button small" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}>›</button></div></div><div className="calendar-grid">{['L', 'M', 'M', 'G', 'V', 'S', 'D'].map((day, index) => <span className="calendar-weekday" key={`${day}${index}`}>{day}</span>)}{calendarDays().map((day, index) => { const date = day ? new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day) : null; const revenue = date ? statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()).reduce((sum, sale) => sum + sale.total, 0) : 0; return <div key={index} className={`calendar-day${revenue ? ' has-sales' : ''}${date?.toDateString() === new Date().toDateString() ? ' today' : ''}`}>{day && <><span>{day}</span>{revenue > 0 && <small>{money.format(revenue)}</small>}</>}</div>; })}</div></section><section className="panel chart-panel"><div className="panel-heading"><div><h3>Vendite giornaliere</h3><p>Ultimi sette giorni nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><BarChart data={chartDays} margin={{ top: 14, right: 8, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="giorno" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value} ${currencySymbol}`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Bar dataKey="totale" fill="var(--green)" radius={[4, 4, 0, 0]} maxBarSize={34} /></BarChart></ResponsiveContainer></section></div>
+        <div className="analytics-grid statistics-extra"><section className="panel chart-panel"><div className="panel-heading"><div><h3>Andamento mensile</h3><p>Incasso per mese nel periodo selezionato</p></div></div><ResponsiveContainer width="100%" height={242}><LineChart data={monthlySales} margin={{ top: 14, right: 12, left: -15, bottom: 0 }}><CartesianGrid stroke="#e9ece8" vertical={false} /><XAxis dataKey="mese" axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 11 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#858b85', fontSize: 10 }} tickFormatter={(value) => `${value} ${currencySymbol}`} /><Tooltip formatter={(value) => money.format(Number(value))} /><Line type="monotone" dataKey="totale" stroke="var(--green)" strokeWidth={3} dot={{ fill: 'var(--green)', r: 4 }} /></LineChart></ResponsiveContainer></section><section className="panel payment-panel"><div className="panel-heading"><div><h3>Pagamenti per metodo</h3><p>Totale incassato nel periodo</p></div></div><div className="payment-totals">{Object.entries(paymentTotals).length ? Object.entries(paymentTotals).map(([method, amount], index) => <div key={method}><span className="payment-dot" style={{ backgroundColor: colors[index % colors.length] }} /><span>{method}</span><strong>{money.format(amount)}</strong></div>) : <span className="muted">Nessun pagamento nel periodo selezionato.</span>}</div></section></div>
         <section className="panel category-panel"><div className="panel-heading"><div><h3>Vendite per categoria</h3><p>Valore degli articoli venduti nel periodo selezionato</p></div></div><div className="category-chart"><ResponsiveContainer width="100%" height={230}><PieChart><Pie data={Object.entries(categoriesSales).map(([name, value]) => ({ name, value }))} dataKey="value" nameKey="name" innerRadius={57} outerRadius={88} paddingAngle={3}>{Object.keys(categoriesSales).map((name, i) => <Cell key={name} fill={colors[i % colors.length]} />)}</Pie><Tooltip formatter={(value) => money.format(Number(value))} /></PieChart></ResponsiveContainer><div className="chart-legend">{Object.entries(categoriesSales).length ? Object.entries(categoriesSales).map(([name, value], i) => <div key={name}><span style={{ backgroundColor: colors[i % colors.length] }} /><span>{name}</span><strong>{money.format(value)}</strong></div>) : <span className="muted">Le categorie appariranno dopo la prima vendita.</span>}</div></div></section>
       </div>}
 
-      {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">{settingsTab === null ? <nav className="settings-nav">{[{ name: 'Info Negozio', icon: Store }, { name: 'Archivio dati', icon: Archive }, { name: 'Dispositivi', icon: Barcode }, { name: 'Homepage', icon: House }, { name: 'Operativo', icon: Check }].filter(({ name }) => normalizedRole(activeRole) === 'proprietario' || !['Info Negozio', 'Archivio dati', 'Homepage'].includes(name)).map(({ name, icon: Icon }) => <button key={name} onClick={() => { setSettingsTab(name); setDeviceTab(null); }}><Icon size={17} />{name}</button>)}</nav> : <section className="settings-panel"><button className="settings-back" onClick={() => { if (settingsTab === 'Dispositivi' && deviceTab) setDeviceTab(null); else { setSettingsTab(null); setDeviceTab(null); } }}><ArrowLeft size={15} />{settingsTab === 'Dispositivi' && deviceTab ? 'Dispositivi' : 'Impostazioni'}</button>
-        {settingsTab === 'Info Negozio' && <><div className="settings-title"><h2>Info Negozio</h2><p>Nome e logo del negozio per il menu e la barra superiore.</p></div><form className="settings-form" onSubmit={saveStoreName}><Field label="Nome attività" value={shopName} onChange={(e) => setShopName(e.target.value)} required /><Field label="Numero negozio" value={shopNumber} onChange={(e) => setShopNumber(e.target.value)} /><div className="receipt-preview"><Store size={17} /><span>{shopName || 'Nome negozio'}</span><small>Anteprima intestazione scontrino</small></div><div className="shop-logo-setting"><span className="field-label">Logo del negozio</span>{data.settings.shop_logo && <img src={data.settings.shop_logo} alt="Logo attuale" />}<button className="button button-outline" type="button" onClick={() => void chooseShopLogo()}><Store size={15} /> {data.settings.shop_logo ? 'Sostituisci logo' : 'Scegli logo'}</button></div><button className="button button-primary"><Check size={16} /> Salva nome</button></form></>}
+      {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">{settingsTab === null ? <nav className="settings-nav">{[{ name: 'Info Negozio', icon: Store }, { name: 'Archivio dati', icon: Archive }, { name: 'Dispositivi', icon: Barcode }, { name: 'Homepage', icon: House }, { name: 'Operativo', icon: Check }].filter(({ name }) => normalizedRole(activeRole) === 'proprietario' || !['Info Negozio', 'Archivio dati', 'Homepage'].includes(name)).map(({ name, icon: Icon }) => <button key={name} onClick={() => { setSettingsTab(name); setDeviceTab(null); }}><Icon size={17} />{name === 'Homepage' ? 'Immagine Homepage' : name}</button>)}</nav> : <section className="settings-panel"><button className="settings-back" onClick={() => { if (settingsTab === 'Dispositivi' && deviceTab) setDeviceTab(null); else { setSettingsTab(null); setDeviceTab(null); } }}><ArrowLeft size={15} />{settingsTab === 'Dispositivi' && deviceTab ? 'Dispositivi' : 'Impostazioni'}</button>
+        {settingsTab === 'Info Negozio' && <><div className="settings-title"><h2>Info Negozio</h2><p>Nome, logo e moneta utilizzata dal negozio.</p></div><form className="settings-form store-info-form" onSubmit={saveStoreName}><Field label="Nome attività" value={shopName} onChange={(e) => setShopName(e.target.value)} required /><Field label="Numero negozio" value={shopNumber} onChange={(e) => setShopNumber(e.target.value)} /><label className="field"><span>{language === 'ar' ? 'العملة المستخدمة' : 'Moneta utilizzata'}</span><select value={currencyCode} onChange={(event) => setCurrencyCode(event.target.value)}>{currencyChoices.map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select></label><div className="receipt-preview"><Store size={17} /><span>{shopName || 'Nome negozio'}</span><small>Anteprima intestazione scontrino</small></div><div className="shop-logo-setting store-info-logo"><span className="field-label">Logo del negozio</span>{data.settings.shop_logo && <img src={data.settings.shop_logo} alt="Logo attuale" />}<button className="button button-outline" type="button" onClick={() => void chooseShopLogo()}><Store size={15} /> {data.settings.shop_logo ? 'Sostituisci logo' : 'Scegli logo'}</button></div><button className="button button-primary"><Check size={16} /> {language === 'ar' ? 'حفظ الإعدادات' : 'Salva impostazioni'}</button></form></>}
         {settingsTab === 'Archivio dati' && <><div className="settings-title"><h2>Archivio locale</h2><p>Database SQLite e copie giornaliere dei dati.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Archivio locale attivo</div><div className="database-card"><div className="security-icon"><Archive size={20} /></div><div><strong>Database SQLite</strong><span className="database-path">{data.settings.database_file}</span></div><span className="stock-badge">Attivo</span></div><div className="settings-form"><label className="field"><span>Cartella esportazioni giornaliere</span><div className="folder-input"><input value={archiveFolder} readOnly /><button className="button button-outline" type="button" onClick={() => void chooseFolder()}>Scegli cartella</button></div></label><p className="help-copy">Ogni giorno a mezzanotte vengono aggiornati file TXT e PDF nelle cartelle Magazzino, Cassa, Vendite e Statistiche.</p></div></>}
-        {settingsTab === 'Archivio dati' && <div className="settings-form"><p className="help-copy">Scarica tutti i dati e le impostazioni in un file JSON.</p><button className="button button-primary" type="button" onClick={exportLocalArchiveJson}><ArrowDownToLine size={16} /> Esporta archivio completo</button></div>}
         {settingsTab === 'Dispositivi' && (deviceTab === null ? <><div className="settings-title"><h2>Dispositivi</h2><p>Seleziona un dispositivo per configurarlo.</p></div><nav className="settings-nav device-menu"><button onClick={() => setDeviceTab('Lettore barcode')}><Barcode size={17} />Lettore di codici a barre</button><button onClick={() => setDeviceTab('Stampante scontrini')}><Printer size={17} />Stampante Wi-Fi</button></nav></> : deviceTab === 'Lettore barcode' ? <><div className="settings-title"><h2>Lettore di codici a barre</h2><p>Configura il lettore collegato al computer.</p></div><div className="device-setting"><div className="device-heading"><div className="security-icon"><Barcode size={20} /></div><div><strong>Lettore di codici a barre</strong><span>{data.settings.barcode_scanner_detected ? 'Rilevato: è stata acquisita almeno una scansione su questo computer.' : 'In attesa della prima lettura del lettore USB/HID.'}</span></div><button className={`toggle-button${data.settings.barcode_scanner_enabled ? ' enabled' : ''}`} type="button" role="switch" aria-checked={data.settings.barcode_scanner_enabled} onClick={() => void toggleBarcodeScanner()}>{data.settings.barcode_scanner_enabled ? 'Attivo' : 'Disattivo'}</button></div><p className="help-copy">I lettori USB che si comportano come tastiera vengono riconosciuti automaticamente quando inviano un codice. La preferenza resta salvata tra gli avvii.</p></div></> : <><div className="settings-title"><h2>Stampante scontrini</h2><p>Collega una stampante rilevata dal sistema.</p></div><div className="device-setting"><div className="device-printer-row"><SelectField label="Stampante collegata" value={data.settings.receipt_printer} onChange={(value) => void saveReceiptPrinter(value)} options={['', ...printers.map((printer) => printer.name)]} labels={['Seleziona stampante', ...printers.map((printer) => printer.displayName || printer.name)]} /><button className="button button-outline" type="button" onClick={() => void window.gestionale.getPrinters().then(setPrinters).catch((error: unknown) => notify(errorText(error)))}><Printer size={15} /> Rileva stampanti</button></div>{!printers.length && <p className="help-copy">Nessuna stampante rilevata. Verifica che sia collegata e installata nel sistema.</p>}{data.settings.receipt_printer && !printers.some((printer) => printer.name === data.settings.receipt_printer) && <p className="help-copy">La stampante salvata non è attualmente disponibile: selezionane una nuova.</p>}</div></>)}
         {settingsTab === 'Homepage' && <><div className="settings-title"><h2>Homepage</h2><p>Personalizza l’immagine o il video mostrato nella pagina iniziale.</p></div><div className="homepage-media-frame" ref={homeMediaFrameRef}>{data.settings.home_video ? <video src={data.settings.home_video} autoPlay muted loop playsInline /> : <img src={data.settings.home_image || homeBanner} alt="Anteprima homepage" />}</div><small className="homepage-media-size">Dimensioni: {homeMediaWidthCm} × 5 cm</small><div className="homepage-media-actions"><button className="button button-outline" type="button" onClick={() => void chooseHomepageImage()}><House size={15} /> Sostituisci immagine</button><button className="button button-outline" type="button" onClick={() => void chooseHomepageVideo()}><Video size={15} /> Sostituisci video</button></div></>}
         {settingsTab === 'Operativo' && <><div className="settings-title"><h2>Stato operativo</h2><p>Stato corrente del gestionale.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Operativo</div></>}
