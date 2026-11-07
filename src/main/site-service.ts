@@ -93,27 +93,43 @@ export function saveSite(database: Database.Database, input: SiteInput): void {
   if (!input || typeof input.name !== 'string' || !input.name.trim() || input.name.trim().length > 80
     || typeof input.address !== 'string' || input.address.length > 200
     || typeof input.phone !== 'string' || input.phone.length > 40
+    || (input.email !== undefined && (typeof input.email !== 'string' || input.email.length > 254 || (input.email.trim() !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim()))))
+    || (input.tax_id !== undefined && (typeof input.tax_id !== 'string' || input.tax_id.length > 32))
+    || (input.manager_name !== undefined && (typeof input.manager_name !== 'string' || input.manager_name.length > 100))
+    || (input.opening_hours !== undefined && (typeof input.opening_hours !== 'string' || input.opening_hours.length > 200))
+    || (input.notes !== undefined && (typeof input.notes !== 'string' || input.notes.length > 1000))
     || (input.id !== undefined && (!Number.isInteger(input.id) || input.id < 1))) {
     throw new Error('I dati della sede non sono validi.');
   }
 
   const name = input.name.trim();
+  const details = {
+    address: input.address.trim(),
+    phone: input.phone.trim(),
+    email: input.email?.trim() ?? '',
+    tax_id: input.tax_id?.trim() ?? '',
+    manager_name: input.manager_name?.trim() ?? '',
+    opening_hours: input.opening_hours?.trim() ?? '',
+    notes: input.notes?.trim() ?? '',
+  };
   try {
     if (input.id !== undefined) {
       const existing = database.prepare('SELECT name FROM sites WHERE id = ?').get(input.id) as
         { name: string } | undefined;
       if (!existing) throw new Error('Sede non trovata.');
       database.transaction(() => {
-        database.prepare('UPDATE sites SET name = ?, address = ?, phone = ? WHERE id = ?')
-          .run(name, input.address.trim(), input.phone.trim(), input.id);
+        database.prepare(`UPDATE sites SET name = @name, address = @address, phone = @phone, email = @email,
+          tax_id = @tax_id, manager_name = @manager_name, opening_hours = @opening_hours, notes = @notes WHERE id = @id`)
+          .run({ name, ...details, id: input.id });
         if (existing.name !== name) moveSiteReferences(database, existing.name, name);
       })();
     } else {
       const code = uniqueRecognitionCode(database, new Set());
       const isFirstSite = !(database.prepare('SELECT 1 FROM sites LIMIT 1').get());
-      const result = database.prepare(`INSERT INTO sites (name, address, phone, created_at, site_type, recognition_code)
-        VALUES (?, ?, ?, ?, 'store', ?)`)
-        .run(name, input.address.trim(), input.phone.trim(), new Date().toISOString(), code);
+      const result = database.prepare(`INSERT INTO sites
+        (name, address, phone, email, tax_id, manager_name, opening_hours, notes, created_at, site_type, recognition_code)
+        VALUES (@name, @address, @phone, @email, @tax_id, @manager_name, @opening_hours, @notes, @created_at, 'store', @code)`)
+        .run({ name, ...details, created_at: new Date().toISOString(), code });
       if (isFirstSite) {
         database.prepare(`INSERT OR IGNORE INTO site_inventory (product_id, site_id, stock)
           SELECT id, ?, stock FROM products`).run(Number(result.lastInsertRowid));

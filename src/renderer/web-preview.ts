@@ -26,9 +26,9 @@ const localDay = (offset: number) => day(offset).slice(0, 10);
 
 function createDemoState(): AppState {
   const sites: AppState['sites'] = [
-    { id: 1, name: 'Centro', address: 'Via Roma 12', phone: '02 555 0101', site_type: 'store', recognition_code: 'centro0001', created_at: day(-120) },
-    { id: 2, name: 'Nord', address: 'Via Milano 48', phone: '02 555 0102', site_type: 'store', recognition_code: 'nord000001', created_at: day(-90) },
-    { id: 3, name: 'Magazzino', address: 'Via Industria 5', phone: '02 555 0103', site_type: 'store', recognition_code: 'magaz00001', created_at: day(-75) },
+    { id: 1, name: 'Centro', address: 'Via Roma 12', phone: '02 555 0101', email: 'centro@example.test', tax_id: '', manager_name: 'Giulia Bianchi', opening_hours: 'Lun-Sab 08:00-20:00', notes: '', site_type: 'store', recognition_code: 'centro0001', created_at: day(-120) },
+    { id: 2, name: 'Nord', address: 'Via Milano 48', phone: '02 555 0102', email: 'nord@example.test', tax_id: '', manager_name: 'Marco Verdi', opening_hours: 'Lun-Sab 08:00-20:00', notes: '', site_type: 'store', recognition_code: 'nord000001', created_at: day(-90) },
+    { id: 3, name: 'Magazzino', address: 'Via Industria 5', phone: '02 555 0103', email: '', tax_id: '', manager_name: '', opening_hours: '', notes: '', site_type: 'store', recognition_code: 'magaz00001', created_at: day(-75) },
   ];
   const products: AppState['products'] = [
     { id: 1, code: '800123450001', name: 'Pasta di semola', unit: 'PEZZO', category: 'Dispensa', sale_price: 1.49, purchase_price: 0.72, stock: 132, low_stock_threshold: 24 },
@@ -333,13 +333,13 @@ function installWebPreview(): void {
         const site = state.sites.find((item) => item.id === input.id);
         if (site) {
           const previousName = site.name;
-          Object.assign(site, input, { site_type: 'store' as const });
+          Object.assign(site, input, { email: input.email ?? '', tax_id: input.tax_id ?? '', manager_name: input.manager_name ?? '', opening_hours: input.opening_hours ?? '', notes: input.notes ?? '', site_type: 'store' as const });
           state.employees.forEach((employee) => { if (employee.operational_site === previousName) employee.operational_site = site.name; });
           state.sales.forEach((sale) => { if (sale.site === previousName) sale.site = site.name; });
           state.expenses.forEach((expense) => { if (expense.site === previousName) expense.site = site.name; });
         }
       } else {
-        const site = { ...input, id: nextId(state.sites), site_type: 'store' as const, recognition_code: `demo${String(nextId(state.sites)).padStart(6, '0')}`, created_at: new Date().toISOString() };
+        const site = { ...input, email: input.email ?? '', tax_id: input.tax_id ?? '', manager_name: input.manager_name ?? '', opening_hours: input.opening_hours ?? '', notes: input.notes ?? '', id: nextId(state.sites), site_type: 'store' as const, recognition_code: `demo${String(nextId(state.sites)).padStart(6, '0')}`, created_at: new Date().toISOString() };
         state.sites.push(site);
       }
       persist();

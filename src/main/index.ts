@@ -375,7 +375,9 @@ function initDatabase(): void {
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sites (
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, address TEXT NOT NULL DEFAULT '',
-      phone TEXT NOT NULL DEFAULT '', site_type TEXT NOT NULL DEFAULT 'store' CHECK(site_type IN ('store', 'warehouse')),
+      phone TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', tax_id TEXT NOT NULL DEFAULT '',
+      manager_name TEXT NOT NULL DEFAULT '', opening_hours TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
+      site_type TEXT NOT NULL DEFAULT 'store' CHECK(site_type IN ('store', 'warehouse')),
       recognition_code TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS stock_movements (
@@ -453,6 +455,9 @@ function initDatabase(): void {
   }
   if (!siteColumns.some((column) => column.name === 'recognition_code')) {
     database.exec("ALTER TABLE sites ADD COLUMN recognition_code TEXT NOT NULL DEFAULT ''");
+  }
+  for (const column of ['email', 'tax_id', 'manager_name', 'opening_hours', 'notes']) {
+    if (!siteColumns.some((existing) => existing.name === column)) database.exec(`ALTER TABLE sites ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`);
   }
   const employeeColumns = database.prepare('PRAGMA table_info(employees)').all() as Array<{ name: string }>;
   if (!employeeColumns.some((column) => column.name === 'payment_method')) {
@@ -554,6 +559,17 @@ function initDatabase(): void {
   if (!app.isPackaged && (database.prepare('SELECT COUNT(*) AS count FROM products').get() as { count: number }).count === 0) {
     const insert = database.prepare('INSERT INTO products (code, name, category, sale_price, purchase_price, stock, low_stock_threshold) VALUES (@code, @name, @category, @sale_price, @purchase_price, @stock, @low_stock_threshold)');
     database.transaction(() => seedProducts.forEach((product) => insert.run(product)))();
+  }
+  if (isNewDatabase) {
+    const barcode = '0000000001';
+    database.prepare(`INSERT INTO employees (
+      first_name, last_name, age, gender, home_address, email, initial_password_hash, phone, operational_site,
+      role, shift, salary, payment_method, iban, recognition_code, barcode, photo_data, documents_data,
+      contract_pdf_data, contract_start_date, contract_end_date, created_at
+    ) VALUES (?, ?, 18, ?, ?, ?, '', ?, '', 'Proprietario', ?, 0, 'Contanti', '', ?, ?, '', '[]', '', '', '', ?)`)
+      .run('Proprietario', 'Demo', 'Non specificato', 'Non specificato', 'proprietario.demo@example.test', 'Non specificato', 'Mattina', barcode, barcode, new Date().toISOString());
+    setSetting('setup_complete', 'true');
+    setSetting('owner_password_reset', '1');
   }
   const inventorySeedSite = database.prepare('SELECT id FROM sites ORDER BY id LIMIT 1').get() as { id: number } | undefined;
   if (inventorySeedSite) {
@@ -1822,7 +1838,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     return { valid: true, discount_percentage: voucher.discount_percentage };
   });
   ipcMain.handle('settings:save', (event, key: string, value: string) => {
-    if (!['shop_name', 'shop_number', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id', 'currency', 'archive_folder', 'receipt_printer', 'receipt_printer_thermal', 'barcode_scanner_enabled', 'barcode_scanner_detected'].includes(key)) throw new Error('Impostazione non valida.');
+    if (!['shop_name', 'shop_number', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id', 'currency', 'archive_folder', 'receipt_printer', 'receipt_printer_thermal', 'barcode_scanner_enabled', 'barcode_scanner_detected', 'home_image', 'home_video'].includes(key)) throw new Error('Impostazione non valida.');
     if (key === 'currency' && !['EUR', 'USD', 'EGP', 'GBP', 'CHF', 'SAR', 'AED'].includes(value)) throw new Error('Moneta non valida.');
     const setupKeys = ['shop_name', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id'];
     const firstSetup = !authenticatedSessions.has(event.sender.id)
@@ -1830,6 +1846,27 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       && setupKeys.includes(key);
     const session = firstSetup ? undefined : requireSession(event.sender.id);
     if (!firstSetup && normalizedEmployeeRole(session?.role ?? '') !== 'proprietario') throw new Error('Solo il Proprietario può modificare questa impostazione.');
+    if (key === 'home_image') {
+      const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/i.exec(value);
+      if (!match || Buffer.from(match[2], 'base64').length > 5 * 1024 * 1024) throw new Error('Immagine homepage non valida o superiore a 5 MB.');
+      setSetting('home_image', value);
+      setSetting('home_video', '');
+      return;
+    }
+    if (key === 'home_video') {
+      const match = /^data:video\/(mp4|webm);base64,([A-Za-z0-9+/]+={0,2})$/i.exec(value);
+      if (!match) throw new Error('Video homepage non valido.');
+      const contents = Buffer.from(match[2], 'base64');
+      if (contents.length > 50 * 1024 * 1024) throw new Error('Il video homepage deve essere inferiore a 50 MB.');
+      const extension = match[1].toLowerCase();
+      const videoFolder = join(app.getPath('userData'), 'Homepage');
+      mkdirSync(videoFolder, { recursive: true });
+      const videoPath = join(videoFolder, `homepage-${randomUUID()}.${extension}`);
+      writeFileSync(videoPath, contents);
+      setSetting('home_video', videoPath);
+      setSetting('home_image', '');
+      return;
+    }
     setSetting(key, value);
   });
   ipcMain.handle('devices:printers', async (event) => {
@@ -1871,7 +1908,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     if (openError) throw new Error(`Le ricevute sono state salvate, ma non è possibile aprire la cartella: ${openError}`);
     return folderPath;
   });
-  const chooseImage = async (settingKey: 'shop_logo' | 'home_image', title: string) => {
+  const chooseImage = async (settingKey: 'shop_logo' | 'home_image', title: string, apply = true) => {
     const result = await dialog.showOpenDialog(mainWindow, { title, properties: ['openFile'], filters: [{ name: 'Immagini', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] });
     if (result.canceled || !result.filePaths[0]) return null;
     const filePath = result.filePaths[0];
@@ -1880,8 +1917,10 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     const extension = filePath.split('.').pop()?.toLowerCase();
     const mimeType = extension === 'png' ? 'image/png' : extension === 'webp' ? 'image/webp' : 'image/jpeg';
     const imageData = `data:${mimeType};base64,${image.toString('base64')}`;
-    setSetting(settingKey, imageData);
-    if (settingKey === 'home_image') setSetting('home_video', '');
+    if (apply) {
+      setSetting(settingKey, imageData);
+      if (settingKey === 'home_image') setSetting('home_video', '');
+    }
     return imageData;
   };
   ipcMain.handle('settings:choose-shop-logo', (event) => {
@@ -1890,7 +1929,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     if (!firstSetup) requireSession(event.sender.id, ['proprietario']);
     return chooseImage('shop_logo', 'Scegli il logo del negozio');
   });
-  ipcMain.handle('settings:choose-homepage-image', (event) => { requireSession(event.sender.id, ['proprietario']); return chooseImage('home_image', 'Scegli l’immagine homepage'); });
+  ipcMain.handle('settings:choose-homepage-image', (event) => { requireSession(event.sender.id, ['proprietario']); return chooseImage('home_image', 'Scegli l’immagine homepage', false); });
   ipcMain.handle('settings:choose-homepage-video', async (event) => {
     requireSession(event.sender.id, ['proprietario']);
     const result = await dialog.showOpenDialog(mainWindow, { title: 'Scegli il video homepage', properties: ['openFile'], filters: [{ name: 'Video', extensions: ['mp4', 'webm'] }] });
@@ -1899,12 +1938,6 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     const contents = readFileSync(sourcePath);
     if (contents.length > 50 * 1024 * 1024) throw new Error('Il video homepage deve essere inferiore a 50 MB.');
     const extension = sourcePath.toLowerCase().endsWith('.webm') ? 'webm' : 'mp4';
-    const videoFolder = join(app.getPath('userData'), 'Homepage');
-    mkdirSync(videoFolder, { recursive: true });
-    const videoPath = join(videoFolder, `homepage.${extension}`);
-    writeFileSync(videoPath, contents);
-    setSetting('home_video', videoPath);
-    setSetting('home_image', '');
     return `data:video/${extension};base64,${contents.toString('base64')}`;
   });
   ipcMain.handle('archive:choose-folder', async (event) => {

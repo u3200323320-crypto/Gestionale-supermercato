@@ -32,7 +32,7 @@ contextBridge.exposeInMainWorld('gestionale', {
   paySalary: (input: PayrollPaymentInput) => ipcRenderer.invoke('payroll:pay', input),
   payAllSalaries: (input: { pay_month: string; payment_date: string }) => ipcRenderer.invoke('payroll:pay-all', input),
   paySelectedSalaries: (input: { employee_ids: number[]; pay_month: string; payment_date: string }) => ipcRenderer.invoke('payroll:pay-selected', input),
-  saveSetting: (key: 'shop_name' | 'shop_number' | 'shop_address' | 'shop_phone' | 'shop_email' | 'shop_tax_id' | 'currency' | 'archive_folder' | 'receipt_printer' | 'receipt_printer_thermal' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => ipcRenderer.invoke('settings:save', key, value),
+  saveSetting: (key: 'shop_name' | 'shop_number' | 'shop_address' | 'shop_phone' | 'shop_email' | 'shop_tax_id' | 'currency' | 'archive_folder' | 'receipt_printer' | 'receipt_printer_thermal' | 'barcode_scanner_enabled' | 'barcode_scanner_detected' | 'home_image' | 'home_video', value: string) => ipcRenderer.invoke('settings:save', key, value),
   getPrinters: (): Promise<Printer[]> => ipcRenderer.invoke('devices:printers'),
   printReceipt: (target: 'regular' | 'thermal' = 'regular'): Promise<void> => ipcRenderer.invoke('receipt:print', target),
   savePayrollReceipts: (input: { folderName: string; files: Array<{ name: string; data: string }> }): Promise<string> => ipcRenderer.invoke('payroll:save-receipts', input),

@@ -21,6 +21,8 @@ npm run preview:web
 
 Apri l’indirizzo locale mostrato nel terminale (normalmente `http://127.0.0.1:5173`). La demo usa dati fittizi salvati solo nel browser e non accede al database desktop. Il barcode Proprietario dimostrativo è `0000000001`; dalla fascia in alto puoi ripristinare i dati iniziali. Le funzioni che dipendono da dispositivi o file locali sono limitate nella demo.
 
+Su una nuova installazione desktop viene creato l’account dimostrativo Proprietario con barcode pubblico `0000000001`; sostituiscilo prima di usare dati reali. Non vengono salvati screenshot automatici.
+
 Per creare manualmente l'installer Windows:
 
 ```sh

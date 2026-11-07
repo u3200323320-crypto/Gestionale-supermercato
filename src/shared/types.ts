@@ -1,8 +1,8 @@
 export type Section = 'home' | 'inventory' | 'expired-products' | 'inventory-history' | 'stock-movement' | 'stock-distribution' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'expenses' | 'financial-balance' | 'employees' | 'employee-create' | 'payroll' | 'employee-tracker' | 'site-statistics' | 'site-management' | 'site-create' | 'site-list' | 'customer-list' | 'loyalty-generate' | 'loyalty-activate' | 'loyalty-active' | 'settings';
 export type ProductUnit = 'KG' | 'LITRO' | 'PEZZO';
 export type Printer = { name: string; displayName: string };
-export interface Site { id: number; name: string; address: string; phone: string; site_type: 'store' | 'warehouse'; recognition_code: string; created_at: string }
-export type SiteInput = Pick<Site, 'name' | 'address' | 'phone'> & { id?: number };
+export interface Site { id: number; name: string; address: string; phone: string; email: string; tax_id: string; manager_name: string; opening_hours: string; notes: string; site_type: 'store' | 'warehouse'; recognition_code: string; created_at: string }
+export type SiteInput = Pick<Site, 'name' | 'address' | 'phone'> & Partial<Pick<Site, 'email' | 'tax_id' | 'manager_name' | 'opening_hours' | 'notes'>> & { id?: number };
 
 export interface Product {
   id: number;
@@ -259,7 +259,7 @@ declare global {
     paySalary: (input: PayrollPaymentInput) => Promise<void>;
     payAllSalaries: (input: { pay_month: string; payment_date: string }) => Promise<void>;
     paySelectedSalaries: (input: { employee_ids: number[]; pay_month: string; payment_date: string }) => Promise<void>;
-    saveSetting: (key: 'shop_name' | 'shop_number' | 'shop_address' | 'shop_phone' | 'shop_email' | 'shop_tax_id' | 'currency' | 'archive_folder' | 'receipt_printer' | 'receipt_printer_thermal' | 'barcode_scanner_enabled' | 'barcode_scanner_detected', value: string) => Promise<void>;
+    saveSetting: (key: 'shop_name' | 'shop_number' | 'shop_address' | 'shop_phone' | 'shop_email' | 'shop_tax_id' | 'currency' | 'archive_folder' | 'receipt_printer' | 'receipt_printer_thermal' | 'barcode_scanner_enabled' | 'barcode_scanner_detected' | 'home_image' | 'home_video', value: string) => Promise<void>;
     getPrinters: () => Promise<Printer[]>;
     printReceipt: (target?: 'regular' | 'thermal') => Promise<void>;
     savePayrollReceipts: (input: { folderName: string; files: Array<{ name: string; data: string }> }) => Promise<string>;
