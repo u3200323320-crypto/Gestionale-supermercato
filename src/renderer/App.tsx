@@ -750,6 +750,7 @@ export default function App() {
   const [statisticsSite, setStatisticsSite] = useState('Tutte');
   const [unsoldSite, setUnsoldSite] = useState('Tutto');
   const [unsoldListOpen, setUnsoldListOpen] = useState(false);
+  const [unsoldShareText, setUnsoldShareText] = useState<string | null>(null);
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
   const [homeMediaWidthCm, setHomeMediaWidthCm] = useState(0);
   const [deviceTab, setDeviceTab] = useState<string | null>(null);
@@ -832,6 +833,7 @@ export default function App() {
   const [salesFrom, setSalesFrom] = useState('');
   const [salesTo, setSalesTo] = useState('');
   const [salesCategory, setSalesCategory] = useState('Tutte');
+  const [salesSite, setSalesSite] = useState('Tutte');
   const [category, setCategory] = useState('Tutte');
   const [paymentMethod, setPaymentMethod] = useState('Contanti');
   const [voucherCode, setVoucherCode] = useState('');
@@ -1384,6 +1386,11 @@ export default function App() {
       setInventorySiteId('all');
     }
   }, [data, inventorySiteId]);
+  useEffect(() => {
+    if (salesSite !== 'Tutte' && data && !data.sites.some((site) => site.name === salesSite)) {
+      setSalesSite('Tutte');
+    }
+  }, [data, salesSite]);
   useEffect(() => window.gestionale.onSalesExpired(() => {
     void refresh().catch((error: unknown) => notify(errorText(error)));
   }), []);
@@ -2144,6 +2151,17 @@ export default function App() {
       notify(errorText(error));
     }
   };
+  const changeCurrency = async (currency: string) => {
+    const previousCurrency = data?.settings.currency ?? 'EUR';
+    setCurrencyCode(currency);
+    try {
+      await window.gestionale.saveSetting('currency', currency);
+      setData((current) => current ? { ...current, settings: { ...current.settings, currency } } : current);
+    } catch (error) {
+      setCurrencyCode(previousCurrency);
+      notify(errorText(error));
+    }
+  };
   const saveReceiptPrinter = async (printerName: string) => {
     try {
       await window.gestionale.saveSetting('receipt_printer', printerName);
@@ -2297,6 +2315,24 @@ export default function App() {
     const link = document.createElement('a');
     link.href = url;
     link.download = rtl ? `المخزون-${todayKey}.csv` : `magazzino-${todayKey}.csv`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const exportExpiredProductsCsv = () => {
+    const escapeCell = (value: string | number, forceText = false) => `"${`${forceText ? "'" : ''}${String(value)}`.replaceAll('"', '""')}"`;
+    const rtl = language === 'ar';
+    const rows: Array<Array<string | number>> = [
+      rtl ? ['المنتج', 'الرمز', 'الفئة', 'المخزون', 'تاريخ انتهاء الصلاحية'] : ['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Data di scadenza'],
+      ...expiredProducts.map((product) => [
+        product.name, product.code, localizedText(product.category, language),
+        `${quantityFormat.format(product.stock)} ${product.unit ?? 'PEZZO'}`, product.expiry_date ?? '',
+      ]),
+    ];
+    const csv = `\uFEFF${rows.map((row, index) => row.map((value) => escapeCell(value, index > 0)).join(';')).join('\r\n')}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = rtl ? `المنتجات-المنتهية-${todayKey}.csv` : `articoli-scaduti-${todayKey}.csv`;
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -2998,6 +3034,7 @@ export default function App() {
   const salesList = data?.sales.filter((sale) =>
     sale.receipt_no.includes(saleSearch)
     && (salesCategory === 'Tutte' || sale.items.some((item) => data.products.some((product) => product.id === item.product_id && product.category === salesCategory)))
+    && (salesSite === 'Tutte' || sale.site === salesSite)
     && matchesSalesPeriod(sale.created_at)
   ) ?? [];
   const saleMatch = saleManagementSearch.trim()
@@ -3172,21 +3209,6 @@ export default function App() {
   const promotionDiscountLabel = (offer: Promotion) => offer.discount_type === 'percentage'
     ? `${offer.percentage}%`
     : `${offer.buy_quantity}+${offer.free_quantity}`;
-  const createUnsoldListPdf = () => {
-    const doc = new jsPDF();
-    doc.setFontSize(18);
-    doc.text(data?.settings.shop_name ?? 'Gestione Supermercato', 14, 17);
-    doc.setFontSize(11);
-    doc.text('Articoli ancora in magazzino', 14, 25);
-    autoTable(doc, {
-      startY: 32,
-      head: [['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']],
-      body: unsoldListProducts.map((product) => [product.name, product.category, `${product.stock} ${product.unit ?? 'PEZZO'}`, money.format(product.sale_price)]),
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [22, 133, 220] },
-    });
-    return doc;
-  };
   const exportInventoryHistoryPdf = async () => {
     if (!data) return;
     try {
@@ -3237,19 +3259,26 @@ export default function App() {
     }
   };
   const shareUnsoldList = async () => {
+    const siteLabel = unsoldSite === 'Tutto' ? 'Tutte le sedi' : storeSites.find((site) => String(site.id) === unsoldSite)?.name ?? 'Tutte le sedi';
+    const lines = unsoldListProducts.map((product) =>
+      `• ${product.name} — ${quantityFormat.format(product.stock)} ${product.unit ?? 'PEZZO'} · ${money.format(product.sale_price)}`
+    );
+    const text = [
+      'Articoli ancora in magazzino',
+      `Sede: ${siteLabel}`,
+      ...(lines.length ? lines : ['Nessun articolo in magazzino.']),
+    ].join('\n');
     try {
-      const doc = createUnsoldListPdf();
-      const file = new File([doc.output('blob')], `articoli-magazzino-${todayKey}.pdf`, { type: 'application/pdf' });
-      if (!navigator.share || !navigator.canShare?.({ files: [file] })) {
-        doc.save(file.name);
-        notify('La condivisione non è supportata qui: ho scaricato la lista in PDF.');
+      if (!navigator.share) {
+        setUnsoldShareText(text);
         return;
       }
-      await navigator.share({ files: [file], title: 'Articoli ancora in magazzino' });
-      notify('Lista PDF condivisa.');
+      await navigator.share({ title: 'Articoli ancora in magazzino', text });
+      notify('Lista condivisa.');
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
-      notify(errorText(error));
+      setUnsoldShareText(text);
+      notify(`Condivisione di sistema non disponibile: ${errorText(error)}`);
     }
   };
 
@@ -3318,7 +3347,7 @@ export default function App() {
         <div className="product-grid">{inventoryList.map((product) => { const stock = inventoryStockFor(product.id); return <button className="product-tile" key={product.id} onClick={() => { if (!isCashierRole(activeRole)) setSelectedProduct(product); }}><img className="tile-art" src={product.photo_data || productArtwork(product)} alt="" /><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="tile-price">{money.format(product.sale_price)}</span><span className={`tile-stock${stock <= product.low_stock_threshold ? ' text-low' : ''}`}>{quantityFormat.format(stock)} disponibili</span></button>; })}</div>{inventoryList.length === 0 && <Empty icon={Package} title="Nessun articolo trovato" detail="Modifica la ricerca o aggiungi un articolo." />}
       </div>}
 
-      {section === 'expired-products' && <div className="page-content"><div className="page-toolbar"><div><h2>Gestione prodotti scaduti</h2><p>Verifica gli articoli scaduti e registra lo smaltimento.</p></div><button className="button button-outline" onClick={() => navigateTo('inventory')}>Torna al magazzino</button></div><Table headings={['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Data di scadenza', 'Azione']}><>{expiredProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td className="mono">{product.code}</td><td>{product.category}</td><td>{quantityFormat.format(product.stock)} {product.unit ?? 'PEZZO'}</td><td>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</td><td><button className="button button-danger" onClick={() => void disposeExpiredProduct(product)}><Trash2 size={14} /> Butta articolo</button></td></tr>)}</>{!expiredProducts.length && <tr><td colSpan={6} className="empty-cell">Non ci sono prodotti scaduti da gestire.</td></tr>}</Table></div>}
+      {section === 'expired-products' && <div className="page-content"><div className="page-toolbar"><div><h2>Gestione prodotti scaduti</h2><p>Verifica gli articoli scaduti e registra lo smaltimento.</p></div><div className="toolbar-actions"><button className="button button-outline" disabled={!expiredProducts.length} onClick={exportExpiredProductsCsv}><ArrowDownToLine size={16} /> Scarica lista</button><button className="button button-outline" onClick={() => navigateTo('inventory')}>Torna al magazzino</button></div></div><Table headings={['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Data di scadenza', 'Azione']}><>{expiredProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td className="mono">{product.code}</td><td>{product.category}</td><td>{quantityFormat.format(product.stock)} {product.unit ?? 'PEZZO'}</td><td>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</td><td><button className="button button-danger" onClick={() => void disposeExpiredProduct(product)}><Trash2 size={14} /> Butta articolo</button></td></tr>)}</>{!expiredProducts.length && <tr><td colSpan={6} className="empty-cell">Non ci sono prodotti scaduti da gestire.</td></tr>}</Table></div>}
 
       {section === 'inventory-history' && <div className="page-content"><div id="inventory-history-print">
         <div className="inventory-history-actions no-print"><SelectField label="Periodo" value={inventoryHistoryPeriod} onChange={setInventoryHistoryPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Da - A']} />{inventoryHistoryPeriod === 'Da - A' && <><Field label="Da" type="date" value={inventoryHistoryFrom} onChange={(event) => setInventoryHistoryFrom(event.target.value)} /><Field label="A" type="date" value={inventoryHistoryTo} onChange={(event) => setInventoryHistoryTo(event.target.value)} /></>}<SearchInput value={inventoryHistorySearch} onChange={setInventoryHistorySearch} placeholder="Cerca articolo, persona o nota…" /><button className="button button-outline" onClick={() => void exportInventoryHistoryPdf()}><ArrowDownToLine size={16} /> Esporta lista</button></div>
@@ -3359,7 +3388,7 @@ export default function App() {
         <aside className="cart-panel"><div className="cart-heading"><div className="cart-heading-title"><h2>CARRELLO <span>{quantityFormat.format(cart.reduce((sum, item) => sum + item.quantity, 0))}</span></h2></div><button className="icon-button cart-clear-button" title="Svuota carrello" aria-label="Svuota carrello" disabled={!cart.length || salesDisabled} onClick={() => { setCart([]); setManualPromotionId(undefined); setAutomaticPromotionId(undefined); }}><Trash2 size={17} /></button></div><div className="cart-lines">{cart.map((item) => <div className="cart-line" key={item.product_id}><div className="cart-line-name"><strong>{item.name}</strong><small>{quantityFormat.format(item.quantity)} {item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}</small></div><div className="quantity-control"><button disabled={salesDisabled} onClick={() => changeQuantity(item.product_id, -1)} aria-label="Rimuovi uno"><Minus size={13} /></button><span>{quantityFormat.format(item.quantity)}</span><button disabled={salesDisabled} onClick={() => changeQuantity(item.product_id, 1)} aria-label="Aggiungi uno"><Plus size={13} /></button></div><strong className="line-total">{money.format(item.quantity * item.unit_price)}</strong></div>)}{!cart.length && <div className="cart-empty"><ShoppingBasket size={25} /><span>Seleziona gli articoli<br />per iniziare una vendita</span></div>}</div><div className="receipt-summary"><div><span>Subtotale</span><span>{money.format(subtotal)}</span></div><div className="total-row"><strong>TOTALE</strong><strong>{money.format(subtotal)}</strong></div></div><button className="button button-primary checkout-button" disabled={!cart.length || salesDisabled} onClick={() => setCheckoutOpen(true)}>Procedi al pagamento <span>→</span></button></aside>
       </div></div>}
 
-      {section === 'sales' && <div className="page-content"><div className="sale-tools"><button className="button button-outline sale-camera-button" onClick={() => setCamera(true)}><Camera size={16} /> Cerca con fotocamera</button><SearchInput value={saleSearch} onChange={setSaleSearch} placeholder="Cerca numero scontrino…" numericOnly /><button className="button button-outline sale-report-button" onClick={() => { setReportExportType('sales-pdf'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Scarica report</button></div><div className="sale-filters"><SelectField label="Periodo" value={salesPeriod} onChange={setSalesPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A']} />{salesPeriod === 'Da - A' && <><Field label="Da" type="date" value={salesFrom} onChange={(event) => setSalesFrom(event.target.value)} /><Field label="A" type="date" value={salesTo} onChange={(event) => setSalesTo(event.target.value)} /></>}<SelectField label="Categoria" value={salesCategory} onChange={setSalesCategory} options={['Tutte', ...categories]} /></div><SalesTable sales={salesList} onSelect={setReceipt} /></div>}
+      {section === 'sales' && <div className="page-content"><div className="sale-tools"><button className="button button-outline sale-camera-button" onClick={() => setCamera(true)}><Camera size={16} /> Cerca con fotocamera</button><SearchInput value={saleSearch} onChange={setSaleSearch} placeholder="Cerca numero scontrino…" numericOnly /><button className="button button-outline sale-report-button" onClick={() => { setReportExportType('sales-pdf'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Scarica report</button></div><div className="sale-filters"><details className="statistics-period-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.statistics-period-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Periodo: {salesPeriod}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra vendite per periodo">{['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A'].map((period) => <button key={period} className={`status-filter${salesPeriod === period ? ' active' : ''}`} aria-pressed={salesPeriod === period} onClick={(event) => { setSalesPeriod(period); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{period}</button>)}</div></details><details className="statistics-period-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.statistics-period-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Sede: {salesSite}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra vendite per sede">{['Tutte', ...storeSites.map((site) => site.name)].map((site) => <button key={site} className={`status-filter${salesSite === site ? ' active' : ''}`} aria-pressed={salesSite === site} onClick={(event) => { setSalesSite(site); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{site}</button>)}</div></details>{salesPeriod === 'Da - A' && <><Field label="Da" type="date" value={salesFrom} onChange={(event) => setSalesFrom(event.target.value)} /><Field label="A" type="date" value={salesTo} onChange={(event) => setSalesTo(event.target.value)} /></>}<SelectField label="Categoria" value={salesCategory} onChange={setSalesCategory} options={['Tutte', ...categories]} /></div><SalesTable sales={salesList} onSelect={setReceipt} /></div>}
       {section === 'sale-management' && <div className="page-content sale-management-page">
         <div className="sale-management-search"><SearchInput value={saleManagementSearch} onChange={setSaleManagementSearch} placeholder="Inserisci o scansiona il numero dello scontrino…" numericOnly /></div>
         {saleMatch ? <section className="panel sale-found">
@@ -3522,7 +3551,7 @@ export default function App() {
       </div>}
 
       {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">{settingsTab === null ? <nav className="settings-nav">{[{ name: 'Info Negozio', icon: Store }, { name: 'Archivio dati', icon: Archive }, { name: 'Dispositivi', icon: Barcode }, { name: 'Homepage', icon: House }, { name: 'Operativo', icon: Check }].filter(({ name }) => normalizedRole(activeRole) === 'proprietario' || !['Info Negozio', 'Archivio dati', 'Homepage'].includes(name)).map(({ name, icon: Icon }) => <button key={name} onClick={() => { setSettingsTab(name); setDeviceTab(null); }}><Icon size={17} />{name === 'Homepage' ? 'Immagine Homepage' : name}</button>)}</nav> : <section className="settings-panel"><button className="settings-back" onClick={() => { if (settingsTab === 'Dispositivi' && deviceTab) setDeviceTab(null); else { setSettingsTab(null); setDeviceTab(null); } }}><ArrowLeft size={15} />{settingsTab === 'Dispositivi' && deviceTab ? 'Dispositivi' : 'Impostazioni'}</button>
-        {settingsTab === 'Info Negozio' && <><div className="settings-title"><h2>Info Negozio</h2><p>Nome, logo e moneta utilizzata dal negozio.</p></div><form className="settings-form store-info-form" onSubmit={saveStoreName}><Field label="Nome attività" value={shopName} onChange={(e) => setShopName(e.target.value)} required /><Field label="Numero negozio" value={shopNumber} onChange={(e) => setShopNumber(e.target.value)} /><label className="field"><span>{language === 'ar' ? 'العملة المستخدمة' : 'Moneta utilizzata'}</span><select value={currencyCode} onChange={(event) => setCurrencyCode(event.target.value)}>{currencyChoices.map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select></label><div className="receipt-preview"><Store size={17} /><span>{shopName || 'Nome negozio'}</span><small>Anteprima intestazione scontrino</small></div><div className="shop-logo-setting store-info-logo"><span className="field-label">Logo del negozio</span>{data.settings.shop_logo && <img src={data.settings.shop_logo} alt="Logo attuale" />}<button className="button button-outline" type="button" onClick={() => void chooseShopLogo()}><Store size={15} /> {data.settings.shop_logo ? 'Sostituisci logo' : 'Scegli logo'}</button></div><button className="button button-primary"><Check size={16} /> {language === 'ar' ? 'حفظ الإعدادات' : 'Salva impostazioni'}</button></form></>}
+        {settingsTab === 'Info Negozio' && <><div className="settings-title"><h2>Info Negozio</h2><p>Nome, logo e moneta utilizzata dal negozio.</p></div><form className="settings-form store-info-form" onSubmit={saveStoreName}><Field label="Nome attività" value={shopName} onChange={(e) => setShopName(e.target.value)} required /><Field label="Numero negozio" value={shopNumber} onChange={(e) => setShopNumber(e.target.value)} /><label className="field"><span>{language === 'ar' ? 'العملة المستخدمة' : 'Moneta utilizzata'}</span><select value={currencyCode} onChange={(event) => void changeCurrency(event.target.value)}>{currencyChoices.map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select></label><div className="receipt-preview"><Store size={17} /><span>{shopName || 'Nome negozio'}</span><small>Anteprima intestazione scontrino</small></div><div className="shop-logo-setting store-info-logo"><span className="field-label">Logo del negozio</span>{data.settings.shop_logo && <img src={data.settings.shop_logo} alt="Logo attuale" />}<button className="button button-outline" type="button" onClick={() => void chooseShopLogo()}><Store size={15} /> {data.settings.shop_logo ? 'Sostituisci logo' : 'Scegli logo'}</button></div><button className="button button-primary"><Check size={16} /> {language === 'ar' ? 'حفظ الإعدادات' : 'Salva impostazioni'}</button></form></>}
         {settingsTab === 'Archivio dati' && <><div className="settings-title"><h2>Archivio locale</h2><p>Database SQLite e copie giornaliere dei dati.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Archivio locale attivo</div><div className="database-card"><div className="security-icon"><Archive size={20} /></div><div><strong>Database SQLite</strong><span className="database-path">{data.settings.database_file}</span></div><span className="stock-badge">Attivo</span></div><div className="settings-form"><label className="field"><span>Cartella esportazioni giornaliere</span><div className="folder-input"><input value={archiveFolder} readOnly /><button className="button button-outline" type="button" onClick={() => void chooseFolder()}>Scegli cartella</button></div></label><p className="help-copy">Ogni giorno a mezzanotte vengono aggiornati file TXT e PDF nelle cartelle Magazzino, Cassa, Vendite e Statistiche.</p></div></>}
         {settingsTab === 'Dispositivi' && (deviceTab === null ? <><div className="settings-title"><h2>Dispositivi</h2><p>Seleziona un dispositivo per configurarlo.</p></div><nav className="settings-nav device-menu"><button onClick={() => setDeviceTab('Lettore barcode')}><Barcode size={17} />Lettore di codici a barre</button><button onClick={() => setDeviceTab('Stampante scontrini')}><Printer size={17} />Stampante Wi-Fi</button></nav></> : deviceTab === 'Lettore barcode' ? <><div className="settings-title"><h2>Lettore di codici a barre</h2><p>Configura il lettore collegato al computer.</p></div><div className="device-setting"><div className="device-heading"><div className="security-icon"><Barcode size={20} /></div><div><strong>Lettore di codici a barre</strong><span>{data.settings.barcode_scanner_detected ? 'Rilevato: è stata acquisita almeno una scansione su questo computer.' : 'In attesa della prima lettura del lettore USB/HID.'}</span></div><button className={`toggle-button${data.settings.barcode_scanner_enabled ? ' enabled' : ''}`} type="button" role="switch" aria-checked={data.settings.barcode_scanner_enabled} onClick={() => void toggleBarcodeScanner()}>{data.settings.barcode_scanner_enabled ? 'Attivo' : 'Disattivo'}</button></div><p className="help-copy">I lettori USB che si comportano come tastiera vengono riconosciuti automaticamente quando inviano un codice. La preferenza resta salvata tra gli avvii.</p></div></> : <><div className="settings-title"><h2>Stampante scontrini</h2><p>Collega una stampante rilevata dal sistema.</p></div><div className="device-setting"><div className="device-printer-row"><SelectField label="Stampante collegata" value={data.settings.receipt_printer} onChange={(value) => void saveReceiptPrinter(value)} options={['', ...printers.map((printer) => printer.name)]} labels={['Seleziona stampante', ...printers.map((printer) => printer.displayName || printer.name)]} /><button className="button button-outline" type="button" onClick={() => void window.gestionale.getPrinters().then(setPrinters).catch((error: unknown) => notify(errorText(error)))}><Printer size={15} /> Rileva stampanti</button></div>{!printers.length && <p className="help-copy">Nessuna stampante rilevata. Verifica che sia collegata e installata nel sistema.</p>}{data.settings.receipt_printer && !printers.some((printer) => printer.name === data.settings.receipt_printer) && <p className="help-copy">La stampante salvata non è attualmente disponibile: selezionane una nuova.</p>}</div></>)}
         {settingsTab === 'Homepage' && <><div className="settings-title"><h2>Homepage</h2><p>Personalizza l’immagine o il video mostrato nella pagina iniziale.</p></div><div className="homepage-media-frame" ref={homeMediaFrameRef}>{data.settings.home_video ? <video src={data.settings.home_video} autoPlay muted loop playsInline /> : <img src={data.settings.home_image || homeBanner} alt="Anteprima homepage" />}</div><small className="homepage-media-size">Dimensioni: {homeMediaWidthCm} × 5 cm</small><div className="homepage-media-actions"><button className="button button-outline" type="button" onClick={() => void chooseHomepageImage()}><House size={15} /> Sostituisci immagine</button><button className="button button-outline" type="button" onClick={() => void chooseHomepageVideo()}><Video size={15} /> Sostituisci video</button></div></>}
@@ -3530,7 +3559,8 @@ export default function App() {
       </section>}</div></div>}
     </main>
 
-    {unsoldListOpen && <Modal title="Articoli ancora in magazzino" close={() => setUnsoldListOpen(false)} wide><label className="select-wrap unsold-site-filter"><span>Sede</span><select value={unsoldSite} onChange={(event) => setUnsoldSite(event.target.value)}><option value="Tutto">Tutto</option>{storeSites.map((site) => <option key={site.id} value={String(site.id)}>{site.name}</option>)}</select><ChevronDown size={14} /></label><div id="unsold-list-print"><Table headings={['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']}><>{unsoldListProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td>{product.category}</td><td>{product.stock} {product.unit ?? 'PEZZO'}</td><td>{money.format(product.sale_price)}</td></tr>)}</>{!unsoldListProducts.length && <tr><td colSpan={4} className="empty-cell">Non risultano articoli rimanenti in magazzino.</td></tr>}</Table></div><div className="unsold-list-actions no-print"><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa</button><button className="button button-primary" onClick={() => void shareUnsoldList()}><Share2 size={16} /> Condividi</button></div></Modal>}
+    {unsoldListOpen && <Modal title="Articoli ancora in magazzino" close={() => setUnsoldListOpen(false)} wide><details className="statistics-period-dropdown unsold-site-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.statistics-period-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Sede: {unsoldSite === 'Tutto' ? 'Tutto' : storeSites.find((site) => String(site.id) === unsoldSite)?.name ?? 'Tutto'}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra articoli per sede">{['Tutto', ...storeSites.map((site) => String(site.id))].map((siteId) => { const name = siteId === 'Tutto' ? 'Tutto' : storeSites.find((site) => String(site.id) === siteId)?.name ?? ''; return <button key={siteId} className={`status-filter${unsoldSite === siteId ? ' active' : ''}`} aria-pressed={unsoldSite === siteId} onClick={(event) => { setUnsoldSite(siteId); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{name}</button>; })}</div></details><div id="unsold-list-print"><Table headings={['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']}><>{unsoldListProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td>{product.category}</td><td>{product.stock} {product.unit ?? 'PEZZO'}</td><td>{money.format(product.sale_price)}</td></tr>)}</>{!unsoldListProducts.length && <tr><td colSpan={4} className="empty-cell">Non risultano articoli rimanenti in magazzino.</td></tr>}</Table></div><div className="unsold-list-actions no-print"><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa</button><button className="button button-primary" onClick={() => void shareUnsoldList()}><Share2 size={16} /> Condividi</button></div></Modal>}
+    {unsoldShareText !== null && <Modal title="Condividi lista" close={() => setUnsoldShareText(null)}><div className="unsold-share-options"><p>Seleziona un’app per inviare la lista. Il file non verrà scaricato.</p><a className="button button-outline" href={`https://wa.me/?text=${encodeURIComponent(unsoldShareText)}`} target="_blank" rel="noreferrer">WhatsApp</a><a className="button button-outline" href={`https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent('Articoli ancora in magazzino')}&body=${encodeURIComponent(unsoldShareText)}`} target="_blank" rel="noreferrer">Gmail</a><a className="button button-outline" href={`mailto:?subject=${encodeURIComponent('Articoli ancora in magazzino')}&body=${encodeURIComponent(unsoldShareText)}`}>Email</a><button className="button button-outline" type="button" onClick={() => void navigator.clipboard.writeText(unsoldShareText).then(() => { setUnsoldShareText(null); notify('Lista copiata negli appunti.'); }).catch((error: unknown) => notify(`Impossibile copiare la lista: ${errorText(error)}`))}>Copia lista</button></div></Modal>}
     {reportExportOpen && <Modal title={reportExportType.startsWith('sales') ? 'Esporta report vendite' : 'Esporta report contabilità e finanza'} close={() => setReportExportOpen(false)}><div className="report-export-options"><p>Vuoi applicare al report il filtro temporale selezionato ({reportExportType.startsWith('sales') ? salesPeriod : balancePeriod}) o includere tutto il periodo disponibile?</p><button className="button button-primary" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(true); else if (reportExportType === 'sales-xlsx') void exportSalesXlsx(true); else void downloadFinancialBalance(true); }}><Check size={15} /> Rispetta il filtro di tempo</button><button className="button button-outline" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(false); else if (reportExportType === 'sales-xlsx') void exportSalesXlsx(false); else void downloadFinancialBalance(false); }}><ArrowDownToLine size={15} /> Esporta tutto</button></div></Modal>}
     {employeeDetails && <Modal title={`${employeeDetails.first_name} ${employeeDetails.last_name}`} close={() => setEmployeeDetails(null)} rightHalf>
       <div className={`employee-detail-content${normalizedRole(employeeDetails.role) === 'proprietario' ? ' employee-owner-profile' : ''}`}>
