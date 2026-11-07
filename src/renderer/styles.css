@@ -63,6 +63,14 @@ h1, h2, h3, p { margin: 0; }
 h1, h2, h3, .brand strong { font-family: 'Manrope', 'Segoe UI', sans-serif; letter-spacing: 0; }
 
 .app-shell { min-height: 100vh; }
+.web-preview-banner { position: fixed; inset: 0 0 auto; z-index: 10; display: flex; min-height: 42px; align-items: center; justify-content: center; gap: 12px; padding: 6px 16px; background: #e4f2ff; color: #174e78; font-size: 11px; }
+.web-preview-banner strong { font-family: 'Manrope', sans-serif; font-size: 12px; }
+.web-preview-banner span { color: #3d6787; }
+.web-preview-banner button { padding: 4px 8px; border: 1px solid #b6d6ef; border-radius: 4px; background: #fff; color: #174e78; cursor: pointer; font-size: 10px; }
+.web-preview-banner button:hover { background: #f5faff; }
+.app-shell:has(.web-preview-banner) { padding-top: 42px; }
+.app-shell:has(.web-preview-banner) .sidebar { top: 42px; height: calc(100vh - 42px); }
+.app-shell:has(.web-preview-banner) .topbar { top: 42px; }
 .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 5; display: flex; width: 235px; flex-direction: column; padding: 26px 16px 15px; border-right: 1px solid var(--line); background: #fff; }
 .brand { display: flex; min-height: 50px; align-items: center; gap: 11px; padding: 0 8px; }
 .brand > div:last-child { min-width: 0; }
@@ -534,7 +542,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .lock-screen::before, .lock-screen::after { position: fixed; inset: 0; z-index: 0; content: ''; pointer-events: none; }
 .lock-screen::before { background: radial-gradient(ellipse at 16% 78%, rgb(37 125 74 / 17%), transparent 42%), radial-gradient(ellipse at 84% 20%, rgb(230 151 76 / 19%), transparent 45%), radial-gradient(ellipse at 48% 48%, rgb(255 255 255 / 48%), transparent 58%); background-size: 140% 140%; animation: lock-atmosphere 12s ease-in-out infinite alternate; }
 .lock-screen::after { background: radial-gradient(ellipse at 50% 50%, transparent 35%, rgb(255 255 255 / 36%) 100%); background-size: 180% 180%; opacity: .65; animation: lock-light 16s ease-in-out infinite alternate; }
-.lock-screen > * { position: relative; z-index: 1; }
+.lock-screen > *:not(.web-preview-banner) { position: relative; z-index: 1; }
 @keyframes lock-atmosphere { from { opacity: .55; transform: scale(1); } to { opacity: 1; transform: scale(1.05); } }
 @keyframes lock-light { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
 @media (prefers-reduced-motion: reduce) { .lock-screen::before, .lock-screen::after { animation: none; } }

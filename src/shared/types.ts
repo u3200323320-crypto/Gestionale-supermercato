@@ -233,6 +233,7 @@ export interface ProductInput {
 declare global {
   interface Window {
   gestionale: {
+    isDemo: boolean;
     getState: () => Promise<AppState>;
     onSalesExpired: (callback: () => void) => () => void;
     verifyEmployeeBarcode: (barcode: string) => Promise<boolean>;

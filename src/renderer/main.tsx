@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import installWebPreview from './web-preview';
 import './styles.css';
 import '@fontsource/dm-sans/400.css';
 import '@fontsource/dm-sans/500.css';
@@ -13,6 +14,8 @@ import '@fontsource/manrope/800.css';
 import '@fontsource/noto-sans-arabic/400.css';
 import '@fontsource/noto-sans-arabic/600.css';
 import '@fontsource/noto-sans-arabic/700.css';
+
+installWebPreview();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

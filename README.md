@@ -11,6 +11,16 @@ npm ci
 npm run dev
 ```
 
+## Anteprima web locale
+
+Per provare l’interfaccia nel browser senza installare l’app desktop:
+
+```sh
+npm run preview:web
+```
+
+Apri l’indirizzo locale mostrato nel terminale (normalmente `http://127.0.0.1:5173`). La demo usa dati fittizi salvati solo nel browser e non accede al database desktop. Il barcode Proprietario dimostrativo è `0000000001`; dalla fascia in alto puoi ripristinare i dati iniziali. Le funzioni che dipendono da dispositivi o file locali sono limitate nella demo.
+
 Per creare manualmente l'installer Windows:
 
 ```sh

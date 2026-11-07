@@ -2,6 +2,7 @@ node_modules/
 out/
 release/
 dist/
+dist-web/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal

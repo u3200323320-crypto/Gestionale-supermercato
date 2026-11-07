@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, EmployeeInput, Expense, PayrollPaymentInput, Printer, ProductInput, PromotionInput, SaleItem, SiteInput, VoucherBatchInput } from '../shared/types';
 
 contextBridge.exposeInMainWorld('gestionale', {
+  isDemo: false,
   getState: () => ipcRenderer.invoke('state:get'),
   onSalesExpired: (callback: () => void) => {
     const listener = () => callback();
