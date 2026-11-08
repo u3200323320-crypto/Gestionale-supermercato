@@ -3329,57 +3329,84 @@ export default function App() {
     ? `${offer.percentage}%`
     : `${offer.buy_quantity}+${offer.free_quantity}`;
   const buildLowStockPdf = async (siteId: string) => {
+    if (!data) throw new Error('I dati del negozio non sono disponibili.');
     const rtl = language === 'ar';
-    const doc = new jsPDF();
+    const doc = new jsPDF({ orientation: 'portrait' });
     if (rtl) await addArabicPdfFont(doc);
     doc.setR2L(rtl);
-    const title = rtl ? 'المنتجات القريبة من النفاد' : 'Merce in esaurimento';
+    const reportText = (value: string) => rtl ? doc.processArabic(value) : value;
     const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
     const exportedAt = new Date();
+    const latinShopName = rtl && /^[\x20-\x7E]*$/.test(data.settings.shop_name);
+    const textX = rtl ? (data.settings.shop_logo ? pageWidth - 43 : pageWidth - 14) : data.settings.shop_logo ? 43 : 14;
     doc.setFillColor(22, 133, 220);
-    doc.rect(8, 7, pageWidth - 16, 25, 'F');
-    doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'bold');
-    doc.setFontSize(14);
-    doc.setTextColor(255, 255, 255);
-    const logoX = rtl ? pageWidth - 23 : 12;
-    if (data?.settings.shop_logo) {
-      doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', logoX, 10, 12, 12);
-    } else {
-      doc.setFillColor(255, 255, 255);
-      doc.roundedRect(logoX, 10, 12, 12, 2, 2, 'F');
-      doc.setFillColor(22, 133, 220);
-      doc.rect(logoX + 2, 15, 8, 5, 'F');
-      doc.rect(logoX + 3, 12, 6, 2, 'F');
+    doc.rect(0, 0, pageWidth, 36, 'F');
+    if (data.settings.shop_logo) {
+      doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', rtl ? pageWidth - 36 : 12, 5, 24, 24);
     }
-    const reportTitle = rtl ? doc.processArabic(title) : title;
-    doc.text(reportTitle, rtl ? pageWidth - 27 : 28, 17, rtl ? { align: 'right' } : undefined);
+    doc.setTextColor(255, 255, 255);
+    doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'bold');
+    doc.setFontSize(16);
+    if (latinShopName) doc.setR2L(false);
+    doc.text(reportText(data.settings.shop_name), textX, 15, rtl ? { align: 'right' } : undefined);
+    if (latinShopName) doc.setR2L(true);
     doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'normal');
-    doc.setFontSize(8);
-    const timestamp = `${navbarDate.format(exportedAt)} · ${navbarTime.format(exportedAt)}`;
-    doc.text(rtl ? doc.processArabic(timestamp) : timestamp, rtl ? pageWidth - 27 : 28, 27, rtl ? { align: 'right' } : undefined);
+    doc.setFontSize(9);
+    const title = rtl ? 'المنتجات القريبة من النفاد' : 'Merce in esaurimento';
+    const timestamp = `${receiptDate.format(exportedAt)} · ${navbarTime.format(exportedAt)}`;
+    doc.text(reportText(`${title} · ${timestamp}`), textX, 26, rtl ? { align: 'right' } : undefined);
     doc.setTextColor(0, 0, 0);
     const sitesToExport = siteId === 'all' ? storeSites : storeSites.filter((site) => String(site.id) === siteId);
     const headings = rtl
-      ? ['الحد الأدنى', 'المخزون', 'الفئة', 'الرمز', 'المنتج', 'الفرع']
-      : ['Sede', 'Articolo', 'Codice', 'Categoria', 'Giacenza', 'Soglia minima'];
-    const rows = sitesToExport.flatMap((site) => lowStockProductsForSite(site.id).map((product) => [
-      site.name,
-      product.name,
-      product.code,
-      localizedText(product.category, language),
-      `${quantityFormat.format(product.siteStock)} ${product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}`,
-      `${quantityFormat.format(product.low_stock_threshold)} ${product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}`,
-    ]));
-    autoTable(doc, {
-      startY: 36,
-      head: [rtl ? headings.map((value) => doc.processArabic(value)) : headings],
-      body: rows.map((row) => {
-        const values = rtl ? [...row].reverse() : row;
-        return rtl ? values.map((value) => doc.processArabic(value)) : values;
-      }),
-      styles: { font: rtl ? 'DejaVuSans' : 'helvetica', fontSize: 8, halign: rtl ? 'right' : 'left' },
-      headStyles: { fillColor: [22, 133, 220], halign: rtl ? 'right' : 'left' },
-    });
+      ? ['الحد الأدنى', 'المخزون', 'الفئة', 'الرمز', 'المنتج']
+      : ['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Soglia minima'];
+    const font = rtl ? 'DejaVuSans' : 'helvetica';
+    let cursorY = 44;
+    for (const site of sitesToExport) {
+      const sectionTitle = rtl ? `الفرع: ${site.name}` : `Sede: ${site.name}`;
+      const pageBreak = cursorY + 18 > pageHeight - 14;
+      if (pageBreak) {
+        doc.addPage();
+        cursorY = 18;
+      }
+      doc.setFont(font, 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(22, 133, 220);
+      doc.text(reportText(sectionTitle), rtl ? pageWidth - 10 : 10, cursorY, rtl ? { align: 'right' } : undefined);
+      const products = lowStockProductsForSite(site.id);
+      const rows = products.map((product) => [
+        product.name,
+        product.code,
+        localizedText(product.category, language),
+        `${quantityFormat.format(product.siteStock)} ${product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}`,
+        `${quantityFormat.format(product.low_stock_threshold)} ${product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}`,
+      ]);
+      autoTable(doc, {
+        startY: cursorY + 4,
+        head: [(rtl ? [...headings].reverse() : headings).map(reportText)],
+        body: rows.map((row) => (rtl ? [...row].reverse() : row).map(reportText)),
+        showHead: 'everyPage',
+        theme: 'striped',
+        styles: { font, fontSize: rtl ? 7 : 8, cellPadding: 2, overflow: 'linebreak', textColor: [49, 60, 53], lineColor: [224, 230, 224], halign: rtl ? 'right' : 'left' },
+        headStyles: { fillColor: [22, 133, 220], textColor: [255, 255, 255], fontStyle: 'bold', halign: rtl ? 'right' : 'left' },
+        alternateRowStyles: { fillColor: [244, 247, 244] },
+        margin: { left: 8, right: 8, bottom: 14 },
+        didDrawPage: () => {
+          doc.setFont(font, 'normal');
+          doc.setFontSize(8);
+          doc.setTextColor(120, 130, 122);
+          const footer = rtl
+            ? `${data.settings.shop_name} · الصفحة ${doc.getNumberOfPages()}`
+            : `${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`;
+          if (latinShopName) doc.setR2L(false);
+          doc.text(reportText(footer), rtl ? pageWidth - 8 : 8, pageHeight - 7, rtl ? { align: 'right' } : undefined);
+          if (latinShopName) doc.setR2L(true);
+        },
+      });
+      cursorY = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? cursorY + 12;
+      cursorY += 12;
+    }
     return doc;
   };
   const confirmLowStockExport = async () => {
