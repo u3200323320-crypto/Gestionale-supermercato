@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import Database from 'better-sqlite3';
 import PDFDocument from 'pdfkit';
 import { randomInt, randomBytes, randomUUID, scryptSync } from 'node:crypto';
-import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
@@ -86,6 +86,22 @@ function sessionForSender(senderId: number): AuthenticatedEmployee | undefined {
 
 function setSetting(key: string, value: string): void {
   database.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+}
+
+function writeInitialAccessFile(folder: string, barcode: string): void {
+  const accessFolder = join(folder, 'Accesso iniziale');
+  mkdirSync(accessFolder, { recursive: true });
+  writeFileSync(join(accessFolder, 'Credenziali proprietario.txt'), [
+    'Accesso iniziale - Gestione Supermercato',
+    '',
+    'Ruolo: Proprietario',
+    'Nome: Proprietario Iniziale',
+    `Barcode di accesso: ${barcode}`,
+    'Password: non prevista; accedi inserendo o scansionando il barcode.',
+    '',
+    'Conserva questo file in un luogo sicuro.',
+    '',
+  ].join('\n'), 'utf8');
 }
 
 function saleItems(saleId: number): SaleItem[] {
@@ -561,15 +577,19 @@ function initDatabase(): void {
     database.transaction(() => seedProducts.forEach((product) => insert.run(product)))();
   }
   if (isNewDatabase) {
-    const barcode = '0000000001';
+    let barcode = '';
+    do {
+      barcode = `DIP${String(randomInt(100_000_000)).padStart(8, '0')}`;
+    } while (database.prepare('SELECT 1 FROM employees WHERE recognition_code = ?').get(barcode));
     database.prepare(`INSERT INTO employees (
       first_name, last_name, age, gender, home_address, email, initial_password_hash, phone, operational_site,
       role, shift, salary, payment_method, iban, recognition_code, barcode, photo_data, documents_data,
       contract_pdf_data, contract_start_date, contract_end_date, created_at
     ) VALUES (?, ?, 18, ?, ?, ?, '', ?, '', 'Proprietario', ?, 0, 'Contanti', '', ?, ?, '', '[]', '', '', '', ?)`)
-      .run('Proprietario', 'Demo', 'Non specificato', 'Non specificato', 'proprietario.demo@example.test', 'Non specificato', 'Mattina', barcode, barcode, new Date().toISOString());
+      .run('Proprietario', 'Iniziale', 'Non specificato', 'Non specificato', `proprietario.${randomUUID()}@example.invalid`, 'Non specificato', 'Mattina', barcode, barcode, new Date().toISOString());
     setSetting('setup_complete', 'true');
     setSetting('owner_password_reset', '1');
+    writeInitialAccessFile(join(app.getPath('documents'), 'Gestionale-Archivio'), barcode);
   }
   const inventorySeedSite = database.prepare('SELECT id FROM sites ORDER BY id LIMIT 1').get() as { id: number } | undefined;
   if (inventorySeedSite) {
@@ -1956,8 +1976,41 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     }
     const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory', 'createDirectory'] });
     if (result.canceled || !result.filePaths[0]) return null;
+    const previousFolder = setting('archive_folder', join(app.getPath('documents'), 'Gestionale-Archivio'));
+    const previousCredentials = join(previousFolder, 'Accesso iniziale', 'Credenziali proprietario.txt');
+    const nextCredentials = join(result.filePaths[0], 'Accesso iniziale', 'Credenziali proprietario.txt');
+    if (previousCredentials !== nextCredentials && existsSync(previousCredentials) && !existsSync(nextCredentials)) {
+      mkdirSync(dirname(nextCredentials), { recursive: true });
+      copyFileSync(previousCredentials, nextCredentials);
+    }
     setSetting('archive_folder', result.filePaths[0]);
     return result.filePaths[0];
+  });
+  ipcMain.handle('share:save-pdf', async (event, input: { fileName: string; pdfBase64: string }) => {
+    requireSession(event.sender.id);
+    if (!input || typeof input.fileName !== 'string'
+      || !input.fileName.toLowerCase().endsWith('.pdf')
+      || /[\\/:*?"<>|\u0000-\u001f]/.test(input.fileName)
+      || input.fileName.length > 150
+      || typeof input.pdfBase64 !== 'string'
+      || input.pdfBase64.length === 0
+      || input.pdfBase64.length > 28_000_000
+      || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(input.pdfBase64)) {
+      throw new Error('Il file PDF da condividere non è valido.');
+    }
+    const contents = Buffer.from(input.pdfBase64, 'base64');
+    if (contents.length > 20 * 1024 * 1024 || !contents.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
+      throw new Error('Il file PDF da condividere non è valido o supera 20 MB.');
+    }
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Salva PDF da condividere',
+      defaultPath: join(app.getPath('downloads'), input.fileName),
+      filters: [{ name: 'Documento PDF', extensions: ['pdf'] }],
+    });
+    if (result.canceled || !result.filePath) return null;
+    writeFileSync(result.filePath, contents);
+    shell.showItemInFolder(result.filePath);
+    return result.filePath;
   });
   createWindow();
   salesRetentionInterval = setInterval(() => {

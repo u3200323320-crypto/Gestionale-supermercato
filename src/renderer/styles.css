@@ -313,8 +313,9 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .calendar-weekday { height: 19px; color: #9ba29c; font-size: 9px; text-align: center; }
 .calendar-day { display: flex; min-height: 37px; flex-direction: column; align-items: flex-start; padding: 4px; border: 1px solid transparent; border-radius: 3px; color: #727d74; font-size: 9px; }
 .calendar-day.today { border-color: #adc1b0; background: #f4f8f4; }
-.calendar-day.has-sales { background: #eaf2eb; color: #3a694b; }
+.calendar-day.has-sales { background: #e3efff; color: #1558a6; }
 .calendar-day small { overflow: hidden; max-width: 100%; margin-top: 2px; font-size: 7px; text-overflow: ellipsis; }
+.low-stock-site-panel { margin-bottom: 14px; }
 .chart-panel { min-height: 317px; }
 .category-chart { display: grid; grid-template-columns: minmax(200px, .8fr) minmax(180px, 1fr); align-items: center; gap: 16px; }
 .chart-legend { display: grid; gap: 11px; }

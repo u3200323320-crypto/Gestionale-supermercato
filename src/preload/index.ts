@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('gestionale', {
   deleteSite: (siteId: number, requesterBarcode: string) => ipcRenderer.invoke('site:delete', siteId, requesterBarcode),
   authorizeSiteAction: (requesterBarcode: string): Promise<boolean> => ipcRenderer.invoke('site:authorize', requesterBarcode),
   chooseArchiveFolder: () => ipcRenderer.invoke('archive:choose-folder'),
+  savePdfForSharing: (input: { fileName: string; pdfBase64: string }): Promise<string | null> => ipcRenderer.invoke('share:save-pdf', input),
   chooseShopLogo: () => ipcRenderer.invoke('settings:choose-shop-logo'),
   chooseHomepageImage: () => ipcRenderer.invoke('settings:choose-homepage-image'),
   chooseHomepageVideo: () => ipcRenderer.invoke('settings:choose-homepage-video'),

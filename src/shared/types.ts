@@ -1,4 +1,4 @@
-export type Section = 'home' | 'inventory' | 'expired-products' | 'inventory-history' | 'stock-movement' | 'stock-distribution' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'expenses' | 'financial-balance' | 'employees' | 'employee-create' | 'payroll' | 'employee-tracker' | 'site-statistics' | 'site-management' | 'site-create' | 'site-list' | 'customer-list' | 'loyalty-generate' | 'loyalty-activate' | 'loyalty-active' | 'settings';
+export type Section = 'home' | 'inventory' | 'expired-products' | 'inventory-history' | 'stock-movement' | 'stock-distribution' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'expenses' | 'financial-balance' | 'employees' | 'employee-create' | 'payroll' | 'employee-tracker' | 'site-statistics' | 'site-management' | 'site-create' | 'site-list' | 'low-stock' | 'customer-list' | 'loyalty-generate' | 'loyalty-activate' | 'loyalty-active' | 'settings';
 export type ProductUnit = 'KG' | 'LITRO' | 'PEZZO';
 export type Printer = { name: string; displayName: string };
 export interface Site { id: number; name: string; address: string; phone: string; email: string; tax_id: string; manager_name: string; opening_hours: string; notes: string; site_type: 'store' | 'warehouse'; recognition_code: string; created_at: string }
@@ -278,6 +278,7 @@ declare global {
     deleteSite: (siteId: number, requesterBarcode: string) => Promise<void>;
     authorizeSiteAction: (requesterBarcode: string) => Promise<boolean>;
     chooseArchiveFolder: () => Promise<string | null>;
+    savePdfForSharing: (input: { fileName: string; pdfBase64: string }) => Promise<string | null>;
     chooseShopLogo: () => Promise<string | null>;
     chooseHomepageImage: () => Promise<string | null>;
     chooseHomepageVideo: () => Promise<string | null>;

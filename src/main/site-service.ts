@@ -9,7 +9,7 @@ const recognitionAlphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
 function uniqueRecognitionCode(database: Database.Database, reservedCodes: Set<string>): string {
   let code = '';
   do {
-    code = Array.from({ length: 10 }, () => recognitionAlphabet[randomInt(recognitionAlphabet.length)]).join('');
+    code = Array.from({ length: 15 }, () => recognitionAlphabet[randomInt(recognitionAlphabet.length)]).join('');
   } while (reservedCodes.has(code) || database.prepare('SELECT 1 FROM sites WHERE recognition_code = ?').get(code));
   reservedCodes.add(code);
   return code;
@@ -74,7 +74,7 @@ export function migrateSites(database: Database.Database): void {
       .all() as Array<{ id: number; recognition_code: string }>;
     const updateCode = database.prepare('UPDATE sites SET recognition_code = ? WHERE id = ?');
     for (const site of sites) {
-      const hasValidCode = /^[a-z0-9]{10}$/.test(site.recognition_code) && !reservedCodes.has(site.recognition_code);
+      const hasValidCode = /^[a-z0-9]{15}$/.test(site.recognition_code) && !reservedCodes.has(site.recognition_code);
       const code = hasValidCode ? site.recognition_code : uniqueRecognitionCode(database, reservedCodes);
       reservedCodes.add(code);
       if (code !== site.recognition_code) updateCode.run(code, site.id);
