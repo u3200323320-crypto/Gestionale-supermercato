@@ -793,7 +793,11 @@ export default function App() {
   const [notice, setNotice] = useState('');
   const [lowStockNotifications, setLowStockNotifications] = useState<LowStockNotification[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [selectedNotification, setSelectedNotification] = useState<LowStockNotification | null>(null);
+  const notificationCenterRef = useRef<HTMLDivElement | null>(null);
   const previousLowStockKeys = useRef<Set<string> | null>(null);
+  const [lowStockExportAction, setLowStockExportAction] = useState<'download' | 'share' | null>(null);
+  const [lowStockExportSite, setLowStockExportSite] = useState('all');
   const [productForm, setProductForm] = useState<ProductInput | null>(null);
   const [productEditingId, setProductEditingId] = useState<number | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -929,6 +933,17 @@ export default function App() {
       : `${enteredLowStock.length} articoli sono entrati in esaurimento.`;
     notify(message);
   }, [data]);
+  useEffect(() => {
+    if (!notificationsOpen) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (event.target instanceof Node && !notificationCenterRef.current?.contains(event.target)) {
+        setNotificationsOpen(false);
+        setSelectedNotification(null);
+      }
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    return () => document.removeEventListener('pointerdown', closeOnOutsideClick);
+  }, [notificationsOpen]);
   const refreshCurrentData = async () => {
     setRefreshing(true);
     try {
@@ -1192,7 +1207,7 @@ export default function App() {
     }
   };
   const deleteSite = async (site: Site, requesterBarcode: string) => {
-    if (!window.confirm(`Eliminare la sede "${site.name}" e cancellare definitivamente vendite, spese, rimborsi, pagamenti, movimenti e giacenze associati?`)) return;
+    if (!window.confirm(`Eliminare la sede "${site.name}"? L’eliminazione è possibile solo dopo aver eliminato o riassegnato tutti i dati associati. Nessun dato verrà cancellato automaticamente.`)) return;
     try {
       await window.gestionale.deleteSite(site.id, requesterBarcode);
       await refresh();
@@ -3313,19 +3328,41 @@ export default function App() {
   const promotionDiscountLabel = (offer: Promotion) => offer.discount_type === 'percentage'
     ? `${offer.percentage}%`
     : `${offer.buy_quantity}+${offer.free_quantity}`;
-  const buildLowStockPdf = async () => {
+  const buildLowStockPdf = async (siteId: string) => {
     const rtl = language === 'ar';
     const doc = new jsPDF();
     if (rtl) await addArabicPdfFont(doc);
     doc.setR2L(rtl);
     const title = rtl ? 'المنتجات القريبة من النفاد' : 'Merce in esaurimento';
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const exportedAt = new Date();
+    doc.setFillColor(22, 133, 220);
+    doc.rect(8, 7, pageWidth - 16, 25, 'F');
     doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.text(rtl ? doc.processArabic(title) : title, rtl ? 196 : 14, 17, rtl ? { align: 'right' } : undefined);
+    doc.setFontSize(14);
+    doc.setTextColor(255, 255, 255);
+    const logoX = rtl ? pageWidth - 23 : 12;
+    if (data?.settings.shop_logo) {
+      doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', logoX, 10, 12, 12);
+    } else {
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(logoX, 10, 12, 12, 2, 2, 'F');
+      doc.setFillColor(22, 133, 220);
+      doc.rect(logoX + 2, 15, 8, 5, 'F');
+      doc.rect(logoX + 3, 12, 6, 2, 'F');
+    }
+    const reportTitle = rtl ? doc.processArabic(title) : title;
+    doc.text(reportTitle, rtl ? pageWidth - 27 : 28, 17, rtl ? { align: 'right' } : undefined);
+    doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'normal');
+    doc.setFontSize(8);
+    const timestamp = `${navbarDate.format(exportedAt)} · ${navbarTime.format(exportedAt)}`;
+    doc.text(rtl ? doc.processArabic(timestamp) : timestamp, rtl ? pageWidth - 27 : 28, 27, rtl ? { align: 'right' } : undefined);
+    doc.setTextColor(0, 0, 0);
+    const sitesToExport = siteId === 'all' ? storeSites : storeSites.filter((site) => String(site.id) === siteId);
     const headings = rtl
       ? ['الحد الأدنى', 'المخزون', 'الفئة', 'الرمز', 'المنتج', 'الفرع']
       : ['Sede', 'Articolo', 'Codice', 'Categoria', 'Giacenza', 'Soglia minima'];
-    const rows = storeSites.flatMap((site) => lowStockProductsForSite(site.id).map((product) => [
+    const rows = sitesToExport.flatMap((site) => lowStockProductsForSite(site.id).map((product) => [
       site.name,
       product.name,
       product.code,
@@ -3334,7 +3371,7 @@ export default function App() {
       `${quantityFormat.format(product.low_stock_threshold)} ${product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}`,
     ]));
     autoTable(doc, {
-      startY: 25,
+      startY: 36,
       head: [rtl ? headings.map((value) => doc.processArabic(value)) : headings],
       body: rows.map((row) => {
         const values = rtl ? [...row].reverse() : row;
@@ -3345,33 +3382,34 @@ export default function App() {
     });
     return doc;
   };
-  const downloadLowStockList = async () => {
+  const confirmLowStockExport = async () => {
+    if (!lowStockExportAction) return;
     try {
-      const doc = await buildLowStockPdf();
-      doc.save(`merce-in-esaurimento-${todayKey}.pdf`);
-    } catch (error) {
-      notify(`Impossibile scaricare la lista: ${errorText(error)}`);
-    }
-  };
-  const shareLowStockList = async () => {
-    try {
-      const doc = await buildLowStockPdf();
-      const fileName = `merce-in-esaurimento-${todayKey}.pdf`;
+      const doc = await buildLowStockPdf(lowStockExportSite);
+      const selectedSite = lowStockExportSite === 'all'
+        ? ''
+        : storeSites.find((site) => String(site.id) === lowStockExportSite)?.name ?? '';
+      const fileName = `merce-in-esaurimento${selectedSite ? `-${safeFilePart(selectedSite)}` : ''}-${todayKey}.pdf`;
+      if (lowStockExportAction === 'download') {
+        doc.save(fileName);
+        setLowStockExportAction(null);
+        return;
+      }
       const dataUri = doc.output('datauristring');
       const pdfBase64 = dataUri.slice(dataUri.indexOf(',') + 1);
-      if (window.gestionale.isDemo && navigator.share && navigator.canShare) {
-        const file = new File([doc.output('blob')], fileName, { type: 'application/pdf' });
-        if (navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: 'Merce in esaurimento' });
-          notify('Lista condivisa.');
-          return;
-        }
+      const file = new File([doc.output('blob')], fileName, { type: 'application/pdf' });
+      if (typeof navigator.share === 'function' && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+        await navigator.share({ files: [file], title: 'Merce in esaurimento' });
+        notify('Lista condivisa.');
+        setLowStockExportAction(null);
+        return;
       }
       const savedPath = await window.gestionale.savePdfForSharing({ fileName, pdfBase64 });
       if (savedPath) notify('Lista salvata. Puoi allegarla a WhatsApp, Gmail o un’altra app.');
+      setLowStockExportAction(null);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
-      notify(`Impossibile condividere la lista: ${errorText(error)}`);
+      notify(`Impossibile ${lowStockExportAction === 'download' ? 'scaricare' : 'condividere'} la lista: ${errorText(error)}`);
     }
   };
   const exportInventoryHistoryPdf = async () => {
@@ -3523,7 +3561,7 @@ export default function App() {
       </nav>
       <div className="sidebar-bottom"><div className="sidebar-settings-row">{canAccess('settings') && <button className={`nav-item settings-link${section === 'settings' ? ' active' : ''}`} onClick={() => { setSettingsTab(null); setDeviceTab(null); navigateTo('settings'); }}><Settings size={18} /><span>Impostazioni</span></button>}<button className="nav-item sidebar-refresh" type="button" onClick={() => void refreshCurrentData()} disabled={refreshing} title="Aggiorna dati senza chiudere la pagina" aria-label="Aggiorna dati senza chiudere la pagina"><RefreshCw className={refreshing ? 'refreshing-icon' : ''} size={18} /></button></div><div className="user-card"><div className="user-avatar">{currentUser?.first_name.slice(0, 1).toUpperCase() ?? data.settings.shop_name.slice(0, 1).toUpperCase()}</div><div><strong>{currentUser ? `${currentUser.first_name} ${currentUser.last_name}`.trim() : 'Gestore'}</strong><small>{currentUser?.role ?? 'Account locale'}</small></div>{data.employees.length > 0 && <button className="icon-button small" title="Blocca e cambia utente" aria-label="Blocca e cambia utente" onClick={() => { trackActivity('Accesso', 'Uscita dal gestionale'); setSelectedProduct(null); setProductAuthorization(null); setStockProduct(null); setCurrentUser(null); setLocked(true); setLoginBarcode(''); }}><LockKeyhole size={15} /></button>}</div></div>
     </aside>
-    <main className="main-content"><header className="topbar"><h1>{sectionLabel}</h1>{data.settings.shop_logo ? <img className="topbar-logo" src={data.settings.shop_logo} alt="Logo negozio" /> : <div className="topbar-logo-fallback"><Store size={19} /></div>}<div className="topbar-right"><div className="today-date">{navbarDate.format(currentTime)} · {navbarTime.format(currentTime)}</div><div className="notification-center"><button className="icon-button notification-trigger" type="button" aria-label="Notifiche" aria-expanded={notificationsOpen} onClick={() => { setNotificationsOpen((open) => !open); setLowStockNotifications((items) => items.map((item) => ({ ...item, read: true }))); }}><Bell size={18} />{lowStockNotifications.some((item) => !item.read) && <span className="notification-badge">{lowStockNotifications.filter((item) => !item.read).length}</span>}</button>{notificationsOpen && <section className="notification-panel" aria-label="Notifiche"><div className="notification-panel-heading"><strong>Notifiche</strong><button className="icon-button small" type="button" aria-label="Chiudi notifiche" onClick={() => setNotificationsOpen(false)}><X size={15} /></button></div>{lowStockNotifications.length ? <div className="notification-items">{lowStockNotifications.map((item) => <div className={`notification-item${item.read ? '' : ' unread'}`} key={`${item.id}-${item.createdAt}`}><strong>{item.productName}</strong><span>Scorta in esaurimento · {item.siteName}</span><small>Disponibili: {quantityFormat.format(item.stock)} · Soglia: {quantityFormat.format(item.threshold)}</small></div>)}</div> : <p className="notification-empty">Nessuna notifica.</p>}</section>}</div></div></header>
+    <main className="main-content"><header className="topbar"><h1>{sectionLabel}</h1>{data.settings.shop_logo ? <img className="topbar-logo" src={data.settings.shop_logo} alt="Logo negozio" /> : <div className="topbar-logo-fallback"><Store size={19} /></div>}<div className="topbar-right"><div className="today-date">{navbarDate.format(currentTime)} · {navbarTime.format(currentTime)}</div><div className="notification-center" ref={notificationCenterRef}><button className="icon-button notification-trigger" type="button" aria-label={`Notifiche${lowStockNotifications.filter((item) => !item.read).length ? `: ${lowStockNotifications.filter((item) => !item.read).length} nuove` : ''}`} aria-expanded={notificationsOpen} onClick={() => { setNotificationsOpen((open) => !open); setSelectedNotification(null); }}><Bell size={18} />{lowStockNotifications.some((item) => !item.read) && <span className="notification-badge">{lowStockNotifications.filter((item) => !item.read).length > 99 ? '99+' : lowStockNotifications.filter((item) => !item.read).length}</span>}</button>{notificationsOpen && <section className="notification-panel" aria-label="Notifiche"><div className="notification-panel-heading">{selectedNotification ? <button className="notification-back" type="button" onClick={() => setSelectedNotification(null)}><ArrowLeft size={14} /> Indietro</button> : <strong>Notifiche</strong>}<button className="icon-button small" type="button" aria-label="Chiudi notifiche" onClick={() => { setNotificationsOpen(false); setSelectedNotification(null); }}><X size={15} /></button></div>{selectedNotification ? <article className={`notification-detail${selectedNotification.read ? '' : ' unread'}`}><strong>{selectedNotification.productName}</strong><span>Scorta in esaurimento · {selectedNotification.siteName}</span><small>Disponibili: {quantityFormat.format(selectedNotification.stock)} · Soglia: {quantityFormat.format(selectedNotification.threshold)}</small><time>{dateTimeText(new Date(selectedNotification.createdAt))}</time></article> : lowStockNotifications.length ? <div className="notification-items">{lowStockNotifications.map((item) => <button className={`notification-item${item.read ? '' : ' unread'}`} type="button" key={`${item.id}-${item.createdAt}`} onClick={() => { setSelectedNotification({ ...item, read: true }); setLowStockNotifications((items) => items.map((notification) => notification.id === item.id && notification.createdAt === item.createdAt ? { ...notification, read: true } : notification)); }}><strong>{item.productName}</strong><span>Scorta in esaurimento · {item.siteName}</span><small>Disponibili: {quantityFormat.format(item.stock)} · Soglia: {quantityFormat.format(item.threshold)}</small></button>)}</div> : <p className="notification-empty">Nessuna notifica.</p>}</section>}</div></div></header>
       {section === 'home' && data.settings.home_video && <video className="home-banner-overlay" src={data.settings.home_video} autoPlay muted loop playsInline />}
 
       {section === 'home' && <div className="page-content home-page"><img className="home-banner" src={data.settings.home_image || homeBanner} alt="Immagine homepage" /><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length} scontrini emessi`} /><Metric icon={ArrowDownToLine} label="Rimborsi" value={money.format(todayRefunds)} detail="Rimborsi registrati oggi" /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyProfit)} detail="Profitto dopo sconti e costo merce" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString(appLocale)} detail="Pezzi registrati oggi" /></div><section className="expiry-alert expiry-home-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{canAccess('inventory') && expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length} articoli sotto soglia`} action={canAccess('inventory') ? <button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); navigateTo('inventory'); }}>{language === 'ar' ? 'الانتقال إلى المخزن ←' : 'Vai al magazzino →'}</button> : undefined} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => { if (canAccess('inventory')) setSelectedProduct(p); }}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock}</td><td>{p.low_stock_threshold}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => navigateTo('sales')}>{language === 'ar' ? 'كل المبيعات ←' : 'Tutte le vendite →'}</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
@@ -3630,7 +3668,8 @@ export default function App() {
         <section className="employee-list-panel"><div className="employee-card-grid">{employeeList.map((employee) => <button className="employee-card" key={employee.id} onClick={() => setEmployeeDetails(employee)} aria-label={`Apri informazioni di ${employee.first_name} ${employee.last_name}`}><img className="employee-list-photo" src={employee.photo_data} alt={`Foto di ${employee.first_name} ${employee.last_name}`} /><span><small>Nome</small><strong>{employee.first_name}</strong></span><span><small>Cognome</small><strong>{employee.last_name}</strong></span><span><small>Ruolo</small><strong>{employee.role}</strong></span><span><small>Sede</small><strong>{employee.operational_site}</strong></span></button>)}{!employeeList.length && <Empty icon={ClipboardList} title={data.employees.length ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente registrato.'} detail="" />}</div></section>
       </div>}
       {section === 'site-statistics' && <div className="page-content accounting-page site-statistics-page"><div className="site-statistics-filters"><SelectField label="Periodo" value={siteStatsPeriod} onChange={setSiteStatsPeriod} options={['Oggi', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Ultimi 6 mesi', 'Tutto', 'Da - A']} /><SelectField label="Sede" value={siteStatsFilter} onChange={setSiteStatsFilter} options={['Tutte', ...data.sites.map((site) => site.name)]} /><>{siteStatsPeriod === 'Da - A' && <><Field label="Da" type="date" value={siteStatsFrom} onChange={(event) => setSiteStatsFrom(event.target.value)} /><Field label="A" type="date" value={siteStatsTo} onChange={(event) => setSiteStatsTo(event.target.value)} /></>}</></div><div className="metric-grid accounting-metrics"><Metric icon={Banknote} label="Entrate sedi" value={money.format(siteStatsIncome)} detail={siteStatsPeriod} /><Metric icon={ArrowDownToLine} label="Uscite sedi" value={money.format(siteStatsExpenses)} detail={siteStatsPeriod} /><Metric icon={TrendingUp} label="Saldo sedi" value={money.format(siteStatsIncome - siteStatsExpenses)} detail="Entrate meno uscite" /><Metric icon={Package} label="Sedi attive" value={String(selectedSiteStats.length)} detail="Sedi nel filtro selezionato" /></div><section className="panel site-summary-panel"><div className="panel-heading"><div><h3>Entrate e uscite per sede</h3><p>{siteStatsPeriod}</p></div></div><Table headings={['Sede', 'Entrate', 'Uscite', 'Saldo', 'Scontrini', 'Carico merce', 'Scarico merce']}><>{selectedSiteStats.map((site) => <tr key={site.id}><td className="cell-primary">{site.name}</td><td className="align-right">{money.format(site.income)}</td><td className="align-right">{money.format(site.expenses)}</td><td className="align-right cell-primary">{money.format(site.balance)}</td><td>{site.receipts}</td><td>{quantityFormat.format(site.stockIn)}</td><td>{quantityFormat.format(site.stockOut)}</td></tr>)}</>{!selectedSiteStats.length && <tr><td colSpan={7} className="empty-cell">Nessuna sede trovata.</td></tr>}</Table></section><SiteStockStatistics sites={data.sites.filter((site) => siteStatsFilter === 'Tutte' || site.name === siteStatsFilter)} siteStocks={data.siteStocks} employees={data.employees} products={data.products} /></div>}
-      {section === 'low-stock' && <div className="page-content low-stock-page"><div className="page-toolbar low-stock-toolbar"><div className="toolbar-actions"><button className="button button-outline" onClick={() => void downloadLowStockList()}><ArrowDownToLine size={16} /> Scarica lista</button><button className="button button-primary" onClick={() => void shareLowStockList()}><Share2 size={16} /> Condividi lista</button></div></div>{data.sites.length ? data.sites.map((site) => { const lowStockProducts = lowStockProductsForSite(site.id); return <section className="panel low-stock-site-panel" key={site.id}><div className="panel-heading"><div><h3>{site.name}</h3><p>{lowStockProducts.length} articoli in esaurimento</p></div></div><Table headings={['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Soglia minima']}><>{lowStockProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td className="mono">{product.code}</td><td>{product.category}</td><td>{quantityFormat.format(product.siteStock)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}</td><td>{quantityFormat.format(product.low_stock_threshold)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}</td></tr>)}</>{!lowStockProducts.length && <tr><td colSpan={5} className="empty-cell">Nessun articolo in esaurimento in questa sede.</td></tr>}</Table></section>; }) : <Empty icon={Package} title="Nessuna sede registrata." detail="" />}</div>}
+      {section === 'low-stock' && <div className="page-content low-stock-page"><div className="page-toolbar low-stock-toolbar"><div className="toolbar-actions"><button className="button button-outline" onClick={() => { setLowStockExportSite('all'); setLowStockExportAction('download'); }}><ArrowDownToLine size={16} /> Scarica lista</button><button className="button button-primary" onClick={() => { setLowStockExportSite('all'); setLowStockExportAction('share'); }}><Share2 size={16} /> Condividi lista</button></div></div>{data.sites.length ? data.sites.map((site) => { const lowStockProducts = lowStockProductsForSite(site.id); return <section className="panel low-stock-site-panel" key={site.id}><div className="panel-heading"><div><h3>{site.name}</h3><p>{lowStockProducts.length} articoli in esaurimento</p></div></div><Table headings={['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Soglia minima']}><>{lowStockProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td className="mono">{product.code}</td><td>{product.category}</td><td>{quantityFormat.format(product.siteStock)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}</td><td>{quantityFormat.format(product.low_stock_threshold)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}</td></tr>)}</>{!lowStockProducts.length && <tr><td colSpan={5} className="empty-cell">Nessun articolo in esaurimento in questa sede.</td></tr>}</Table></section>; }) : <Empty icon={Package} title="Nessuna sede registrata." detail="" />}</div>}
+      {lowStockExportAction && <Modal title={lowStockExportAction === 'download' ? 'Scarica lista articoli in esaurimento' : 'Condividi lista articoli in esaurimento'} close={() => setLowStockExportAction(null)}><div className="form-grid low-stock-export-form"><label className="field"><span>Seleziona le sedi</span><select value={lowStockExportSite} onChange={(event) => setLowStockExportSite(event.target.value)}><option value="all">Tutte le sedi</option>{storeSites.map((site) => <option key={site.id} value={String(site.id)}>{site.name}</option>)}</select></label><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => setLowStockExportAction(null)}>Annulla</button><button className="button button-primary" type="button" onClick={() => void confirmLowStockExport()}>{lowStockExportAction === 'download' ? <><ArrowDownToLine size={16} /> Scarica</> : <><Share2 size={16} /> Condividi</>}</button></div></div></Modal>}
       {section === 'site-create' && siteDraft && <div className="page-content settings-page"><section className="settings-panel"><button className="settings-back" onClick={() => navigateTo('site-list')}><ArrowLeft size={15} /> Lista sedi</button><div className="settings-title"><h2>{siteDraft.id ? 'Modifica sede' : 'Aggiungi sede'}</h2><p>Inserisci i riferimenti e le informazioni operative del punto vendita.</p></div><form className="settings-form site-form" onSubmit={(event) => void saveSite(event)}><Field label="Nome sede" value={siteDraft.name} onChange={(event) => setSiteDraft({ ...siteDraft, name: event.target.value })} required /><Field label="Indirizzo" value={siteDraft.address} onChange={(event) => setSiteDraft({ ...siteDraft, address: event.target.value })} /><Field label="Telefono" type="tel" value={siteDraft.phone} onChange={(event) => setSiteDraft({ ...siteDraft, phone: event.target.value })} /><Field label="Email sede" type="email" value={siteDraft.email ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, email: event.target.value })} /><label className="field"><span>Responsabile sede</span><select value={siteDraft.manager_name ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, manager_name: event.target.value })}><option value="">Seleziona responsabile</option>{data.employees.filter((employee) => normalizedRole(employee.role) === 'responsabile sede').map((employee) => { const name = `${employee.first_name} ${employee.last_name}`; return <option key={employee.id} value={name}>{name}</option>; })}</select></label><Field label="Orari di apertura" value={siteDraft.opening_hours ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, opening_hours: event.target.value })} /><label className="field site-notes-field"><span>Note</span><textarea rows={3} maxLength={1000} value={siteDraft.notes ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, notes: event.target.value })} /></label><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setSiteDraft(null); navigateTo('site-list'); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Salva sede</button></div></form></section></div>}
       {(section === 'site-list' || section === 'site-management') && <div className="page-content"><div className="page-toolbar"><div><h2>{section === 'site-management' ? 'Gestione sedi' : 'Lista sedi'}</h2><p>{data.sites.length} sedi registrate</p></div>{canAccess('site-management') && <button className="button button-primary" onClick={() => { setSiteDraft({ name: '', address: '', phone: '' }); navigateTo('site-create'); }}><Plus size={16} /> Aggiungi sede</button>}</div><Table headings={['Sede', 'Tipo', 'Codice di riconoscimento', 'Indirizzo', 'Telefono', 'Dipendenti', 'Azioni']}><>{data.sites.map((site) => <tr key={site.id}><td><button className="site-name-link" onClick={() => setSelectedSiteDetails(site)}>{site.name}</button></td><td>Punto vendita</td><td className="mono">{site.recognition_code}</td><td>{site.address || '—'}</td><td>{site.phone || '—'}</td><td>{data.employees.filter((employee) => employee.operational_site === site.name).length}</td><td><div className="toolbar-actions">{canAccess('site-management') && <><button className="button button-outline" onClick={() => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'edit' }); }}><Pencil size={14} /> Modifica</button><button className="button button-danger" onClick={() => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'delete' }); }}><Trash2 size={14} /> Elimina</button></>}</div></td></tr>)}</>{!data.sites.length && <tr><td colSpan={7} className="empty-cell">Nessuna sede trovata.</td></tr>}</Table></div>}
       {section === 'employee-tracker' && <div className="page-content">

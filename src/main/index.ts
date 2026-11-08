@@ -1523,16 +1523,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     if (session.barcode !== requesterBarcode?.trim()) throw new Error('La sessione non corrisponde al proprietario che gestisce le sedi.');
     const requester = employeeForLogin(requesterBarcode);
     if (!requester || normalizedEmployeeRole(requester.role) !== 'proprietario') throw new Error('Solo il Proprietario può gestire le sedi.');
-    const site = database.prepare('SELECT name FROM sites WHERE id = ?').get(siteId) as { name: string } | undefined;
-    if (!site) throw new Error('Sede non trovata.');
-    const receipts = database.prepare('SELECT receipt_data FROM expenses WHERE site = ?').all(site.name) as Array<{ receipt_data: string }>;
     deleteSite(database, siteId);
-    const receiptFolder = join(app.getPath('userData'), 'Ricevute pagamento affitto');
-    for (const receipt of receipts) {
-      if (receipt.receipt_data && dirname(receipt.receipt_data) === receiptFolder
-        && basename(receipt.receipt_data) === receipt.receipt_data.split(/[\\/]/).pop()
-        && existsSync(receipt.receipt_data)) unlinkSync(receipt.receipt_data);
-    }
   });
   ipcMain.handle('site:setup', (_event, input: SiteInput) => {
     if (setting('setup_complete') === 'true'

@@ -376,10 +376,20 @@ function installWebPreview(): void {
     deleteSite: async (id) => {
       const site = state.sites.find((item) => item.id === id);
       if (site) {
-        const fallback = state.sites.find((item) => item.id !== id);
-        state.employees.forEach((employee) => { if (employee.operational_site === site.name) employee.operational_site = fallback?.name ?? ''; });
-        state.sales = state.sales.filter((sale) => sale.site !== site.name);
-        state.expenses = state.expenses.filter((expense) => expense.site !== site.name);
+        const employees = state.employees.filter((employee) => employee.operational_site === site.name);
+        const dependencies = [
+          ['vendite', state.sales.filter((sale) => sale.site === site.name).length],
+          ['spese', state.expenses.filter((expense) => expense.site === site.name).length],
+          ['rimborsi', state.refunds.filter((refund) => refund.site === site.name).length],
+          ['movimenti di magazzino', state.stockMovements.filter((movement) => movement.site === site.name || movement.destination === site.name).length],
+          ['distribuzioni merce', state.stockDistributions.filter((distribution) => distribution.from_site === site.name || distribution.to_site === site.name).length],
+          ['dipendenti assegnati', employees.length],
+          ['pagamenti stipendi', state.payrollPayments.filter((payment) => employees.some((employee) => employee.id === payment.employee_id)).length],
+          ['articoli con giacenza positiva', state.siteStocks.filter((stock) => stock.site_id === id && stock.stock > 0).length],
+        ].filter(([, count]) => Number(count) > 0);
+        if (dependencies.length) {
+          throw new Error(`Impossibile eliminare la sede "${site.name}". Prima elimina o riassegna i dati associati: ${dependencies.map(([label, count]) => `${label} (${count})`).join(', ')}.`);
+        }
         state.siteStocks = state.siteStocks.filter((stock) => stock.site_id !== id);
         state.sites = state.sites.filter((item) => item.id !== id);
         state.products.forEach((product) => refreshProductStock(product.id));

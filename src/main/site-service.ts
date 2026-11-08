@@ -148,21 +148,21 @@ export function deleteSite(database: Database.Database, siteId: number): void {
   const site = database.prepare('SELECT id, name FROM sites WHERE id = ?').get(siteId) as
     { id: number; name: string } | undefined;
   if (!site) throw new Error('Sede non trovata.');
-  const fallbackSite = database.prepare('SELECT id, name FROM sites WHERE id != ? ORDER BY id LIMIT 1')
-    .get(siteId) as { id: number; name: string } | undefined;
-  const assignedEmployees = (database.prepare('SELECT COUNT(*) AS count FROM employees WHERE operational_site = ?')
-    .get(site.name) as { count: number }).count;
+  const dependencies = [
+    { label: 'vendite', count: (database.prepare('SELECT COUNT(*) AS count FROM sales WHERE site = ?').get(site.name) as { count: number }).count },
+    { label: 'spese', count: (database.prepare('SELECT COUNT(*) AS count FROM expenses WHERE site = ?').get(site.name) as { count: number }).count },
+    { label: 'rimborsi', count: (database.prepare('SELECT COUNT(*) AS count FROM refunds WHERE site = ?').get(site.name) as { count: number }).count },
+    { label: 'movimenti di magazzino', count: (database.prepare('SELECT COUNT(*) AS count FROM stock_movements WHERE site = ? OR destination = ?').get(site.name, site.name) as { count: number }).count },
+    { label: 'distribuzioni merce', count: (database.prepare('SELECT COUNT(*) AS count FROM stock_distributions WHERE from_site = ? OR to_site = ?').get(site.name, site.name) as { count: number }).count },
+    { label: 'dipendenti assegnati', count: (database.prepare('SELECT COUNT(*) AS count FROM employees WHERE operational_site = ?').get(site.name) as { count: number }).count },
+    { label: 'pagamenti stipendi', count: (database.prepare(`SELECT COUNT(*) AS count FROM payroll_payments
+      WHERE employee_id IN (SELECT id FROM employees WHERE operational_site = ?)`).get(site.name) as { count: number }).count },
+    { label: 'articoli con giacenza positiva', count: (database.prepare('SELECT COUNT(*) AS count FROM site_inventory WHERE site_id = ? AND stock > 0').get(siteId) as { count: number }).count },
+  ].filter((dependency) => dependency.count > 0);
+  if (dependencies.length) {
+    throw new Error(`Impossibile eliminare la sede "${site.name}". Prima elimina o riassegna i dati associati: ${dependencies.map(({ label, count }) => `${label} (${count})`).join(', ')}.`);
+  }
   database.transaction(() => {
-    database.prepare('DELETE FROM payroll_payments WHERE employee_id IN (SELECT id FROM employees WHERE operational_site = ?)').run(site.name);
-    if (fallbackSite) {
-      database.prepare('UPDATE employees SET operational_site = ? WHERE operational_site = ?').run(fallbackSite.name, site.name);
-    } else if (assignedEmployees > 0) {
-      database.prepare("UPDATE employees SET operational_site = '' WHERE operational_site = ?").run(site.name);
-    }
-    database.prepare('DELETE FROM sales WHERE site = ?').run(site.name);
-    database.prepare('DELETE FROM expenses WHERE site = ?').run(site.name);
-    database.prepare('DELETE FROM refunds WHERE site = ?').run(site.name);
-    database.prepare('DELETE FROM stock_movements WHERE site = ? OR destination = ?').run(site.name, site.name);
     database.prepare('DELETE FROM sites WHERE id = ?').run(siteId);
     database.prepare(`UPDATE products SET stock = (
       SELECT COALESCE(SUM(stock), 0) FROM site_inventory WHERE site_inventory.product_id = products.id
