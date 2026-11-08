@@ -1,6 +1,6 @@
 import { cloneElement, createContext, isValidElement, useContext, useEffect, useRef, useState } from 'react';
 import type { FormEvent, InputHTMLAttributes, ReactNode } from 'react';
-import { Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Camera, Check, ChevronDown, CircleAlert, ClipboardList, CreditCard, Eye, House, LockKeyhole, Minus, Package, Pencil, Plus, Printer, RefreshCw, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Store, Trash2, TrendingUp, Users, Video, X } from 'lucide-react';
+import { Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Bell, Camera, Check, ChevronDown, CircleAlert, ClipboardList, CreditCard, Eye, House, LockKeyhole, Minus, Package, Pencil, Plus, Printer, RefreshCw, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Store, Trash2, TrendingUp, Users, Video, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { jsPDF } from 'jspdf';
 import autoTable, { Table as AutoTableTable } from 'jspdf-autotable';
@@ -46,6 +46,15 @@ const promotionDurations = ['1 giorno', '3 giorni', '7 giorni', '1 mese', 'Sempr
 const expenseCategories = ['Affitto', 'Utenze', 'Forniture', 'Stipendi', 'Manutenzione', 'Trasporti', 'Altro'];
 const defaultEmployeeRoles = ['Proprietario', 'Direttore', 'Responsabile sede', 'Contabilità', 'cassiere'];
 type AppLanguage = 'it' | 'ar';
+type LowStockNotification = {
+  id: string;
+  productName: string;
+  siteName: string;
+  stock: number;
+  threshold: number;
+  createdAt: string;
+  read: boolean;
+};
 const arabicUiTranslations: Record<string, string> = {
   'ACCESSO AL GESTIONALE': 'تسجيل الدخول إلى النظام', 'Inserisci il PIN di sicurezza': 'أدخل رمز الأمان', 'PIN di sicurezza': 'رمز الأمان',
   'Accedi': 'دخول', 'Accedi con barcode': 'الدخول باستخدام الرمز الشريطي', 'Scansiona il barcode del dipendente per accedere': 'امسح الرمز الشريطي للموظف لتسجيل الدخول',
@@ -782,6 +791,9 @@ export default function App() {
   const [loginBarcode, setLoginBarcode] = useState('');
   const loginBarcodeAttempt = useRef('');
   const [notice, setNotice] = useState('');
+  const [lowStockNotifications, setLowStockNotifications] = useState<LowStockNotification[]>([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const previousLowStockKeys = useRef<Set<string> | null>(null);
   const [productForm, setProductForm] = useState<ProductInput | null>(null);
   const [productEditingId, setProductEditingId] = useState<number | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -884,6 +896,39 @@ export default function App() {
     setUnsoldSite((current) => current === 'Tutto' || data.sites.some((site) => String(site.id) === current) ? current : 'Tutto');
   }, [data]);
   const notify = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 3600); };
+  useEffect(() => {
+    if (!data) return;
+    const currentLowStock = new Map<string, LowStockNotification>();
+    for (const site of data.sites) {
+      for (const product of data.products) {
+        const stock = data.siteStocks.find((item) => item.product_id === product.id && item.site_id === site.id)?.stock ?? 0;
+        if (stock > 0 && stock <= product.low_stock_threshold) {
+          const id = `${site.id}:${product.id}`;
+          currentLowStock.set(id, {
+            id,
+            productName: product.name,
+            siteName: site.name,
+            stock,
+            threshold: product.low_stock_threshold,
+            createdAt: new Date().toISOString(),
+            read: false,
+          });
+        }
+      }
+    }
+    if (previousLowStockKeys.current === null) {
+      previousLowStockKeys.current = new Set(currentLowStock.keys());
+      return;
+    }
+    const enteredLowStock = [...currentLowStock.values()].filter((item) => !previousLowStockKeys.current?.has(item.id));
+    previousLowStockKeys.current = new Set(currentLowStock.keys());
+    if (!enteredLowStock.length) return;
+    setLowStockNotifications((current) => [...enteredLowStock, ...current].slice(0, 50));
+    const message = enteredLowStock.length === 1
+      ? `${enteredLowStock[0].productName}: scorta in esaurimento presso ${enteredLowStock[0].siteName}.`
+      : `${enteredLowStock.length} articoli sono entrati in esaurimento.`;
+    notify(message);
+  }, [data]);
   const refreshCurrentData = async () => {
     setRefreshing(true);
     try {
@@ -911,6 +956,9 @@ export default function App() {
       || normalizedRole(employee.role) === 'proprietario') ?? [];
   const siteStockFor = (productId: number, siteId = activeSiteId) =>
     data?.siteStocks.find((item) => item.product_id === productId && item.site_id === siteId)?.stock ?? 0;
+  const lowStockProductsForSite = (siteId: number) => (data?.products ?? [])
+    .map((product) => ({ ...product, siteStock: siteStockFor(product.id, siteId) }))
+    .filter((product) => product.siteStock > 0 && product.siteStock <= product.low_stock_threshold);
   const canAccess = (target: Section) => canAccessSection(activeRole, target);
   const trackActivity = (sectionName: string, action: string, detail = '', barcode = currentUser?.barcode) => {
     if (!barcode) return;
@@ -3265,6 +3313,67 @@ export default function App() {
   const promotionDiscountLabel = (offer: Promotion) => offer.discount_type === 'percentage'
     ? `${offer.percentage}%`
     : `${offer.buy_quantity}+${offer.free_quantity}`;
+  const buildLowStockPdf = async () => {
+    const rtl = language === 'ar';
+    const doc = new jsPDF();
+    if (rtl) await addArabicPdfFont(doc);
+    doc.setR2L(rtl);
+    const title = rtl ? 'المنتجات القريبة من النفاد' : 'Merce in esaurimento';
+    doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text(rtl ? doc.processArabic(title) : title, rtl ? 196 : 14, 17, rtl ? { align: 'right' } : undefined);
+    const headings = rtl
+      ? ['الحد الأدنى', 'المخزون', 'الفئة', 'الرمز', 'المنتج', 'الفرع']
+      : ['Sede', 'Articolo', 'Codice', 'Categoria', 'Giacenza', 'Soglia minima'];
+    const rows = storeSites.flatMap((site) => lowStockProductsForSite(site.id).map((product) => [
+      site.name,
+      product.name,
+      product.code,
+      localizedText(product.category, language),
+      `${quantityFormat.format(product.siteStock)} ${product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}`,
+      `${quantityFormat.format(product.low_stock_threshold)} ${product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}`,
+    ]));
+    autoTable(doc, {
+      startY: 25,
+      head: [rtl ? headings.map((value) => doc.processArabic(value)) : headings],
+      body: rows.map((row) => {
+        const values = rtl ? [...row].reverse() : row;
+        return rtl ? values.map((value) => doc.processArabic(value)) : values;
+      }),
+      styles: { font: rtl ? 'DejaVuSans' : 'helvetica', fontSize: 8, halign: rtl ? 'right' : 'left' },
+      headStyles: { fillColor: [22, 133, 220], halign: rtl ? 'right' : 'left' },
+    });
+    return doc;
+  };
+  const downloadLowStockList = async () => {
+    try {
+      const doc = await buildLowStockPdf();
+      doc.save(`merce-in-esaurimento-${todayKey}.pdf`);
+    } catch (error) {
+      notify(`Impossibile scaricare la lista: ${errorText(error)}`);
+    }
+  };
+  const shareLowStockList = async () => {
+    try {
+      const doc = await buildLowStockPdf();
+      const fileName = `merce-in-esaurimento-${todayKey}.pdf`;
+      const dataUri = doc.output('datauristring');
+      const pdfBase64 = dataUri.slice(dataUri.indexOf(',') + 1);
+      if (window.gestionale.isDemo && navigator.share && navigator.canShare) {
+        const file = new File([doc.output('blob')], fileName, { type: 'application/pdf' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: 'Merce in esaurimento' });
+          notify('Lista condivisa.');
+          return;
+        }
+      }
+      const savedPath = await window.gestionale.savePdfForSharing({ fileName, pdfBase64 });
+      if (savedPath) notify('Lista salvata. Puoi allegarla a WhatsApp, Gmail o un’altra app.');
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      notify(`Impossibile condividere la lista: ${errorText(error)}`);
+    }
+  };
   const exportInventoryHistoryPdf = async () => {
     if (!data) return;
     try {
@@ -3414,7 +3523,7 @@ export default function App() {
       </nav>
       <div className="sidebar-bottom"><div className="sidebar-settings-row">{canAccess('settings') && <button className={`nav-item settings-link${section === 'settings' ? ' active' : ''}`} onClick={() => { setSettingsTab(null); setDeviceTab(null); navigateTo('settings'); }}><Settings size={18} /><span>Impostazioni</span></button>}<button className="nav-item sidebar-refresh" type="button" onClick={() => void refreshCurrentData()} disabled={refreshing} title="Aggiorna dati senza chiudere la pagina" aria-label="Aggiorna dati senza chiudere la pagina"><RefreshCw className={refreshing ? 'refreshing-icon' : ''} size={18} /></button></div><div className="user-card"><div className="user-avatar">{currentUser?.first_name.slice(0, 1).toUpperCase() ?? data.settings.shop_name.slice(0, 1).toUpperCase()}</div><div><strong>{currentUser ? `${currentUser.first_name} ${currentUser.last_name}`.trim() : 'Gestore'}</strong><small>{currentUser?.role ?? 'Account locale'}</small></div>{data.employees.length > 0 && <button className="icon-button small" title="Blocca e cambia utente" aria-label="Blocca e cambia utente" onClick={() => { trackActivity('Accesso', 'Uscita dal gestionale'); setSelectedProduct(null); setProductAuthorization(null); setStockProduct(null); setCurrentUser(null); setLocked(true); setLoginBarcode(''); }}><LockKeyhole size={15} /></button>}</div></div>
     </aside>
-    <main className="main-content"><header className="topbar"><h1>{sectionLabel}</h1>{data.settings.shop_logo ? <img className="topbar-logo" src={data.settings.shop_logo} alt="Logo negozio" /> : <div className="topbar-logo-fallback"><Store size={19} /></div>}<div className="topbar-right"><div className="today-date">{navbarDate.format(currentTime)} · {navbarTime.format(currentTime)}</div></div></header>
+    <main className="main-content"><header className="topbar"><h1>{sectionLabel}</h1>{data.settings.shop_logo ? <img className="topbar-logo" src={data.settings.shop_logo} alt="Logo negozio" /> : <div className="topbar-logo-fallback"><Store size={19} /></div>}<div className="topbar-right"><div className="today-date">{navbarDate.format(currentTime)} · {navbarTime.format(currentTime)}</div><div className="notification-center"><button className="icon-button notification-trigger" type="button" aria-label="Notifiche" aria-expanded={notificationsOpen} onClick={() => { setNotificationsOpen((open) => !open); setLowStockNotifications((items) => items.map((item) => ({ ...item, read: true }))); }}><Bell size={18} />{lowStockNotifications.some((item) => !item.read) && <span className="notification-badge">{lowStockNotifications.filter((item) => !item.read).length}</span>}</button>{notificationsOpen && <section className="notification-panel" aria-label="Notifiche"><div className="notification-panel-heading"><strong>Notifiche</strong><button className="icon-button small" type="button" aria-label="Chiudi notifiche" onClick={() => setNotificationsOpen(false)}><X size={15} /></button></div>{lowStockNotifications.length ? <div className="notification-items">{lowStockNotifications.map((item) => <div className={`notification-item${item.read ? '' : ' unread'}`} key={`${item.id}-${item.createdAt}`}><strong>{item.productName}</strong><span>Scorta in esaurimento · {item.siteName}</span><small>Disponibili: {quantityFormat.format(item.stock)} · Soglia: {quantityFormat.format(item.threshold)}</small></div>)}</div> : <p className="notification-empty">Nessuna notifica.</p>}</section>}</div></div></header>
       {section === 'home' && data.settings.home_video && <video className="home-banner-overlay" src={data.settings.home_video} autoPlay muted loop playsInline />}
 
       {section === 'home' && <div className="page-content home-page"><img className="home-banner" src={data.settings.home_image || homeBanner} alt="Immagine homepage" /><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length} scontrini emessi`} /><Metric icon={ArrowDownToLine} label="Rimborsi" value={money.format(todayRefunds)} detail="Rimborsi registrati oggi" /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyProfit)} detail="Profitto dopo sconti e costo merce" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString(appLocale)} detail="Pezzi registrati oggi" /></div><section className="expiry-alert expiry-home-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{canAccess('inventory') && expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length} articoli sotto soglia`} action={canAccess('inventory') ? <button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); navigateTo('inventory'); }}>{language === 'ar' ? 'الانتقال إلى المخزن ←' : 'Vai al magazzino →'}</button> : undefined} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => { if (canAccess('inventory')) setSelectedProduct(p); }}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock}</td><td>{p.low_stock_threshold}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => navigateTo('sales')}>{language === 'ar' ? 'كل المبيعات ←' : 'Tutte le vendite →'}</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
@@ -3521,7 +3630,7 @@ export default function App() {
         <section className="employee-list-panel"><div className="employee-card-grid">{employeeList.map((employee) => <button className="employee-card" key={employee.id} onClick={() => setEmployeeDetails(employee)} aria-label={`Apri informazioni di ${employee.first_name} ${employee.last_name}`}><img className="employee-list-photo" src={employee.photo_data} alt={`Foto di ${employee.first_name} ${employee.last_name}`} /><span><small>Nome</small><strong>{employee.first_name}</strong></span><span><small>Cognome</small><strong>{employee.last_name}</strong></span><span><small>Ruolo</small><strong>{employee.role}</strong></span><span><small>Sede</small><strong>{employee.operational_site}</strong></span></button>)}{!employeeList.length && <Empty icon={ClipboardList} title={data.employees.length ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente registrato.'} detail="" />}</div></section>
       </div>}
       {section === 'site-statistics' && <div className="page-content accounting-page site-statistics-page"><div className="site-statistics-filters"><SelectField label="Periodo" value={siteStatsPeriod} onChange={setSiteStatsPeriod} options={['Oggi', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Ultimi 6 mesi', 'Tutto', 'Da - A']} /><SelectField label="Sede" value={siteStatsFilter} onChange={setSiteStatsFilter} options={['Tutte', ...data.sites.map((site) => site.name)]} /><>{siteStatsPeriod === 'Da - A' && <><Field label="Da" type="date" value={siteStatsFrom} onChange={(event) => setSiteStatsFrom(event.target.value)} /><Field label="A" type="date" value={siteStatsTo} onChange={(event) => setSiteStatsTo(event.target.value)} /></>}</></div><div className="metric-grid accounting-metrics"><Metric icon={Banknote} label="Entrate sedi" value={money.format(siteStatsIncome)} detail={siteStatsPeriod} /><Metric icon={ArrowDownToLine} label="Uscite sedi" value={money.format(siteStatsExpenses)} detail={siteStatsPeriod} /><Metric icon={TrendingUp} label="Saldo sedi" value={money.format(siteStatsIncome - siteStatsExpenses)} detail="Entrate meno uscite" /><Metric icon={Package} label="Sedi attive" value={String(selectedSiteStats.length)} detail="Sedi nel filtro selezionato" /></div><section className="panel site-summary-panel"><div className="panel-heading"><div><h3>Entrate e uscite per sede</h3><p>{siteStatsPeriod}</p></div></div><Table headings={['Sede', 'Entrate', 'Uscite', 'Saldo', 'Scontrini', 'Carico merce', 'Scarico merce']}><>{selectedSiteStats.map((site) => <tr key={site.id}><td className="cell-primary">{site.name}</td><td className="align-right">{money.format(site.income)}</td><td className="align-right">{money.format(site.expenses)}</td><td className="align-right cell-primary">{money.format(site.balance)}</td><td>{site.receipts}</td><td>{quantityFormat.format(site.stockIn)}</td><td>{quantityFormat.format(site.stockOut)}</td></tr>)}</>{!selectedSiteStats.length && <tr><td colSpan={7} className="empty-cell">Nessuna sede trovata.</td></tr>}</Table></section><SiteStockStatistics sites={data.sites.filter((site) => siteStatsFilter === 'Tutte' || site.name === siteStatsFilter)} siteStocks={data.siteStocks} employees={data.employees} products={data.products} /></div>}
-      {section === 'low-stock' && <div className="page-content low-stock-page"><div className="page-toolbar"><div><h2>Merce in esaurimento</h2><p>Articoli con giacenza positiva pari o inferiore alla soglia minima, suddivisi per sede.</p></div></div>{data.sites.length ? data.sites.map((site) => { const lowStockProducts = data.products.map((product) => ({ ...product, siteStock: siteStockFor(product.id, site.id) })).filter((product) => product.siteStock > 0 && product.siteStock <= product.low_stock_threshold); return <section className="panel low-stock-site-panel" key={site.id}><div className="panel-heading"><div><h3>{site.name}</h3><p>{lowStockProducts.length} articoli in esaurimento</p></div></div><Table headings={['Articolo', 'Categoria', 'Giacenza', 'Soglia minima']}><>{lowStockProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td>{product.category}</td><td>{quantityFormat.format(product.siteStock)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}</td><td>{quantityFormat.format(product.low_stock_threshold)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}</td></tr>)}</>{!lowStockProducts.length && <tr><td colSpan={4} className="empty-cell">Nessun articolo in esaurimento in questa sede.</td></tr>}</Table></section>; }) : <Empty icon={Package} title="Nessuna sede registrata." detail="" />}</div>}
+      {section === 'low-stock' && <div className="page-content low-stock-page"><div className="page-toolbar low-stock-toolbar"><div className="toolbar-actions"><button className="button button-outline" onClick={() => void downloadLowStockList()}><ArrowDownToLine size={16} /> Scarica lista</button><button className="button button-primary" onClick={() => void shareLowStockList()}><Share2 size={16} /> Condividi lista</button></div></div>{data.sites.length ? data.sites.map((site) => { const lowStockProducts = lowStockProductsForSite(site.id); return <section className="panel low-stock-site-panel" key={site.id}><div className="panel-heading"><div><h3>{site.name}</h3><p>{lowStockProducts.length} articoli in esaurimento</p></div></div><Table headings={['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Soglia minima']}><>{lowStockProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td className="mono">{product.code}</td><td>{product.category}</td><td>{quantityFormat.format(product.siteStock)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}</td><td>{quantityFormat.format(product.low_stock_threshold)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}</td></tr>)}</>{!lowStockProducts.length && <tr><td colSpan={5} className="empty-cell">Nessun articolo in esaurimento in questa sede.</td></tr>}</Table></section>; }) : <Empty icon={Package} title="Nessuna sede registrata." detail="" />}</div>}
       {section === 'site-create' && siteDraft && <div className="page-content settings-page"><section className="settings-panel"><button className="settings-back" onClick={() => navigateTo('site-list')}><ArrowLeft size={15} /> Lista sedi</button><div className="settings-title"><h2>{siteDraft.id ? 'Modifica sede' : 'Aggiungi sede'}</h2><p>Inserisci i riferimenti e le informazioni operative del punto vendita.</p></div><form className="settings-form site-form" onSubmit={(event) => void saveSite(event)}><Field label="Nome sede" value={siteDraft.name} onChange={(event) => setSiteDraft({ ...siteDraft, name: event.target.value })} required /><Field label="Indirizzo" value={siteDraft.address} onChange={(event) => setSiteDraft({ ...siteDraft, address: event.target.value })} /><Field label="Telefono" type="tel" value={siteDraft.phone} onChange={(event) => setSiteDraft({ ...siteDraft, phone: event.target.value })} /><Field label="Email sede" type="email" value={siteDraft.email ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, email: event.target.value })} /><label className="field"><span>Responsabile sede</span><select value={siteDraft.manager_name ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, manager_name: event.target.value })}><option value="">Seleziona responsabile</option>{data.employees.filter((employee) => normalizedRole(employee.role) === 'responsabile sede').map((employee) => { const name = `${employee.first_name} ${employee.last_name}`; return <option key={employee.id} value={name}>{name}</option>; })}</select></label><Field label="Orari di apertura" value={siteDraft.opening_hours ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, opening_hours: event.target.value })} /><label className="field site-notes-field"><span>Note</span><textarea rows={3} maxLength={1000} value={siteDraft.notes ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, notes: event.target.value })} /></label><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setSiteDraft(null); navigateTo('site-list'); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Salva sede</button></div></form></section></div>}
       {(section === 'site-list' || section === 'site-management') && <div className="page-content"><div className="page-toolbar"><div><h2>{section === 'site-management' ? 'Gestione sedi' : 'Lista sedi'}</h2><p>{data.sites.length} sedi registrate</p></div>{canAccess('site-management') && <button className="button button-primary" onClick={() => { setSiteDraft({ name: '', address: '', phone: '' }); navigateTo('site-create'); }}><Plus size={16} /> Aggiungi sede</button>}</div><Table headings={['Sede', 'Tipo', 'Codice di riconoscimento', 'Indirizzo', 'Telefono', 'Dipendenti', 'Azioni']}><>{data.sites.map((site) => <tr key={site.id}><td><button className="site-name-link" onClick={() => setSelectedSiteDetails(site)}>{site.name}</button></td><td>Punto vendita</td><td className="mono">{site.recognition_code}</td><td>{site.address || '—'}</td><td>{site.phone || '—'}</td><td>{data.employees.filter((employee) => employee.operational_site === site.name).length}</td><td><div className="toolbar-actions">{canAccess('site-management') && <><button className="button button-outline" onClick={() => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'edit' }); }}><Pencil size={14} /> Modifica</button><button className="button button-danger" onClick={() => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'delete' }); }}><Trash2 size={14} /> Elimina</button></>}</div></td></tr>)}</>{!data.sites.length && <tr><td colSpan={7} className="empty-cell">Nessuna sede trovata.</td></tr>}</Table></div>}
       {section === 'employee-tracker' && <div className="page-content">
