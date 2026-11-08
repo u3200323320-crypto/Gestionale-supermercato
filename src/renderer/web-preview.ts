@@ -126,6 +126,7 @@ function createDemoState(): AppState {
       shop_name: 'Mercato Verde', shop_number: '001', shop_logo: '', home_image: '', home_video: '',
       shop_address: 'Via Roma 12, Milano', shop_phone: '02 555 0101', shop_email: 'info@example.test',
       shop_tax_id: 'IT00000000000', currency: 'EUR', setup_complete: true,
+      main_site_id: '1',
       auth_trial_expires_at: day(365), archive_folder: '', database_file: 'Demo locale (nessun database)',
       receipt_printer: '', receipt_printer_thermal: '', barcode_scanner_enabled: false, barcode_scanner_detected: false,
     },
@@ -149,8 +150,14 @@ function installWebPreview(): void {
   const storedState = window.localStorage.getItem(storageKey);
   let state = storedState ? JSON.parse(storedState) as AppState : createDemoState();
   const persist = () => window.localStorage.setItem(storageKey, JSON.stringify(state));
-  if (migrateDemoSiteRecognitionCodes(state)) persist();
+  const migrationChanged = migrateDemoSiteRecognitionCodes(state);
+  if (!state.settings.main_site_id || !state.sites.some((site) => String(site.id) === state.settings.main_site_id)) {
+    state.settings.main_site_id = String([...state.sites].sort((a, b) => a.id - b.id)[0]?.id ?? '');
+    persist();
+  } else if (migrationChanged) persist();
   const nextId = (values: Array<{ id: number }>) => Math.max(0, ...values.map(({ id }) => id)) + 1;
+  const mainStockSite = () => state.sites.find((site) => String(site.id) === state.settings.main_site_id)
+    ?? [...state.sites].sort((a, b) => a.id - b.id)[0];
   const employeeByBarcode = (barcode: string) => state.employees.find((employee) =>
     employee.barcode === barcode.trim() || employee.recognition_code === barcode.trim());
   const stockAtSite = (productId: number, siteId: number) =>
@@ -170,26 +177,33 @@ function installWebPreview(): void {
       return employee ? { id: employee.id, first_name: employee.first_name, last_name: employee.last_name, role: employee.role, barcode: employee.barcode } : null;
     },
     logout: async () => undefined,
-    saveProduct: async (input: ProductInput) => {
+    saveProduct: async (input: ProductInput, selectedSiteId?: number) => {
       const product = state.products.find((item) => item.code === input.code.trim());
-      const siteId = state.sites[0]?.id;
-      if (!siteId) throw new Error('Aggiungi prima una sede alla demo.');
+      const site = selectedSiteId === undefined
+        ? mainStockSite()
+        : state.sites.find((item) => item.id === selectedSiteId);
+      if (!site) throw new Error('Aggiungi prima una sede alla demo.');
+      const otherSiteStock = product
+        ? state.siteStocks.filter((item) => item.product_id === product.id && item.site_id !== site.id).reduce((sum, item) => sum + item.stock, 0)
+        : 0;
+      if (input.stock < otherSiteStock) throw new Error('La giacenza totale non può essere inferiore alle quantità già assegnate alle altre sedi.');
       if (product) Object.assign(product, input);
       else state.products.push({ ...input, id: nextId(state.products), unit: input.unit ?? 'PEZZO' });
       const saved = state.products.find((item) => item.code === input.code.trim())!;
-      for (const stock of state.siteStocks.filter((item) => item.product_id === saved.id)) stock.stock = 0;
-      const siteStock = stockAtSite(saved.id, siteId);
-      if (siteStock) siteStock.stock = input.stock;
-      else state.siteStocks.push({ product_id: saved.id, site_id: siteId, site_name: state.sites[0].name, stock: input.stock });
+      const stock = stockAtSite(saved.id, site.id);
+      if (stock) stock.stock = input.stock - otherSiteStock;
+      else state.siteStocks.push({ product_id: saved.id, site_id: site.id, site_name: site.name, stock: input.stock - otherSiteStock });
       refreshProductStock(saved.id);
       persist();
     },
     updateStock: async (productId, stock) => {
-      const siteId = state.sites[0]?.id;
-      if (!siteId) return;
-      const existing = stockAtSite(productId, siteId);
-      if (existing) existing.stock = stock;
-      else state.siteStocks.push({ product_id: productId, site_id: siteId, site_name: state.sites[0].name, stock });
+      const site = mainStockSite();
+      if (!site) return;
+      const otherSiteStock = state.siteStocks.filter((item) => item.product_id === productId && item.site_id !== site.id).reduce((sum, item) => sum + item.stock, 0);
+      if (stock < otherSiteStock) throw new Error('La giacenza totale non può essere inferiore alle quantità già assegnate alle altre sedi.');
+      const existing = stockAtSite(productId, site.id);
+      if (existing) existing.stock = stock - otherSiteStock;
+      else state.siteStocks.push({ product_id: productId, site_id: site.id, site_name: site.name, stock: stock - otherSiteStock });
       refreshProductStock(productId);
       persist();
     },
@@ -314,6 +328,7 @@ function installWebPreview(): void {
     },
     saveSetting: async (key, value) => {
       if (key === 'barcode_scanner_enabled' || key === 'barcode_scanner_detected') state.settings[key] = value === 'true';
+      else if (key === 'main_site_id' && !state.sites.some((site) => String(site.id) === value)) throw new Error('Seleziona una sede principale valida.');
       else state.settings[key] = value;
       persist();
     },
@@ -376,6 +391,7 @@ function installWebPreview(): void {
     deleteSite: async (id) => {
       const site = state.sites.find((item) => item.id === id);
       if (site) {
+        const fallback = state.sites.filter((item) => item.id !== id).sort((a, b) => a.id - b.id)[0];
         const employees = state.employees.filter((employee) => employee.operational_site === site.name);
         const dependencies = [
           ['vendite', state.sales.filter((sale) => sale.site === site.name).length],
@@ -392,6 +408,7 @@ function installWebPreview(): void {
         }
         state.siteStocks = state.siteStocks.filter((stock) => stock.site_id !== id);
         state.sites = state.sites.filter((item) => item.id !== id);
+        if (state.settings.main_site_id === String(id)) state.settings.main_site_id = String(fallback?.id ?? '');
         state.products.forEach((product) => refreshProductStock(product.id));
         persist();
       }

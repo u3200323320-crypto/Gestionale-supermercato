@@ -164,6 +164,12 @@ export function deleteSite(database: Database.Database, siteId: number): void {
   }
   database.transaction(() => {
     database.prepare('DELETE FROM sites WHERE id = ?').run(siteId);
+    const configuredMainSite = (database.prepare("SELECT value FROM settings WHERE key = 'main_site_id'").get() as { value?: string } | undefined)?.value;
+    if (configuredMainSite === String(siteId)) {
+      const fallbackSite = database.prepare('SELECT id FROM sites ORDER BY id LIMIT 1').get() as { id: number } | undefined;
+      database.prepare(`INSERT INTO settings (key, value) VALUES ('main_site_id', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(fallbackSite ? String(fallbackSite.id) : '');
+    }
     database.prepare(`UPDATE products SET stock = (
       SELECT COALESCE(SUM(stock), 0) FROM site_inventory WHERE site_inventory.product_id = products.id
     )`).run();

@@ -239,6 +239,7 @@ function state() {
     settings: {
       shop_name: setting('shop_name', 'Il tuo supermercato'),
       shop_number: setting('shop_number'),
+      main_site_id: setting('main_site_id'),
       shop_address: setting('shop_address'),
       shop_phone: setting('shop_phone'),
       shop_email: setting('shop_email'),
@@ -674,7 +675,11 @@ function siteIdByName(name: string): number {
 }
 
 function defaultStockSite(): { id: number; name: string } {
-  const site = database.prepare('SELECT id, name FROM sites ORDER BY id LIMIT 1').get() as
+  const configuredSiteId = Number(setting('main_site_id'));
+  const configuredSite = Number.isSafeInteger(configuredSiteId) && configuredSiteId > 0
+    ? database.prepare('SELECT id, name FROM sites WHERE id = ?').get(configuredSiteId) as { id: number; name: string } | undefined
+    : undefined;
+  const site = configuredSite ?? database.prepare('SELECT id, name FROM sites ORDER BY id LIMIT 1').get() as
     { id: number; name: string } | undefined;
   if (!site) throw new Error('Registra almeno una sede prima di gestire le giacenze.');
   return site;
@@ -951,7 +956,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     if (session.barcode !== input.employee_barcode.trim()) throw new Error('La sessione non corrisponde al dipendente che registra l’attività.');
     recordEmployeeActivity(input.employee_barcode, input.section.trim(), input.action.trim(), input.detail?.trim() ?? '');
   });
-  ipcMain.handle('product:save', (event, product: ProductInput) => {
+  ipcMain.handle('product:save', (event, product: ProductInput, selectedSiteId?: number) => {
     requireSession(event.sender.id, ['proprietario', 'direttore']);
     if (!(database.prepare('SELECT 1 FROM sites LIMIT 1').get())) {
       throw new Error('Registra almeno una sede prima di aggiungere articoli.');
@@ -966,7 +971,10 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       throw new Error('Controlla i dati dell’articolo e la data di scadenza.');
     }
     database.transaction(() => {
-      const stockSiteId = defaultStockSite().id;
+      const stockSiteId = selectedSiteId === undefined ? defaultStockSite().id : selectedSiteId;
+      if (!Number.isSafeInteger(stockSiteId) || !database.prepare('SELECT 1 FROM sites WHERE id = ?').get(stockSiteId)) {
+        throw new Error('Seleziona una sede valida per l’articolo.');
+      }
       const existing = database.prepare('SELECT id, photo_data FROM products WHERE code = ?').get(product.code.trim()) as { id: number; photo_data: string } | undefined;
       const otherSiteStock = existing
         ? (database.prepare('SELECT COALESCE(SUM(stock), 0) AS stock FROM site_inventory WHERE product_id = ? AND site_id != ?')
@@ -1849,8 +1857,11 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     return { valid: true, discount_percentage: voucher.discount_percentage };
   });
   ipcMain.handle('settings:save', (event, key: string, value: string) => {
-    if (!['shop_name', 'shop_number', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id', 'currency', 'archive_folder', 'receipt_printer', 'receipt_printer_thermal', 'barcode_scanner_enabled', 'barcode_scanner_detected', 'home_image', 'home_video'].includes(key)) throw new Error('Impostazione non valida.');
+    if (!['shop_name', 'shop_number', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id', 'currency', 'main_site_id', 'archive_folder', 'receipt_printer', 'receipt_printer_thermal', 'barcode_scanner_enabled', 'barcode_scanner_detected', 'home_image', 'home_video'].includes(key)) throw new Error('Impostazione non valida.');
     if (key === 'currency' && !['EUR', 'USD', 'EGP', 'GBP', 'CHF', 'SAR', 'AED'].includes(value)) throw new Error('Moneta non valida.');
+    if (key === 'main_site_id' && (!/^[1-9]\d*$/.test(value) || !database.prepare('SELECT 1 FROM sites WHERE id = ?').get(Number(value)))) {
+      throw new Error('Seleziona una sede principale valida.');
+    }
     const setupKeys = ['shop_name', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id'];
     const firstSetup = !authenticatedSessions.has(event.sender.id)
       && (database.prepare('SELECT COUNT(*) AS count FROM employees').get() as { count: number }).count === 0

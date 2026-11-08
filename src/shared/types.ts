@@ -1,4 +1,4 @@
-export type Section = 'home' | 'inventory' | 'expired-products' | 'inventory-history' | 'stock-movement' | 'stock-distribution' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'expenses' | 'financial-balance' | 'employees' | 'employee-create' | 'payroll' | 'employee-tracker' | 'site-statistics' | 'site-management' | 'site-create' | 'site-list' | 'low-stock' | 'customer-list' | 'loyalty-generate' | 'loyalty-activate' | 'loyalty-active' | 'settings';
+export type Section = 'home' | 'inventory' | 'available-stock' | 'expired-products' | 'inventory-history' | 'stock-movement' | 'stock-distribution' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'expenses' | 'financial-balance' | 'employees' | 'employee-create' | 'payroll' | 'employee-tracker' | 'site-statistics' | 'site-management' | 'site-create' | 'site-list' | 'low-stock' | 'customer-list' | 'loyalty-generate' | 'loyalty-activate' | 'loyalty-active' | 'settings';
 export type ProductUnit = 'KG' | 'LITRO' | 'PEZZO';
 export type Printer = { name: string; displayName: string };
 export interface Site { id: number; name: string; address: string; phone: string; email: string; tax_id: string; manager_name: string; opening_hours: string; notes: string; site_type: 'store' | 'warehouse'; recognition_code: string; created_at: string }
@@ -206,7 +206,7 @@ export interface AppState {
   employeeActivities: EmployeeActivity[];
   payrollPayments: PayrollPayment[];
   refunds: Refund[];
-  settings: { shop_name: string; shop_number: string; shop_logo?: string; home_image?: string; home_video?: string; shop_address: string; shop_phone: string; shop_email: string; shop_tax_id: string; currency: string; setup_complete: boolean; auth_trial_expires_at: string; archive_folder: string; database_file: string; receipt_printer: string; receipt_printer_thermal: string; barcode_scanner_enabled: boolean; barcode_scanner_detected: boolean };
+  settings: { shop_name: string; shop_number: string; shop_logo?: string; home_image?: string; home_video?: string; shop_address: string; shop_phone: string; shop_email: string; shop_tax_id: string; currency: string; main_site_id: string; setup_complete: boolean; auth_trial_expires_at: string; archive_folder: string; database_file: string; receipt_printer: string; receipt_printer_thermal: string; barcode_scanner_enabled: boolean; barcode_scanner_detected: boolean };
   stockMovements: StockMovement[];
   stockDistributions: StockDistributionRecord[];
   siteStocks: SiteStock[];
@@ -240,7 +240,7 @@ declare global {
     authorizeTracker: (barcode: string) => Promise<boolean>;
     loginEmployee: (barcode: string) => Promise<AuthenticatedEmployee | null>;
     logout: () => Promise<void>;
-    saveProduct: (product: ProductInput) => Promise<void>;
+    saveProduct: (product: ProductInput, siteId?: number) => Promise<void>;
     updateStock: (productId: number, stock: number) => Promise<void>;
     moveStock: (movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; employee_barcode: string; destination?: string; note: string }) => Promise<void>;
     transferStock: (movement: { fromSiteId: number; toSiteId: number; recipientEmployeeId: number; items: Array<{ productId: number; quantity: number }>; employee_barcode: string }) => Promise<void>;
@@ -259,7 +259,7 @@ declare global {
     paySalary: (input: PayrollPaymentInput) => Promise<void>;
     payAllSalaries: (input: { pay_month: string; payment_date: string }) => Promise<void>;
     paySelectedSalaries: (input: { employee_ids: number[]; pay_month: string; payment_date: string }) => Promise<void>;
-    saveSetting: (key: 'shop_name' | 'shop_number' | 'shop_address' | 'shop_phone' | 'shop_email' | 'shop_tax_id' | 'currency' | 'archive_folder' | 'receipt_printer' | 'receipt_printer_thermal' | 'barcode_scanner_enabled' | 'barcode_scanner_detected' | 'home_image' | 'home_video', value: string) => Promise<void>;
+    saveSetting: (key: 'shop_name' | 'shop_number' | 'shop_address' | 'shop_phone' | 'shop_email' | 'shop_tax_id' | 'currency' | 'main_site_id' | 'archive_folder' | 'receipt_printer' | 'receipt_printer_thermal' | 'barcode_scanner_enabled' | 'barcode_scanner_detected' | 'home_image' | 'home_video', value: string) => Promise<void>;
     getPrinters: () => Promise<Printer[]>;
     printReceipt: (target?: 'regular' | 'thermal') => Promise<void>;
     savePayrollReceipts: (input: { folderName: string; files: Array<{ name: string; data: string }> }) => Promise<string>;

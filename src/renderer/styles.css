@@ -425,6 +425,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .unit-choice label { display: flex; min-height: 37px; align-items: center; justify-content: center; gap: 7px; border: 1px solid #dfe4de; border-radius: 4px; color: #536158; cursor: pointer; font-size: 10px; }
 .unit-choice input { margin: 0; accent-color: var(--green); }
 .product-form .product-category-field { grid-column: 1 / -1; }
+.product-form .product-site-field { grid-column: 1 / -1; }
 .product-form .form-actions { display: grid; grid-template-columns: 1fr 1fr; }
 .product-form .form-actions .button { width: 100%; }
 .product-form .form-actions .button-quiet { border-color: var(--line); background: white; }
