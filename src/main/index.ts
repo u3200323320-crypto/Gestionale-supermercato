@@ -7,7 +7,7 @@ import { basename, dirname, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
-import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, Employee, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, Sale, SaleItem, Site, SiteInput, SiteStock, StockDistributionRecord, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
+import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, Employee, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, RolePermissionMap, Sale, SaleItem, Section, Site, SiteInput, SiteStock, StockDistributionRecord, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
 import { deleteSite, migrateSites, saveSite } from './site-service';
 
 let database: Database.Database;
@@ -17,6 +17,13 @@ let salesRetentionInterval: NodeJS.Timeout | undefined;
 const authenticatedSessions = new Map<number, AuthenticatedEmployee>();
 const trialSessions = new Set<number>();
 const saleActionAuthorizations = new Map<number, { barcode: string; expiresAt: number }>();
+const validPermissionSections = new Set<Section>([
+  'home', 'inventory', 'available-stock', 'expired-products', 'inventory-history', 'stock-movement', 'stock-distribution',
+  'cash', 'sales', 'statistics', 'sale-management', 'promotions', 'vouchers-create', 'vouchers-list', 'expenses',
+  'financial-balance', 'employees', 'employee-create', 'payroll', 'employee-tracker', 'site-statistics',
+  'site-management', 'site-create', 'site-list', 'low-stock', 'customer-list', 'loyalty-generate', 'loyalty-activate',
+  'loyalty-active', 'settings',
+]);
 
 function localDate(date: Date): string {
   const year = date.getFullYear();
@@ -240,6 +247,7 @@ function state() {
       shop_name: setting('shop_name', 'Il tuo supermercato'),
       shop_number: setting('shop_number'),
       main_site_id: setting('main_site_id'),
+      role_permissions: setting('role_permissions', '{}'),
       shop_address: setting('shop_address'),
       shop_phone: setting('shop_phone'),
       shop_email: setting('shop_email'),
@@ -392,6 +400,7 @@ function initDatabase(): void {
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sites (
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, address TEXT NOT NULL DEFAULT '',
+      site_role TEXT NOT NULL DEFAULT 'Punto vendita',
       phone TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', tax_id TEXT NOT NULL DEFAULT '',
       manager_name TEXT NOT NULL DEFAULT '', opening_hours TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
       site_type TEXT NOT NULL DEFAULT 'store' CHECK(site_type IN ('store', 'warehouse')),
@@ -473,6 +482,10 @@ function initDatabase(): void {
   if (!siteColumns.some((column) => column.name === 'recognition_code')) {
     database.exec("ALTER TABLE sites ADD COLUMN recognition_code TEXT NOT NULL DEFAULT ''");
   }
+  if (!siteColumns.some((column) => column.name === 'site_role')) {
+    database.exec("ALTER TABLE sites ADD COLUMN site_role TEXT NOT NULL DEFAULT 'Punto vendita'");
+  }
+  database.prepare("UPDATE sites SET site_role = 'Punto vendita' WHERE TRIM(site_role) = '' OR site_role = 'Responsabile sede'").run();
   for (const column of ['email', 'tax_id', 'manager_name', 'opening_hours', 'notes']) {
     if (!siteColumns.some((existing) => existing.name === column)) database.exec(`ALTER TABLE sites ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`);
   }
@@ -1243,9 +1256,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         ? (database.prepare('SELECT operational_site FROM employees WHERE id = ?').get(employee.id) as { operational_site: string }).operational_site
         : '';
       const site = ownerSession
-        ? database.prepare("SELECT id, name FROM sites WHERE id = ? AND site_type = 'store'").get(sale.site_id) as { id: number; name: string } | undefined
-        : database.prepare('SELECT id, name FROM sites WHERE name = ?').get(employeeSite) as { id: number; name: string } | undefined;
-      if (!site) throw new Error(ownerSession ? 'La sede selezionata non esiste o non è una sede di vendita.' : employeeSite ? 'La sede assegnata al dipendente non esiste.' : 'Crea prima una sede operativa per registrare le vendite.');
+        ? database.prepare('SELECT id, name FROM sites WHERE id = ?').get(sale.site_id) as { id: number; name: string } | undefined
+        : database.prepare("SELECT id, name FROM sites WHERE name = ? AND site_type = 'store'").get(employeeSite) as { id: number; name: string } | undefined;
+      if (!site) throw new Error(ownerSession ? 'La sede selezionata non esiste.' : employeeSite ? 'La sede assegnata al dipendente non esiste o non è un punto vendita.' : 'Crea prima una sede operativa per registrare le vendite.');
       const voucher = voucherCode ? findValidVoucher(voucherCode) : undefined;
       if (voucherCode && !voucher) throw new Error('Buono sconto non valido, scaduto o già utilizzato.');
       const voucherDiscount = voucher
@@ -1861,10 +1874,19 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     return { valid: true, discount_percentage: voucher.discount_percentage };
   });
   ipcMain.handle('settings:save', (event, key: string, value: string) => {
-    if (!['shop_name', 'shop_number', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id', 'currency', 'main_site_id', 'archive_folder', 'receipt_printer', 'receipt_printer_thermal', 'barcode_scanner_enabled', 'barcode_scanner_detected', 'home_image', 'home_video'].includes(key)) throw new Error('Impostazione non valida.');
+    if (!['shop_name', 'shop_number', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id', 'currency', 'main_site_id', 'role_permissions', 'archive_folder', 'receipt_printer', 'receipt_printer_thermal', 'barcode_scanner_enabled', 'barcode_scanner_detected', 'home_image', 'home_video'].includes(key)) throw new Error('Impostazione non valida.');
     if (key === 'currency' && !['EUR', 'USD', 'EGP', 'GBP', 'CHF', 'SAR', 'AED'].includes(value)) throw new Error('Moneta non valida.');
     if (key === 'main_site_id' && (!/^[1-9]\d*$/.test(value) || !database.prepare('SELECT 1 FROM sites WHERE id = ?').get(Number(value)))) {
       throw new Error('Seleziona una sede principale valida.');
+    }
+    if (key === 'role_permissions') {
+      let permissions: unknown;
+      try { permissions = JSON.parse(value); } catch { throw new Error('Permessi di accesso non validi.'); }
+      if (!permissions || typeof permissions !== 'object' || Array.isArray(permissions) || value.length > 100_000
+        || Object.entries(permissions as RolePermissionMap).some(([role, sections]) =>
+          !role.trim() || role.length > 80 || !Array.isArray(sections) || sections.some((section) => !validPermissionSections.has(section)))) {
+        throw new Error('Permessi di accesso non validi.');
+      }
     }
     const setupKeys = ['shop_name', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id'];
     const firstSetup = !authenticatedSessions.has(event.sender.id)

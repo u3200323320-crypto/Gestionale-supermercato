@@ -10,7 +10,7 @@ import arabicPdfFontUrl from './DejaVuSans.ttf?url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
 import homeBanner from './home-banner.svg';
-import type { AppState, AuthenticatedEmployee, Employee, EmployeeInput, Expense, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, Sale, SaleItem, Section, Site, SiteInput, SiteStock } from '../shared/types';
+import type { AppState, AuthenticatedEmployee, Employee, EmployeeInput, Expense, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, RolePermissionMap, Sale, SaleItem, Section, Site, SiteInput, SiteStock } from '../shared/types';
 
 let money: Pick<Intl.NumberFormat, 'format'> = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
 let appCurrencySymbol = '€';
@@ -45,6 +45,23 @@ const permanentPromotionEnd = '9999-12-31';
 const promotionDurations = ['1 giorno', '3 giorni', '7 giorni', '1 mese', 'Sempre', 'Personalizzata'];
 const expenseCategories = ['Affitto', 'Utenze', 'Forniture', 'Stipendi', 'Manutenzione', 'Trasporti', 'Altro'];
 const defaultEmployeeRoles = ['Proprietario', 'Direttore', 'Responsabile sede', 'Contabilità', 'cassiere'];
+const defaultSiteRoles = ['Punto vendita', 'Magazzino', 'Sede operativa'];
+function savedEmployeeRoles(): string[] {
+  try {
+    const saved: unknown = JSON.parse(window.localStorage.getItem('employee-roles') ?? '[]');
+    return Array.isArray(saved) && saved.every((role) => typeof role === 'string')
+      ? [...new Set([...defaultEmployeeRoles, ...saved])]
+      : defaultEmployeeRoles;
+  } catch { return defaultEmployeeRoles; }
+}
+function savedSiteRoles(): string[] {
+  try {
+    const saved: unknown = JSON.parse(window.localStorage.getItem('site-roles') ?? '[]');
+    return Array.isArray(saved) && saved.every((role) => typeof role === 'string')
+      ? [...new Set([...defaultSiteRoles, ...saved])]
+      : defaultSiteRoles;
+  } catch { return defaultSiteRoles; }
+}
 type AppLanguage = 'it' | 'ar';
 type LowStockNotification = {
   id: string;
@@ -415,14 +432,44 @@ const sectionNames: Partial<Record<Section, string>> = {
   'expired-products': 'Gestisci articoli scaduti',
   employees: 'Lista Dipendenti', 'employee-create': 'Crea Dipendente', payroll: 'Paga Stipendi', 'employee-tracker': 'Tracker Dipendenti',
   'site-statistics': 'Statistiche sedi', 'site-management': 'Gestisci sedi', 'site-create': 'Aggiungi sede', 'site-list': 'Lista sedi',
-  'low-stock': 'Merce in esaurimento', 'available-stock': 'Merce disponibile',
+  'low-stock': 'Merce in esaurimento', 'available-stock': 'Merce nelle sedi',
   'customer-list': 'Lista clienti', 'loyalty-generate': 'Sviluppa tessere', 'loyalty-activate': 'Attiva tessera', 'loyalty-active': 'Tessere attive',
 };
+const permissionPages: Array<{ section: Section; label: string }> = [
+  { section: 'home', label: 'Homepage' }, { section: 'inventory', label: 'Magazzino' },
+  { section: 'available-stock', label: 'Merce nelle sedi' }, { section: 'expired-products', label: 'Gestione prodotti scaduti' },
+  { section: 'inventory-history', label: 'Storico Magazzino' }, { section: 'stock-movement', label: 'Carica e scarica merce' },
+  { section: 'stock-distribution', label: 'Distribuisci merce' }, { section: 'cash', label: 'Cassa' },
+  { section: 'sales', label: 'Vendite' }, { section: 'statistics', label: 'Analisi vendite' },
+  { section: 'sale-management', label: 'Modifica o Elimina' }, { section: 'promotions', label: 'Promozioni' },
+  { section: 'vouchers-create', label: 'Crea buoni sconto' }, { section: 'vouchers-list', label: 'Lista buoni sconto' },
+  { section: 'expenses', label: 'Spese' }, { section: 'financial-balance', label: 'Bilancio gestionale' },
+  { section: 'employees', label: 'Lista Dipendenti' }, { section: 'employee-create', label: 'Crea Dipendente' },
+  { section: 'payroll', label: 'Paga Stipendi' }, { section: 'employee-tracker', label: 'Tracker Dipendenti' },
+  { section: 'site-statistics', label: 'Statistiche sedi' }, { section: 'site-management', label: 'Gestione sedi' },
+  { section: 'site-create', label: 'Aggiungi sede' }, { section: 'site-list', label: 'Lista sedi' },
+  { section: 'low-stock', label: 'Merce in esaurimento' }, { section: 'customer-list', label: 'Lista clienti' },
+  { section: 'loyalty-generate', label: 'Sviluppa tessere' }, { section: 'loyalty-activate', label: 'Attiva tessere' },
+  { section: 'loyalty-active', label: 'Tessere attive' }, { section: 'settings', label: 'Impostazioni' },
+];
+const permissionSectionSet = new Set(permissionPages.map(({ section }) => section));
+function parseRolePermissions(value = '{}'): RolePermissionMap {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed as Record<string, unknown>).flatMap(([role, sections]) =>
+      typeof role === 'string' && Array.isArray(sections)
+        ? [[role, [...new Set(sections.filter((section): section is Section => typeof section === 'string' && permissionSectionSet.has(section as Section)))]]]
+        : [],
+    )) as RolePermissionMap;
+  } catch { return {}; }
+}
 function normalizedRole(role: string): string {
   return role.trim().toLocaleLowerCase('it-IT').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
-function canAccessSection(role: string, section: Section): boolean {
+function canAccessSection(role: string, section: Section, permissions: RolePermissionMap = {}): boolean {
   if (normalizedRole(role) === 'proprietario') return true;
+  if (permissions[role]) return permissions[role].includes(section);
   if (['customer-list', 'loyalty-generate', 'loyalty-activate', 'loyalty-active'].includes(section)) return false;
   switch (normalizedRole(role)) {
     case 'cassiere':
@@ -435,13 +482,30 @@ function canAccessSection(role: string, section: Section): boolean {
       return section === 'cash';
   }
 }
-function defaultSectionForRole(role: string): Section {
+function defaultSectionForRole(role: string, permissions: RolePermissionMap = {}): Section {
   if (normalizedRole(role) === 'proprietario') return 'cash';
-  return (['home', 'cash', 'settings', 'inventory'] as Section[])
-    .find((section) => canAccessSection(role, section)) ?? 'cash';
+  return permissionPages.find(({ section }) => canAccessSection(role, section, permissions))?.section ?? 'home';
 }
 function isCashierRole(role: string): boolean {
   return !['proprietario', 'direttore', 'contabilita'].includes(normalizedRole(role));
+}
+function AccessPermissionsPanel({ roles, role, permissions, onRoleChange, onPermissionChange }: {
+  roles: string[];
+  role: string;
+  permissions: RolePermissionMap;
+  onRoleChange: (role: string) => void;
+  onPermissionChange: (role: string, section: Section, enabled: boolean) => void;
+}) {
+  const enabledSections = permissions[role] ?? permissionPages
+    .filter(({ section }) => canAccessSection(role, section))
+    .map(({ section }) => section);
+  return <>
+    <div className="settings-title"><h2>Permessi di accesso</h2><p>Scegli quali pagine possono essere aperte dai dipendenti con ciascun ruolo.</p></div>
+    {roles.length ? <>
+      <label className="field access-role-picker"><span>Ruolo dipendente</span><select value={role} onChange={(event) => onRoleChange(event.target.value)}>{roles.map((item) => <option key={item}>{item}</option>)}</select></label>
+      <div className="access-permission-list">{permissionPages.map(({ section, label }) => <label className="access-permission-row" key={section}><span>{label}</span><input type="checkbox" checked={enabledSections.includes(section)} aria-label={`Consenti ${label} al ruolo ${role}`} onChange={(event) => onPermissionChange(role, section, event.target.checked)} /></label>)}</div>
+    </> : <p className="help-copy">Non ci sono ruoli dipendente da configurare.</p>}
+  </>;
 }
 const voucherCodeSpace = 10_000_000_000;
 function randomVoucherCode(prefix: string, usedCodes: Set<string>): string {
@@ -571,12 +635,7 @@ function BarcodeImage({ value }: { value: string }) {
 
 function EmployeeForm({ initial, save, cancel, notify, canDelete = false, onDelete, sites = [] }: { initial: EmployeeInput; save: (employee: EmployeeInput) => Promise<void>; cancel: () => void; notify: (message: string) => void; canDelete?: boolean; onDelete?: () => Promise<void>; sites?: string[] }) {
   const [employee, setEmployee] = useState(initial);
-  const [roleOptions, setRoleOptions] = useState<string[]>(() => {
-    try {
-      const saved = JSON.parse(window.localStorage.getItem('employee-roles') ?? '[]');
-      return Array.isArray(saved) && saved.every((role) => typeof role === 'string') ? [...new Set([...defaultEmployeeRoles, ...saved])] : defaultEmployeeRoles;
-    } catch { return defaultEmployeeRoles; }
-  });
+  const [roleOptions, setRoleOptions] = useState(savedEmployeeRoles);
   const [customRole, setCustomRole] = useState('');
   const [showCustomRole, setShowCustomRole] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -725,6 +784,11 @@ function ProductForm({ initial, isEditing, initialSiteId, sites, save, close, ca
 export default function App() {
   const [data, setData] = useState<AppState | null>(null);
   const [section, setSection] = useState<Section>('home');
+  const [rolePermissions, setRolePermissions] = useState<RolePermissionMap>({});
+  const [siteRoleOptions, setSiteRoleOptions] = useState(savedSiteRoles);
+  const [siteCustomRole, setSiteCustomRole] = useState('');
+  const [showSiteCustomRole, setShowSiteCustomRole] = useState(false);
+  const inventoryFilterKey = section === 'available-stock' ? 'available-stock' : 'inventory';
   const [openSidebarMenu, setOpenSidebarMenu] = useState<'inventory' | 'offers' | 'statistics' | 'employees' | 'sites' | null>(null);
   const siteMenuOpen = openSidebarMenu === 'sites';
   const [customerFirstName, setCustomerFirstName] = useState('');
@@ -764,6 +828,7 @@ export default function App() {
   const [unsoldSite, setUnsoldSite] = useState('Tutto');
   const [unsoldListOpen, setUnsoldListOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
+  const [permissionsRole, setPermissionsRole] = useState('');
   const [mainSiteDraft, setMainSiteDraft] = useState('');
   const [homeMediaWidthCm, setHomeMediaWidthCm] = useState(0);
   const [deviceTab, setDeviceTab] = useState<string | null>(null);
@@ -816,8 +881,12 @@ export default function App() {
   const [receipt, setReceipt] = useState<Sale | null>(null);
   const [cart, setCart] = useState<SaleItem[]>([]);
   const [scannerSearch, setScannerSearch] = useState('');
-  const [inventorySearch, setInventorySearch] = useState('');
-  const [inventorySiteId, setInventorySiteId] = useState('all');
+  const [inventorySearchByPage, setInventorySearchByPage] = useState<Record<'inventory' | 'available-stock', string>>({ inventory: '', 'available-stock': '' });
+  const inventorySearch = inventorySearchByPage[inventoryFilterKey];
+  const setInventorySearch = (value: string) => setInventorySearchByPage((current) => ({ ...current, [inventoryFilterKey]: value }));
+  const [inventorySiteIdByPage, setInventorySiteIdByPage] = useState<Record<'inventory' | 'available-stock', string>>({ inventory: 'all', 'available-stock': 'all' });
+  const inventorySiteId = inventorySiteIdByPage[inventoryFilterKey];
+  const setInventorySiteId = (value: string) => setInventorySiteIdByPage((current) => ({ ...current, [inventoryFilterKey]: value }));
   const [refreshing, setRefreshing] = useState(false);
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [employeeDraft, setEmployeeDraft] = useState<EmployeeInput | null>(null);
@@ -851,7 +920,9 @@ export default function App() {
   const [siteStatsFrom, setSiteStatsFrom] = useState(localDateKey());
   const [siteStatsTo, setSiteStatsTo] = useState(localDateKey());
   const [siteStatsFilter, setSiteStatsFilter] = useState('Tutte');
-  const [inventoryStatus, setInventoryStatus] = useState<'all' | 'available' | 'low' | 'out'>('available');
+  const [inventoryStatusByPage, setInventoryStatusByPage] = useState<Record<'inventory' | 'available-stock', 'all' | 'available' | 'low' | 'out'>>({ inventory: 'available', 'available-stock': 'available' });
+  const inventoryStatus = inventoryStatusByPage[inventoryFilterKey];
+  const setInventoryStatus = (value: 'all' | 'available' | 'low' | 'out') => setInventoryStatusByPage((current) => ({ ...current, [inventoryFilterKey]: value }));
   const [saleSearch, setSaleSearch] = useState('');
   const [saleManagementSearch, setSaleManagementSearch] = useState('');
   const [salesPeriod, setSalesPeriod] = useState('Tutti');
@@ -861,7 +932,9 @@ export default function App() {
   const [salesSite, setSalesSite] = useState('Tutte');
   const [ownerCashSiteId, setOwnerCashSiteId] = useState('');
   const [ownerCashSiteDraft, setOwnerCashSiteDraft] = useState('');
-  const [category, setCategory] = useState('Tutte');
+  const [inventoryCategoryByPage, setInventoryCategoryByPage] = useState<Record<'inventory' | 'available-stock', string>>({ inventory: 'Tutte', 'available-stock': 'Tutte' });
+  const category = inventoryCategoryByPage[inventoryFilterKey];
+  const setCategory = (value: string) => setInventoryCategoryByPage((current) => ({ ...current, [inventoryFilterKey]: value }));
   const [paymentMethod, setPaymentMethod] = useState('Contanti');
   const [voucherCode, setVoucherCode] = useState('');
   const [voucherMessage, setVoucherMessage] = useState('');
@@ -961,17 +1034,21 @@ export default function App() {
   };
   const activeRole = currentUser?.role ?? (data && data.employees.length === 0 ? 'Proprietario' : 'cassiere');
   const storeSites = data?.sites ?? [];
-  const cashSites = storeSites.filter((site) => site.site_type === 'store');
+  const cashSites = storeSites;
   const isOwner = normalizedRole(activeRole) === 'proprietario';
   const employeeSiteName = data?.employees.find((employee) => employee.id === currentUser?.id)?.operational_site ?? '';
   const activeSiteName = isOwner && section === 'cash'
     ? cashSites.find((site) => String(site.id) === ownerCashSiteId)?.name ?? ''
     : employeeSiteName;
   const activeSiteId = storeSites.find((site) => site.name === activeSiteName)?.id;
-  const salesDisabled = !activeSiteName || activeSiteName === 'Magazzino';
+  const activeSite = storeSites.find((site) => site.name === activeSiteName);
+  const salesDisabled = !activeSiteName || (!isOwner && activeSite?.site_type === 'warehouse');
   const mainStockSiteId = storeSites.some((site) => String(site.id) === data?.settings.main_site_id)
     ? data?.settings.main_site_id ?? ''
     : String([...storeSites].sort((a, b) => a.id - b.id)[0]?.id ?? '');
+  const availableStockSites = section === 'available-stock'
+    ? storeSites.filter((site) => String(site.id) !== mainStockSiteId)
+    : storeSites.filter((site) => String(site.id) === mainStockSiteId);
   useEffect(() => {
     if (section === 'stock-distribution' && !distributionFromSiteId && mainStockSiteId) {
       setDistributionFromSiteId(mainStockSiteId);
@@ -992,7 +1069,30 @@ export default function App() {
   const lowStockProductsForSite = (siteId: number) => (data?.products ?? [])
     .map((product) => ({ ...product, siteStock: siteStockFor(product.id, siteId) }))
     .filter((product) => product.siteStock > 0 && product.siteStock <= product.low_stock_threshold);
-  const canAccess = (target: Section) => canAccessSection(activeRole, target);
+  const canAccess = (target: Section) => canAccessSection(activeRole, target, rolePermissions);
+  const permissionRoles = [...new Map([...defaultEmployeeRoles.filter((role) => normalizedRole(role) !== 'proprietario'), ...(data?.employees ?? []).map((employee) => employee.role)]
+    .filter((role) => normalizedRole(role) !== 'proprietario')
+    .map((role) => [normalizedRole(role), role])).values()];
+  const updateRolePermission = async (role: string, page: Section, enabled: boolean) => {
+    if (!isOwner) return;
+    const current = rolePermissions[role] ?? permissionPages
+      .filter(({ section: target }) => canAccessSection(role, target))
+      .map(({ section: target }) => target);
+    const nextRoleSections = new Set(current);
+    if (enabled) nextRoleSections.add(page);
+    else nextRoleSections.delete(page);
+    const nextPermissions = { ...rolePermissions, [role]: [...nextRoleSections] };
+    const serialized = JSON.stringify(nextPermissions);
+    try {
+      await window.gestionale.saveSetting('role_permissions', serialized);
+      setRolePermissions(nextPermissions);
+      setData((currentData) => currentData
+        ? { ...currentData, settings: { ...currentData.settings, role_permissions: serialized } }
+        : currentData);
+    } catch (error) {
+      notify(`Impossibile salvare i permessi: ${errorText(error)}`);
+    }
+  };
   const trackActivity = (sectionName: string, action: string, detail = '', barcode = currentUser?.barcode) => {
     if (!barcode) return;
     void window.gestionale.recordEmployeeActivity({
@@ -1212,6 +1312,7 @@ export default function App() {
         setSiteDraft({
           id: siteAuthorization.site.id,
           name: siteAuthorization.site.name,
+          site_role: siteAuthorization.site.site_role,
           address: siteAuthorization.site.address,
           phone: siteAuthorization.site.phone,
           email: siteAuthorization.site.email,
@@ -1493,26 +1594,54 @@ export default function App() {
     void initialize().catch((error: unknown) => notify(errorText(error)));
   }, []);
   useEffect(() => {
-    if (inventorySiteId !== 'all' && data && !data.sites.some((site) => String(site.id) === inventorySiteId)) {
+    if (!data) return;
+    if (section === 'inventory' && mainStockSiteId && inventorySiteId !== mainStockSiteId) {
+      setInventorySiteId(mainStockSiteId);
+    } else if (inventorySiteId !== 'all' && (!data.sites.some((site) => String(site.id) === inventorySiteId)
+      || (section === 'available-stock' && inventorySiteId === mainStockSiteId))) {
       setInventorySiteId('all');
     }
-  }, [data, inventorySiteId]);
+  }, [data, inventorySiteId, mainStockSiteId, section]);
   useEffect(() => {
     if (salesSite !== 'Tutte' && data && !data.sites.some((site) => site.name === salesSite)) {
       setSalesSite('Tutte');
     }
   }, [data, salesSite]);
   useEffect(() => {
+    setRolePermissions(parseRolePermissions(data?.settings.role_permissions));
+  }, [data?.settings.role_permissions]);
+  useEffect(() => {
     if (settingsTab === 'Homepage' && data) setHomepageMediaDraft(null);
   }, [settingsTab]);
+  useEffect(() => {
+    if (section === 'site-create') {
+      setSiteRoleOptions(savedSiteRoles());
+      setSiteDraft((current) => current && !current.site_role ? { ...current, site_role: defaultSiteRoles[0] } : current);
+    } else {
+      setShowSiteCustomRole(false);
+      setSiteCustomRole('');
+    }
+  }, [section]);
+  useEffect(() => {
+    if (section !== 'settings' || !isCashierRole(activeRole)) return;
+    const closeSettingsOutside = (event: PointerEvent) => {
+      if (!(event.target instanceof Element)
+        || event.target.closest('.settings-page, .settings-link, .cashier-settings-backdrop')) return;
+      setSettingsTab(null);
+      setDeviceTab(null);
+      setSection('cash');
+    };
+    document.addEventListener('pointerdown', closeSettingsOutside);
+    return () => document.removeEventListener('pointerdown', closeSettingsOutside);
+  }, [activeRole, section]);
   useEffect(() => window.gestionale.onSalesExpired(() => {
     void refresh().catch((error: unknown) => notify(errorText(error)));
   }), []);
   useEffect(() => {
-    if (locked || !data || canAccessSection(activeRole, section)) return;
-    setSection(defaultSectionForRole(activeRole));
+    if (locked || !data || canAccessSection(activeRole, section, rolePermissions)) return;
+    setSection(defaultSectionForRole(activeRole, rolePermissions));
     setOpenSidebarMenu(null);
-  }, [activeRole, data, locked, section]);
+  }, [activeRole, data, locked, rolePermissions, section]);
   useEffect(() => {
     if (locked) void window.gestionale.logout();
   }, [locked]);
@@ -1581,14 +1710,14 @@ export default function App() {
   }, []);
   useEffect(() => {
     const openCash = (event: KeyboardEvent) => {
-      if (event.key === 'F2' && !locked && canAccessSection(activeRole, 'cash')) {
+      if (event.key === 'F2' && !locked && canAccessSection(activeRole, 'cash', rolePermissions)) {
         event.preventDefault();
         navigateTo('cash');
       }
     };
     window.addEventListener('keydown', openCash);
     return () => window.removeEventListener('keydown', openCash);
-  }, [activeRole, locked, data]);
+  }, [activeRole, locked, data, rolePermissions]);
   useEffect(() => {
     if (section === 'cash' && !camera && !pendingUnknownCode && !productForm) {
       requestAnimationFrame(() => document.getElementById('scanner-field')?.focus());
@@ -1721,7 +1850,7 @@ export default function App() {
       trackActivity('Accesso', 'Accesso al gestionale', '', employee.barcode);
       setOwnerCashSiteId('');
       setOwnerCashSiteDraft('');
-      setSection(defaultSectionForRole(employee.role));
+      setSection(defaultSectionForRole(employee.role, rolePermissions));
       setLoginBarcode('');
       loginBarcodeAttempt.current = '';
       await refresh();
@@ -3146,11 +3275,15 @@ export default function App() {
     product.expiry_enabled && product.expiry_date && product.expiry_date < todayKey && product.stock > 0
   ) ?? [];
   const inventoryStockFor = (productId: number) => {
-    if (inventorySiteId !== 'all') return siteStockFor(productId, Number(inventorySiteId));
-    const stocks = data?.siteStocks.filter((stock) => stock.product_id === productId) ?? [];
-    return stocks.length
-      ? stocks.reduce((sum, stock) => sum + stock.stock, 0)
-      : data?.products.find((product) => product.id === productId)?.stock ?? 0;
+    const mainSiteId = Number(mainStockSiteId);
+    if (section === 'available-stock') {
+      return (data?.siteStocks ?? [])
+        .filter((stock) => stock.product_id === productId
+          && stock.site_id !== mainSiteId
+          && (inventorySiteId === 'all' || String(stock.site_id) === inventorySiteId))
+        .reduce((sum, stock) => sum + stock.stock, 0);
+    }
+    return siteStockFor(productId, mainSiteId);
   };
   const inventoryList = data?.products.filter((item) => {
     const stock = inventoryStockFor(item.id);
@@ -3599,33 +3732,38 @@ export default function App() {
       <div className="nav-label">OPERATIVITÀ</div>
       <nav>
         {canAccess('home') && <button className={`nav-item${section === 'home' ? ' active' : ''}`} onClick={() => navigateTo('home')}><House size={18} /><span>Homepage</span></button>}
-        {canAccess('inventory') && <>
-          <button aria-expanded={openSidebarMenu === 'inventory'} className={`nav-item${['inventory', 'expired-products', 'inventory-history', 'stock-movement', 'stock-distribution'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'inventory' ? null : 'inventory')}><Package size={18} /><span>{language === 'ar' ? 'المخزن' : 'Magazzino'}</span>{!isCashierRole(activeRole) && <ChevronDown className={`nav-chevron${openSidebarMenu === 'inventory' ? ' open' : ''}`} size={15} />}</button>
-          {openSidebarMenu === 'inventory' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'inventory' ? ' selected' : ''}`} onClick={() => navigateTo('inventory')}>{language === 'ar' ? 'المخزن' : 'Magazzino'}</button>{canAccess('inventory-history') && <><button className={`sidebar-subitem${section === 'inventory-history' ? ' selected' : ''}`} onClick={() => navigateTo('inventory-history')}>{language === 'ar' ? 'سجل المخزن' : 'Storico Magazzino'}</button><button className={`sidebar-subitem${section === 'stock-distribution' ? ' selected' : ''}`} onClick={() => navigateTo('stock-distribution')}>Distribuisci merce</button></>}</div>}
+        {(canAccess('inventory') || canAccess('expired-products') || canAccess('inventory-history') || canAccess('stock-movement') || canAccess('stock-distribution')) && <>
+          <button aria-expanded={openSidebarMenu === 'inventory'} className={`nav-item${['inventory', 'expired-products', 'inventory-history', 'stock-movement', 'stock-distribution'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'inventory' ? null : 'inventory')}><Package size={18} /><span>{language === 'ar' ? 'المخزن' : 'Magazzino'}</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'inventory' ? ' open' : ''}`} size={15} /></button>
+          {openSidebarMenu === 'inventory' && <div className="sidebar-submenu">{canAccess('inventory') && <button className={`sidebar-subitem${section === 'inventory' ? ' selected' : ''}`} onClick={() => navigateTo('inventory')}>{language === 'ar' ? 'المخزن' : 'Magazzino'}</button>}{canAccess('expired-products') && <button className={`sidebar-subitem${section === 'expired-products' ? ' selected' : ''}`} onClick={() => navigateTo('expired-products')}>Gestione prodotti scaduti</button>}{canAccess('inventory-history') && <button className={`sidebar-subitem${section === 'inventory-history' ? ' selected' : ''}`} onClick={() => navigateTo('inventory-history')}>{language === 'ar' ? 'سجل المخزن' : 'Storico Magazzino'}</button>}{canAccess('stock-movement') && <button className={`sidebar-subitem${section === 'stock-movement' ? ' selected' : ''}`} onClick={() => navigateTo('stock-movement')}>Carica e scarica merce</button>}{canAccess('stock-distribution') && <button className={`sidebar-subitem${section === 'stock-distribution' ? ' selected' : ''}`} onClick={() => navigateTo('stock-distribution')}>Distribuisci merce</button>}</div>}
         </>}
+        {canAccess('available-stock') && <button className={`nav-item${section === 'available-stock' ? ' active' : ''}`} onClick={() => navigateTo('available-stock')}><Package size={18} /><span>Merce nelle sedi</span></button>}
         {nav.filter((item) => ['cash', 'sales'].includes(item.section) && canAccess(item.section)).map(({ section: target, label, icon: Icon }) => <button key={target} className={`nav-item${section === target ? ' active' : ''}`} onClick={() => navigateTo(target)}><Icon size={18} /><span>{label}</span>{target === 'cash' && <kbd>F2</kbd>}</button>)}
-        {canAccess('statistics') && <>
+        {(canAccess('statistics') || canAccess('financial-balance') || canAccess('expenses')) && <>
           <button aria-expanded={openSidebarMenu === 'statistics'} className={`nav-item${['statistics', 'financial-balance', 'expenses'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'statistics' ? null : 'statistics')}><BarChart3 size={18} /><span>Statistiche</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'statistics' ? ' open' : ''}`} size={15} /></button>
           {openSidebarMenu === 'statistics' && <div className="sidebar-submenu">
-            <button className={`sidebar-subitem${section === 'statistics' ? ' selected' : ''}`} onClick={() => navigateTo('statistics')}>Statistiche</button>
+            {canAccess('statistics') && <button className={`sidebar-subitem${section === 'statistics' ? ' selected' : ''}`} onClick={() => navigateTo('statistics')}>Statistiche</button>}
             {canAccess('financial-balance') && <button className={`sidebar-subitem${section === 'financial-balance' ? ' selected' : ''}`} onClick={() => navigateTo('financial-balance')}>Bilancio gestionale</button>}
             {canAccess('expenses') && <button className={`sidebar-subitem${section === 'expenses' ? ' selected' : ''}`} onClick={() => navigateTo('expenses')}>Spese</button>}
           </div>}
         </>}
-        {(canAccess('sale-management') || canAccess('promotions') || canAccess('employees')) && <div className="nav-label nav-label-extra">GESTIONE CLIENTI</div>}
+        {(canAccess('sale-management') || canAccess('promotions') || canAccess('vouchers-create') || canAccess('vouchers-list') || canAccess('employees') || canAccess('employee-create') || canAccess('payroll') || canAccess('employee-tracker') || canAccess('site-statistics') || canAccess('site-management') || canAccess('site-create') || canAccess('site-list') || canAccess('low-stock')) && <div className="nav-label nav-label-extra">GESTIONE CLIENTI</div>}
         {canAccess('sale-management') && <>
           <button className={`nav-item${section === 'sale-management' ? ' active' : ''}`} onClick={() => navigateTo('sale-management')}><ClipboardList size={18} /><span>Modifica o Elimina</span></button>
         </>}
-        {canAccess('promotions') && <>
+        {(canAccess('promotions') || canAccess('vouchers-create') || canAccess('vouchers-list')) && <>
           <button aria-expanded={openSidebarMenu === 'offers'} className={`nav-item${['promotions', 'vouchers-create', 'vouchers-list'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'offers' ? null : 'offers')}><TrendingUp size={18} /><span>Offerta</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'offers' ? ' open' : ''}`} size={15} /></button>
-          {openSidebarMenu === 'offers' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'promotions' ? ' selected' : ''}`} onClick={() => navigateTo('promotions')}>Promozioni</button><button className={`sidebar-subitem${section === 'vouchers-create' ? ' selected' : ''}`} onClick={() => { cancelVoucherPreview(); navigateTo('vouchers-create'); }}>Crea buoni sconto</button><button className={`sidebar-subitem${section === 'vouchers-list' ? ' selected' : ''}`} onClick={() => navigateTo('vouchers-list')}>Lista buoni sconto</button></div>}
+          {openSidebarMenu === 'offers' && <div className="sidebar-submenu">{canAccess('promotions') && <button className={`sidebar-subitem${section === 'promotions' ? ' selected' : ''}`} onClick={() => navigateTo('promotions')}>Promozioni</button>}{canAccess('vouchers-create') && <button className={`sidebar-subitem${section === 'vouchers-create' ? ' selected' : ''}`} onClick={() => { cancelVoucherPreview(); navigateTo('vouchers-create'); }}>Crea buoni sconto</button>}{canAccess('vouchers-list') && <button className={`sidebar-subitem${section === 'vouchers-list' ? ' selected' : ''}`} onClick={() => navigateTo('vouchers-list')}>Lista buoni sconto</button>}</div>}
         </>}
-        {(canAccess('promotions') || canAccess('employees')) && <div className="nav-label nav-label-extra">GESTIONE EXTRA</div>}
-        {canAccess('employees') && <>
-          <button aria-expanded={openSidebarMenu === 'employees'} className={`nav-item${['employees', 'employee-create', 'payroll', 'employee-tracker'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'employees' ? null : 'employees')}><ClipboardList size={18} /><span>Dipendenti</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'employees' ? ' open' : ''}`} size={15} /></button>
-          {openSidebarMenu === 'employees' && <div className="sidebar-submenu"><button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => navigateTo('employees')}>Lista Dipendenti</button><button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => navigateTo('payroll')}>Paga Stipendi</button><button className={`sidebar-subitem${section === 'employee-tracker' ? ' selected' : ''}`} onClick={() => navigateTo('employee-tracker')}>Tracker Dipendenti</button></div>}
-          <button aria-expanded={siteMenuOpen} className={`nav-item${['site-statistics', 'site-management', 'site-create', 'site-list', 'low-stock', 'available-stock'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'sites' ? null : 'sites')}><Store size={18} /><span>Gestione sedi</span><ChevronDown className={`nav-chevron${siteMenuOpen ? ' open' : ''}`} size={15} /></button>
-          {siteMenuOpen && <div className="sidebar-submenu">{canAccess('site-statistics') && <button className={`sidebar-subitem${section === 'site-statistics' ? ' selected' : ''}`} onClick={() => navigateTo('site-statistics')}>Statistiche sedi</button>}{canAccess('site-list') && <button className={`sidebar-subitem${section === 'site-list' ? ' selected' : ''}`} onClick={() => navigateTo('site-list')}>Lista sedi</button>}{canAccess('low-stock') && <button className={`sidebar-subitem${section === 'low-stock' ? ' selected' : ''}`} onClick={() => navigateTo('low-stock')}>Merce in esaurimento</button>}{canAccess('available-stock') && <button className={`sidebar-subitem${section === 'available-stock' ? ' selected' : ''}`} onClick={() => { setInventorySearch(''); setInventoryStatus('available'); setInventorySiteId('all'); navigateTo('available-stock'); }}>Merce disponibile</button>}</div>}
+        {(canAccess('promotions') || canAccess('vouchers-create') || canAccess('vouchers-list') || canAccess('employees') || canAccess('employee-create') || canAccess('payroll') || canAccess('employee-tracker') || canAccess('site-statistics') || canAccess('site-management') || canAccess('site-create') || canAccess('site-list') || canAccess('low-stock')) && <div className="nav-label nav-label-extra">GESTIONE EXTRA</div>}
+        {(canAccess('employees') || canAccess('employee-create') || canAccess('payroll') || canAccess('employee-tracker') || canAccess('site-statistics') || canAccess('site-management') || canAccess('site-create') || canAccess('site-list') || canAccess('low-stock')) && <>
+          {(canAccess('employees') || canAccess('employee-create') || canAccess('payroll') || canAccess('employee-tracker')) && <>
+            <button aria-expanded={openSidebarMenu === 'employees'} className={`nav-item${['employees', 'employee-create', 'payroll', 'employee-tracker'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'employees' ? null : 'employees')}><ClipboardList size={18} /><span>Dipendenti</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'employees' ? ' open' : ''}`} size={15} /></button>
+            {openSidebarMenu === 'employees' && <div className="sidebar-submenu">{canAccess('employees') && <button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => navigateTo('employees')}>Lista Dipendenti</button>}{canAccess('employee-create') && <button className={`sidebar-subitem${section === 'employee-create' ? ' selected' : ''}`} onClick={startEmployeeCreation}>Crea Dipendente</button>}{canAccess('payroll') && <button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => navigateTo('payroll')}>Paga Stipendi</button>}{canAccess('employee-tracker') && <button className={`sidebar-subitem${section === 'employee-tracker' ? ' selected' : ''}`} onClick={() => navigateTo('employee-tracker')}>Tracker Dipendenti</button>}</div>}
+          </>}
+          {(canAccess('site-statistics') || canAccess('site-management') || canAccess('site-create') || canAccess('site-list') || canAccess('low-stock')) && <>
+            <button aria-expanded={siteMenuOpen} className={`nav-item${['site-statistics', 'site-management', 'site-create', 'site-list', 'low-stock'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'sites' ? null : 'sites')}><Store size={18} /><span>Gestione sedi</span><ChevronDown className={`nav-chevron${siteMenuOpen ? ' open' : ''}`} size={15} /></button>
+            {siteMenuOpen && <div className="sidebar-submenu">{canAccess('site-statistics') && <button className={`sidebar-subitem${section === 'site-statistics' ? ' selected' : ''}`} onClick={() => navigateTo('site-statistics')}>Statistiche sedi</button>}{canAccess('site-management') && <button className={`sidebar-subitem${section === 'site-management' ? ' selected' : ''}`} onClick={() => navigateTo('site-management')}>Gestione sedi</button>}{canAccess('site-list') && <button className={`sidebar-subitem${section === 'site-list' ? ' selected' : ''}`} onClick={() => navigateTo('site-list')}>Lista sedi</button>}{canAccess('site-create') && <button className={`sidebar-subitem${section === 'site-create' ? ' selected' : ''}`} onClick={() => { setSiteDraft({ name: '', address: '', phone: '', site_role: 'Punto vendita' }); navigateTo('site-create'); }}>Aggiungi sede</button>}{canAccess('low-stock') && <button className={`sidebar-subitem${section === 'low-stock' ? ' selected' : ''}`} onClick={() => navigateTo('low-stock')}>Merce in esaurimento</button>}</div>}
+          </>}
         </>}
       </nav>
       <div className="sidebar-bottom"><div className="sidebar-settings-row">{canAccess('settings') && <button className={`nav-item settings-link${section === 'settings' ? ' active' : ''}`} onClick={() => { setSettingsTab(null); setDeviceTab(null); navigateTo('settings'); }}><Settings size={18} /><span>Impostazioni</span></button>}<button className="nav-item sidebar-refresh" type="button" onClick={() => void refreshCurrentData()} disabled={refreshing} title="Aggiorna dati senza chiudere la pagina" aria-label="Aggiorna dati senza chiudere la pagina"><RefreshCw className={refreshing ? 'refreshing-icon' : ''} size={18} /></button></div><div className="user-card"><div className="user-avatar">{currentUser?.first_name.slice(0, 1).toUpperCase() ?? data.settings.shop_name.slice(0, 1).toUpperCase()}</div><div><strong>{currentUser ? `${currentUser.first_name} ${currentUser.last_name}`.trim() : 'Gestore'}</strong><small>{currentUser?.role ?? 'Account locale'}</small></div>{data.employees.length > 0 && <button className="icon-button small" title="Blocca e cambia utente" aria-label="Blocca e cambia utente" onClick={() => { trackActivity('Accesso', 'Uscita dal gestionale'); setSelectedProduct(null); setProductAuthorization(null); setStockProduct(null); setCurrentUser(null); setLocked(true); setLoginBarcode(''); }}><LockKeyhole size={15} /></button>}</div></div>
@@ -3635,9 +3773,9 @@ export default function App() {
 
       {section === 'home' && <div className="page-content home-page"><img className="home-banner" src={data.settings.home_image || homeBanner} alt="Immagine homepage" /><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length} scontrini emessi`} /><Metric icon={ArrowDownToLine} label="Rimborsi" value={money.format(todayRefunds)} detail="Rimborsi registrati oggi" /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyProfit)} detail="Profitto dopo sconti e costo merce" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString(appLocale)} detail="Pezzi registrati oggi" /></div><section className="expiry-alert expiry-home-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{canAccess('inventory') && expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length} articoli sotto soglia`} action={canAccess('inventory') ? <button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); navigateTo('inventory'); }}>{language === 'ar' ? 'الانتقال إلى المخزن ←' : 'Vai al magazzino →'}</button> : undefined} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => { if (canAccess('inventory')) setSelectedProduct(p); }}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock}</td><td>{p.low_stock_threshold}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => navigateTo('sales')}>{language === 'ar' ? 'كل المبيعات ←' : 'Tutte le vendite →'}</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
 
-      {(section === 'inventory' || section === 'available-stock') && <div className="page-content">
-        <div className="page-toolbar inventory-toolbar"><div><h2>{section === 'available-stock' ? 'Merce disponibile' : 'Articoli in magazzino'}</h2><p>{data.products.length} articoli registrati{!storeSites.length && ' · Registra una sede prima di aggiungere articoli'}</p></div>{!isCashierRole(activeRole) && <div className="toolbar-actions"><button className="button button-outline" onClick={exportInventoryCsv}><ArrowDownToLine size={16} /> {language === 'ar' ? 'تصدير CSV' : 'Esporta CSV'}</button><button className="button button-outline" onClick={exportInventoryReport}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-primary" disabled={!storeSites.length} onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct }); }}><Plus size={16} /> Aggiungi nuovo articolo</button></div>}</div>
-        <div className="filter-row"><SearchInput value={inventorySearch} onChange={setInventorySearch} placeholder="Cerca per nome o codice…" /><details className="inventory-filter-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Categoria: {category}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra prodotti per categoria">{['Tutte', ...categories].map((item) => <button key={item} className={`status-filter${category === item ? ' active' : ''}`} aria-pressed={category === item} onClick={(event) => { setCategory(item); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{item}</button>)}</div></details><details className="inventory-filter-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Disponibilità: {inventoryFilters.find((item) => item.value === inventoryStatus)?.label}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra prodotti per disponibilità">{inventoryFilters.map(({ value, label }) => <button key={value} className={`status-filter${inventoryStatus === value ? ' active' : ''}`} aria-pressed={inventoryStatus === value} onClick={(event) => { setInventoryStatus(value); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{label}</button>)}</div></details><details className="inventory-filter-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Sede: {inventorySiteId === 'all' ? 'Tutte' : storeSites.find((site) => String(site.id) === inventorySiteId)?.name}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra prodotti per sede"><button className={`status-filter${inventorySiteId === 'all' ? ' active' : ''}`} aria-pressed={inventorySiteId === 'all'} onClick={(event) => { setInventorySiteId('all'); event.currentTarget.closest('details')?.removeAttribute('open'); }}>Tutte</button>{storeSites.map((site) => <button key={site.id} className={`status-filter${inventorySiteId === String(site.id) ? ' active' : ''}`} aria-pressed={inventorySiteId === String(site.id)} onClick={(event) => { setInventorySiteId(String(site.id)); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{site.name}</button>)}</div></details></div>
+      {(section === 'inventory' || section === 'available-stock') && <div className={`page-content inventory-scope-page${section === 'available-stock' ? ' available-stock-page' : ''}`}>
+        <div className="page-toolbar inventory-toolbar"><div><h2>{section === 'available-stock' ? 'Merce nelle sedi' : 'Articoli in magazzino'}</h2><p>{data.products.length} articoli registrati{!storeSites.length && ' · Registra una sede prima di aggiungere articoli'}</p></div>{!isCashierRole(activeRole) && <div className="toolbar-actions"><button className="button button-outline" onClick={exportInventoryCsv}><ArrowDownToLine size={16} /> {language === 'ar' ? 'تصدير CSV' : 'Esporta CSV'}</button><button className="button button-outline" onClick={exportInventoryReport}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-primary" disabled={!storeSites.length} onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct }); }}><Plus size={16} /> Aggiungi nuovo articolo</button></div>}</div>
+        <div className="filter-row"><SearchInput value={inventorySearch} onChange={setInventorySearch} placeholder="Cerca per nome o codice…" /><details className="inventory-filter-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Categoria: {category}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra prodotti per categoria">{['Tutte', ...categories].map((item) => <button key={item} className={`status-filter${category === item ? ' active' : ''}`} aria-pressed={category === item} onClick={(event) => { setCategory(item); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{item}</button>)}</div></details><details className="inventory-filter-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Disponibilità: {inventoryFilters.find((item) => item.value === inventoryStatus)?.label}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra prodotti per disponibilità">{inventoryFilters.map(({ value, label }) => <button key={value} className={`status-filter${inventoryStatus === value ? ' active' : ''}`} aria-pressed={inventoryStatus === value} onClick={(event) => { setInventoryStatus(value); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{label}</button>)}</div></details><details className="inventory-filter-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Sede: {inventorySiteId === 'all' ? 'Tutte' : availableStockSites.find((site) => String(site.id) === inventorySiteId)?.name}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra prodotti per sede"><button className={`status-filter${inventorySiteId === 'all' ? ' active' : ''}`} aria-pressed={inventorySiteId === 'all'} onClick={(event) => { setInventorySiteId('all'); event.currentTarget.closest('details')?.removeAttribute('open'); }}>Tutte</button>{availableStockSites.map((site) => <button key={site.id} className={`status-filter${inventorySiteId === String(site.id) ? ' active' : ''}`} aria-pressed={inventorySiteId === String(site.id)} onClick={(event) => { setInventorySiteId(String(site.id)); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{site.name}</button>)}</div></details></div>
         {!isCashierRole(activeRole) && <div className="expiry-panels">
           <section className="expiry-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section>
           <section className="expiry-alert expired-alert"><div className="expired-alert-top"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Prodotti scaduti</strong><span>{expiredProducts.length ? `${expiredProducts.length} ${expiredProducts.length === 1 ? 'articolo scaduto' : 'articoli scaduti'}` : 'Nessun prodotto scaduto'}</span></div></div><button className="text-button expired-manage-link" onClick={() => navigateTo('expired-products')}>Gestisci articoli scaduti</button></div>{expiredProducts.length > 0 && <div className="expiry-list">{expiredProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section>
@@ -3649,7 +3787,7 @@ export default function App() {
 
       {section === 'inventory-history' && <div className="page-content"><div id="inventory-history-print">
         <div className="inventory-history-actions no-print"><FilterSelectField label="Periodo" value={inventoryHistoryPeriod} onChange={setInventoryHistoryPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Da - A']} />{inventoryHistoryPeriod === 'Da - A' && <><Field label="Da" type="date" value={inventoryHistoryFrom} onChange={(event) => setInventoryHistoryFrom(event.target.value)} /><Field label="A" type="date" value={inventoryHistoryTo} onChange={(event) => setInventoryHistoryTo(event.target.value)} /></>}<SearchInput value={inventoryHistorySearch} onChange={setInventoryHistorySearch} placeholder="Cerca articolo, persona o nota…" /><button className="button button-outline" onClick={() => void exportInventoryHistoryPdf()}><ArrowDownToLine size={16} /> Esporta lista</button></div>
-        <Table headings={['Data e ora', 'Articolo', 'Movimento', 'Quantità', 'Persona', 'Nota']}><>{inventoryHistoryMovements.map((movement) => <tr key={movement.id}><td>{dateTimeText(new Date(movement.created_at))}</td><td className="cell-primary">{movement.product_name}</td><td><span className={`movement-badge ${movement.movement_type === 'Carico' ? 'movement-in' : 'movement-out'}`}>{movement.movement_type}</span></td><td>{quantityFormat.format(movement.quantity)}</td><td>{movement.person || '—'}</td><td>{localizedStockNote(movement.note || '—', language)}</td></tr>)}</>{!inventoryHistoryMovements.length && <tr><td colSpan={6} className="empty-cell">Nessun movimento nel periodo selezionato.</td></tr>}</Table></div></div>}
+        <Table headings={['Data e ora', 'Articolo', 'Movimento', 'Quantità', 'Persona', 'Nota']}><>{inventoryHistoryMovements.map((movement, index) => <tr className={index === 0 ? 'inventory-history-first-row' : undefined} key={movement.id}><td>{dateTimeText(new Date(movement.created_at))}</td><td className="cell-primary">{movement.product_name}</td><td><span className={`movement-badge ${movement.movement_type === 'Carico' ? 'movement-in' : 'movement-out'}`}>{movement.movement_type}</span></td><td>{quantityFormat.format(movement.quantity)}</td><td>{movement.person || '—'}</td><td>{localizedStockNote(movement.note || '—', language)}</td></tr>)}</>{!inventoryHistoryMovements.length && <tr><td colSpan={6} className="empty-cell">Nessun movimento nel periodo selezionato.</td></tr>}</Table></div></div>}
 
       {section === 'stock-distribution' && <div className="page-content accounting-page">
         <div className="distribution-layout">
@@ -3739,8 +3877,8 @@ export default function App() {
       {section === 'site-statistics' && <div className="page-content accounting-page site-statistics-page"><div className="site-statistics-filters"><SelectField label="Periodo" value={siteStatsPeriod} onChange={setSiteStatsPeriod} options={['Oggi', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Ultimi 6 mesi', 'Tutto', 'Da - A']} /><SelectField label="Sede" value={siteStatsFilter} onChange={setSiteStatsFilter} options={['Tutte', ...data.sites.map((site) => site.name)]} /><>{siteStatsPeriod === 'Da - A' && <><Field label="Da" type="date" value={siteStatsFrom} onChange={(event) => setSiteStatsFrom(event.target.value)} /><Field label="A" type="date" value={siteStatsTo} onChange={(event) => setSiteStatsTo(event.target.value)} /></>}</></div><div className="metric-grid accounting-metrics"><Metric icon={Banknote} label="Entrate sedi" value={money.format(siteStatsIncome)} detail={siteStatsPeriod} /><Metric icon={ArrowDownToLine} label="Uscite sedi" value={money.format(siteStatsExpenses)} detail={siteStatsPeriod} /><Metric icon={TrendingUp} label="Saldo sedi" value={money.format(siteStatsIncome - siteStatsExpenses)} detail="Entrate meno uscite" /><Metric icon={Package} label="Sedi attive" value={String(selectedSiteStats.length)} detail="Sedi nel filtro selezionato" /></div><section className="panel site-summary-panel"><div className="panel-heading"><div><h3>Entrate e uscite per sede</h3><p>{siteStatsPeriod}</p></div></div><Table headings={['Sede', 'Entrate', 'Uscite', 'Saldo', 'Scontrini', 'Carico merce', 'Scarico merce']}><>{selectedSiteStats.map((site) => <tr key={site.id}><td className="cell-primary">{site.name}</td><td className="align-right">{money.format(site.income)}</td><td className="align-right">{money.format(site.expenses)}</td><td className="align-right cell-primary">{money.format(site.balance)}</td><td>{site.receipts}</td><td>{quantityFormat.format(site.stockIn)}</td><td>{quantityFormat.format(site.stockOut)}</td></tr>)}</>{!selectedSiteStats.length && <tr><td colSpan={7} className="empty-cell">Nessuna sede trovata.</td></tr>}</Table></section><SiteStockStatistics sites={data.sites.filter((site) => siteStatsFilter === 'Tutte' || site.name === siteStatsFilter)} siteStocks={data.siteStocks} employees={data.employees} products={data.products} /></div>}
       {section === 'low-stock' && <div className="page-content low-stock-page"><div className="page-toolbar low-stock-toolbar"><div className="toolbar-actions"><button className="button button-outline" onClick={() => { setLowStockExportSite('all'); setLowStockExportAction('download'); }}><ArrowDownToLine size={16} /> Scarica lista</button><button className="button button-primary" onClick={() => { setLowStockExportSite('all'); setLowStockExportAction('share'); }}><Share2 size={16} /> Condividi lista</button></div></div>{data.sites.length ? data.sites.map((site) => { const lowStockProducts = lowStockProductsForSite(site.id); return <section className="panel low-stock-site-panel" key={site.id}><div className="panel-heading"><div><h3>{site.name}</h3><p>{lowStockProducts.length} articoli in esaurimento</p></div></div><Table headings={['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Soglia minima']}><>{lowStockProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td className="mono">{product.code}</td><td>{product.category}</td><td>{quantityFormat.format(product.siteStock)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}</td><td>{quantityFormat.format(product.low_stock_threshold)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}</td></tr>)}</>{!lowStockProducts.length && <tr><td colSpan={5} className="empty-cell">Nessun articolo in esaurimento in questa sede.</td></tr>}</Table></section>; }) : <Empty icon={Package} title="Nessuna sede registrata." detail="" />}</div>}
       {lowStockExportAction && <Modal title={lowStockExportAction === 'download' ? 'Scarica lista articoli in esaurimento' : 'Condividi lista articoli in esaurimento'} close={() => setLowStockExportAction(null)}><div className="form-grid low-stock-export-form"><label className="field"><span>Seleziona le sedi</span><select value={lowStockExportSite} onChange={(event) => setLowStockExportSite(event.target.value)}><option value="all">Tutte le sedi</option>{storeSites.map((site) => <option key={site.id} value={String(site.id)}>{site.name}</option>)}</select></label><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => setLowStockExportAction(null)}>Annulla</button><button className="button button-primary" type="button" onClick={() => void confirmLowStockExport()}>{lowStockExportAction === 'download' ? <><ArrowDownToLine size={16} /> Scarica</> : <><Share2 size={16} /> Condividi</>}</button></div></div></Modal>}
-      {section === 'site-create' && siteDraft && <div className="page-content settings-page"><section className="settings-panel"><button className="settings-back" onClick={() => navigateTo('site-list')}><ArrowLeft size={15} /> Lista sedi</button><div className="settings-title"><h2>{siteDraft.id ? 'Modifica sede' : 'Aggiungi sede'}</h2><p>Inserisci i riferimenti e le informazioni operative del punto vendita.</p></div><form className="settings-form site-form" onSubmit={(event) => void saveSite(event)}><Field label="Nome sede" value={siteDraft.name} onChange={(event) => setSiteDraft({ ...siteDraft, name: event.target.value })} required /><Field label="Indirizzo" value={siteDraft.address} onChange={(event) => setSiteDraft({ ...siteDraft, address: event.target.value })} /><Field label="Telefono" type="tel" value={siteDraft.phone} onChange={(event) => setSiteDraft({ ...siteDraft, phone: event.target.value })} /><Field label="Email sede" type="email" value={siteDraft.email ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, email: event.target.value })} /><label className="field"><span>Responsabile sede</span><select value={siteDraft.manager_name ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, manager_name: event.target.value })}><option value="">Seleziona responsabile</option>{data.employees.filter((employee) => normalizedRole(employee.role) === 'responsabile sede').map((employee) => { const name = `${employee.first_name} ${employee.last_name}`; return <option key={employee.id} value={name}>{name}</option>; })}</select></label><Field label="Orari di apertura" value={siteDraft.opening_hours ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, opening_hours: event.target.value })} /><label className="field site-notes-field"><span>Note</span><textarea rows={3} maxLength={1000} value={siteDraft.notes ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, notes: event.target.value })} /></label><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setSiteDraft(null); navigateTo('site-list'); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Salva sede</button></div></form></section></div>}
-      {(section === 'site-list' || section === 'site-management') && <div className="page-content"><div className="page-toolbar"><div><h2>{section === 'site-management' ? 'Gestione sedi' : 'Lista sedi'}</h2><p>{data.sites.length} sedi registrate</p></div>{canAccess('site-management') && <button className="button button-primary" onClick={() => { setSiteDraft({ name: '', address: '', phone: '' }); navigateTo('site-create'); }}><Plus size={16} /> Aggiungi sede</button>}</div><Table headings={['Sede', 'Tipo', 'Codice di riconoscimento', 'Indirizzo', 'Telefono', 'Dipendenti', 'Azioni']}><>{data.sites.map((site) => <tr key={site.id}><td><button className="site-name-link" onClick={() => setSelectedSiteDetails(site)}>{site.name}</button></td><td>Punto vendita</td><td className="mono">{site.recognition_code}</td><td>{site.address || '—'}</td><td>{site.phone || '—'}</td><td>{data.employees.filter((employee) => employee.operational_site === site.name).length}</td><td><div className="toolbar-actions">{canAccess('site-management') && <><button className="button button-outline" onClick={() => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'edit' }); }}><Pencil size={14} /> Modifica</button><button className="button button-danger" onClick={() => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'delete' }); }}><Trash2 size={14} /> Elimina</button></>}</div></td></tr>)}</>{!data.sites.length && <tr><td colSpan={7} className="empty-cell">Nessuna sede trovata.</td></tr>}</Table></div>}
+      {section === 'site-create' && siteDraft && <div className="page-content settings-page"><section className="settings-panel"><button className="settings-back" onClick={() => navigateTo('site-list')}><ArrowLeft size={15} /> Lista sedi</button>{siteDraft.id && <div className="settings-title"><h2>Modifica sede</h2><p>Inserisci i riferimenti e le informazioni operative del punto vendita.</p></div>}<form className="settings-form site-form" onSubmit={(event) => void saveSite(event)}><Field label="Nome sede" value={siteDraft.name} onChange={(event) => setSiteDraft({ ...siteDraft, name: event.target.value })} required /><label className="field"><span>Ruolo sede</span><select value={siteDraft.site_role ?? 'Punto vendita'} onChange={(event) => { if (event.target.value === '__other__') { setShowSiteCustomRole(true); setSiteCustomRole(''); } else { setSiteDraft({ ...siteDraft, site_role: event.target.value }); setShowSiteCustomRole(false); } }} required><option value="">Seleziona tipo sede</option>{siteRoleOptions.map((role) => <option key={role}>{role}</option>)}<option value="__other__">Nuovo ruolo</option></select></label>{showSiteCustomRole && <div className="custom-role-field"><Field label="Nuovo ruolo" value={siteCustomRole} onChange={(event) => setSiteCustomRole(event.target.value)} /><button className="button button-outline" type="button" disabled={!siteCustomRole.trim()} onClick={() => { const enteredRole = siteCustomRole.trim(); const role = siteRoleOptions.find((item) => item.toLocaleLowerCase('it') === enteredRole.toLocaleLowerCase('it')) ?? enteredRole; const next = [...new Set([...siteRoleOptions, role])]; setSiteRoleOptions(next); window.localStorage.setItem('site-roles', JSON.stringify(next.filter((item) => !defaultSiteRoles.includes(item)))); setSiteDraft((current) => current ? { ...current, site_role: role } : current); setSiteCustomRole(''); setShowSiteCustomRole(false); }}>Aggiungi alla lista</button></div>}<Field label="Indirizzo" value={siteDraft.address} onChange={(event) => setSiteDraft({ ...siteDraft, address: event.target.value })} /><Field label="Telefono" type="tel" value={siteDraft.phone} onChange={(event) => setSiteDraft({ ...siteDraft, phone: event.target.value })} /><Field label="Email sede" type="email" value={siteDraft.email ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, email: event.target.value })} /><label className="field"><span>Responsabile sede</span><select value={siteDraft.manager_name ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, manager_name: event.target.value })}><option value="">Seleziona responsabile</option>{data.employees.filter((employee) => normalizedRole(employee.role) === 'responsabile sede').map((employee) => { const name = `${employee.first_name} ${employee.last_name}`; return <option key={employee.id} value={name}>{name}</option>; })}</select></label><Field label="Orari di apertura" value={siteDraft.opening_hours ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, opening_hours: event.target.value })} /><label className="field site-notes-field"><span>Note</span><textarea rows={3} maxLength={1000} value={siteDraft.notes ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, notes: event.target.value })} /></label><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setSiteDraft(null); navigateTo('site-list'); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Salva sede</button></div></form></section></div>}
+      {(section === 'site-list' || section === 'site-management') && <div className="page-content"><div className="page-toolbar"><div><h2>{section === 'site-management' ? 'Gestione sedi' : 'Lista sedi'}</h2><p>{data.sites.length} sedi registrate</p></div>{canAccess('site-management') && <button className="button button-primary" onClick={() => { setSiteDraft({ name: '', address: '', phone: '', site_role: 'Punto vendita' }); navigateTo('site-create'); }}><Plus size={16} /> Aggiungi sede</button>}</div><Table headings={['Sede', 'Tipo', 'Codice di riconoscimento', 'Indirizzo', 'Telefono', 'Dipendenti', 'Azioni']}><>{data.sites.map((site) => <tr key={site.id}><td><button className="site-name-link" onClick={() => setSelectedSiteDetails(site)}>{site.name}</button></td><td>{site.site_role || 'Punto vendita'}</td><td className="mono">{site.recognition_code}</td><td>{site.address || '—'}</td><td>{site.phone || '—'}</td><td>{data.employees.filter((employee) => employee.operational_site === site.name).length}</td><td><div className="toolbar-actions">{canAccess('site-management') && <><button className="button button-outline" onClick={() => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'edit' }); }}><Pencil size={14} /> Modifica</button><button className="button button-danger" onClick={() => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'delete' }); }}><Trash2 size={14} /> Elimina</button></>}</div></td></tr>)}</>{!data.sites.length && <tr><td colSpan={7} className="empty-cell">Nessuna sede trovata.</td></tr>}</Table></div>}
       {section === 'employee-tracker' && <div className="page-content">
         <div id="employee-tracker-print">
           <div className="inventory-history-actions no-print">
@@ -3850,17 +3988,18 @@ export default function App() {
         <section className="panel category-panel"><div className="panel-heading"><div><h3>Vendite per categoria</h3><p>Valore degli articoli venduti nel periodo selezionato</p></div></div><div className="category-chart"><ResponsiveContainer width="100%" height={230}><PieChart><Pie data={Object.entries(categoriesSales).map(([name, value]) => ({ name, value }))} dataKey="value" nameKey="name" innerRadius={57} outerRadius={88} paddingAngle={3}>{Object.keys(categoriesSales).map((name, i) => <Cell key={name} fill={colors[i % colors.length]} />)}</Pie><Tooltip formatter={(value) => money.format(Number(value))} /></PieChart></ResponsiveContainer><div className="chart-legend">{Object.entries(categoriesSales).length ? Object.entries(categoriesSales).map(([name, value], i) => <div key={name}><span style={{ backgroundColor: colors[i % colors.length] }} /><span>{name}</span><strong>{money.format(value)}</strong></div>) : <span className="muted">Le categorie appariranno dopo la prima vendita.</span>}</div></div></section>
       </div>}
 
-      {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">{settingsTab === null ? <nav className="settings-nav">{[{ name: 'Info Negozio', icon: Store }, { name: 'Sede principale', icon: Package }, { name: 'Homepage', icon: House }, { name: 'Dispositivi', icon: Barcode }, { name: 'Archivio dati', icon: Archive }, { name: 'Operativo', icon: Check }].filter(({ name }) => normalizedRole(activeRole) === 'proprietario' || !['Info Negozio', 'Sede principale', 'Archivio dati', 'Homepage'].includes(name)).map(({ name, icon: Icon }) => <button key={name} onClick={() => { setSettingsTab(name); setDeviceTab(null); if (name === 'Sede principale') setMainSiteDraft(mainStockSiteId); }}><Icon size={17} />{name === 'Homepage' ? 'Immagine Homepage' : name}</button>)}</nav> : <section className="settings-panel"><button className="settings-back" onClick={() => { if (settingsTab === 'Dispositivi' && deviceTab) setDeviceTab(null); else { setSettingsTab(null); setDeviceTab(null); } }}><ArrowLeft size={15} />{settingsTab === 'Dispositivi' && deviceTab ? 'Dispositivi' : 'Impostazioni'}</button>
+      {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">{settingsTab === null ? <nav className="settings-nav">{[{ name: 'Info Negozio', icon: Store }, { name: 'Sede principale', icon: Package }, { name: 'Homepage', icon: House }, { name: 'Dispositivi', icon: Barcode }, { name: 'Archivio dati', icon: Archive }, { name: 'Permessi di accesso', icon: ShieldCheck }, { name: 'Operativo', icon: Check }].filter(({ name }) => normalizedRole(activeRole) === 'proprietario' || !['Info Negozio', 'Sede principale', 'Archivio dati', 'Homepage', 'Permessi di accesso'].includes(name)).map(({ name, icon: Icon }) => <button key={name} onClick={() => { setSettingsTab(name); setDeviceTab(null); if (name === 'Sede principale') setMainSiteDraft(mainStockSiteId); if (name === 'Permessi di accesso') setPermissionsRole(permissionRoles[0] ?? ''); }}><Icon size={17} />{name === 'Homepage' ? 'Immagine Homepage' : name}</button>)}</nav> : <section className="settings-panel"><button className="settings-back" onClick={() => { if (settingsTab === 'Dispositivi' && deviceTab) setDeviceTab(null); else { setSettingsTab(null); setDeviceTab(null); } }}><ArrowLeft size={15} />{settingsTab === 'Dispositivi' && deviceTab ? 'Dispositivi' : 'Impostazioni'}</button>
         {settingsTab === 'Info Negozio' && <><div className="settings-title"><h2>Info Negozio</h2><p>Nome, logo e moneta utilizzata dal negozio.</p></div><form className="settings-form store-info-form" onSubmit={saveStoreName}><Field label="Nome attività" value={shopName} onChange={(e) => setShopName(e.target.value)} required /><Field label="Numero negozio" value={shopNumber} onChange={(e) => setShopNumber(e.target.value)} /><label className="field"><span>{language === 'ar' ? 'العملة المستخدمة' : 'Moneta utilizzata'}</span><select value={currencyCode} onChange={(event) => void changeCurrency(event.target.value)}>{currencyChoices.map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select></label><div className="receipt-preview"><Store size={17} /><span>{shopName || 'Nome negozio'}</span><small>Anteprima intestazione scontrino</small></div><div className="shop-logo-setting store-info-logo"><span className="field-label">Logo del negozio</span>{data.settings.shop_logo && <img src={data.settings.shop_logo} alt="Logo attuale" />}<button className="button button-outline" type="button" onClick={() => void chooseShopLogo()}><Store size={15} /> {data.settings.shop_logo ? 'Sostituisci logo' : 'Scegli logo'}</button></div><button className="button button-primary"><Check size={16} /> {language === 'ar' ? 'حفظ الإعدادات' : 'Salva impostazioni'}</button></form></>}
         {settingsTab === 'Sede principale' && <><div className="settings-title"><h2>Sede principale</h2><p>Scegli dove registrare inizialmente le nuove giacenze. Potrai poi distribuire la merce alle altre sedi.</p></div><form className="settings-form" onSubmit={(event) => void applyMainSite(event)}><SelectField label="Sede principale" value={mainSiteDraft} onChange={setMainSiteDraft} options={storeSites.map((site) => String(site.id))} labels={storeSites.map((site) => site.name)} /><button className="button button-primary" type="submit" disabled={!mainSiteDraft || mainSiteDraft === data.settings.main_site_id}><Check size={16} /> Applica sede principale</button></form></>}
         {settingsTab === 'Archivio dati' && <><div className="settings-title"><h2>Archivio locale</h2><p>Database SQLite e copie giornaliere dei dati.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Archivio locale attivo</div><div className="database-card"><div className="security-icon"><Archive size={20} /></div><div><strong>Database SQLite</strong><span className="database-path">{data.settings.database_file}</span></div><span className="stock-badge">Attivo</span></div><div className="settings-form"><label className="field"><span>Cartella esportazioni giornaliere</span><div className="folder-input"><input value={archiveFolder} readOnly /><button className="button button-outline" type="button" onClick={() => void chooseFolder()}>Scegli cartella</button></div></label><p className="help-copy">Ogni giorno a mezzanotte vengono aggiornati file TXT e PDF nelle cartelle Magazzino, Cassa, Vendite e Statistiche.</p></div></>}
         {settingsTab === 'Dispositivi' && (deviceTab === null ? <><div className="settings-title"><h2>Dispositivi</h2><p>Seleziona un dispositivo per configurarlo.</p></div><nav className="settings-nav device-menu"><button onClick={() => setDeviceTab('Lettore barcode')}><Barcode size={17} />Lettore di codici a barre</button><button onClick={() => setDeviceTab('Stampante documenti')}><Printer size={17} />Stampante Wi-Fi</button><button onClick={() => setDeviceTab('Stampante scontrini')}><Printer size={17} />Stampante scontrini</button></nav></> : deviceTab === 'Lettore barcode' ? <><div className="settings-title"><h2>Lettore di codici a barre</h2><p>Configura il lettore collegato al computer.</p></div><div className="device-setting"><div className="device-heading"><div className="security-icon"><Barcode size={20} /></div><div><strong>Lettore di codici a barre</strong><span>{data.settings.barcode_scanner_detected ? 'Rilevato: è stata acquisita almeno una scansione su questo computer.' : 'In attesa della prima lettura del lettore USB/HID.'}</span></div><button className={`toggle-button${data.settings.barcode_scanner_enabled ? ' enabled' : ''}`} type="button" role="switch" aria-checked={data.settings.barcode_scanner_enabled} onClick={() => void toggleBarcodeScanner()}>{data.settings.barcode_scanner_enabled ? 'Attivo' : 'Disattivo'}</button></div><p className="help-copy">I lettori USB che si comportano come tastiera vengono riconosciuti automaticamente quando inviano un codice. La preferenza resta salvata tra gli avvii.</p></div></> : deviceTab === 'Stampante documenti' ? <><div className="settings-title"><h2>Stampante documenti</h2><p>Seleziona una stampante rilevata dal sistema e collegala per stampare i documenti.</p></div><div className="device-setting"><div className="device-printer-row"><SelectField label="Stampante collegata" value={documentPrinterDraft} onChange={setDocumentPrinterDraft} options={['', ...printers.map((printer) => printer.name)]} labels={['Seleziona stampante', ...printers.map((printer) => printer.displayName || printer.name)]} /><button className="button button-outline" type="button" onClick={() => void window.gestionale.getPrinters().then(setPrinters).catch((error: unknown) => notify(errorText(error)))}><Printer size={15} /> Rileva stampanti</button></div><div className="printer-connected-status">{data.settings.receipt_printer ? `Collegata: ${printers.find((printer) => printer.name === data.settings.receipt_printer)?.displayName || data.settings.receipt_printer}` : 'Nessuna stampante collegata.'}</div>{!printers.length && <p className="help-copy">Nessuna stampante rilevata. Verifica che sia collegata e installata nel sistema.</p>}{data.settings.receipt_printer && !printers.some((printer) => printer.name === data.settings.receipt_printer) && <p className="help-copy">La stampante salvata non è attualmente disponibile: seleziona una nuova stampante.</p>}</div><div className="printer-connection-actions"><button className="button button-outline" type="button" disabled={!data.settings.receipt_printer} onClick={() => void saveReceiptPrinter('')}>Scollega</button><button className="button button-primary" type="button" disabled={!documentPrinterDraft} onClick={() => void saveReceiptPrinter(documentPrinterDraft)}>Collega</button></div></> : <><div className="settings-title"><h2>Stampante scontrini</h2><p>Configura la stampante dedicata alla stampa degli scontrini.</p></div><div className="device-setting"><div className="device-printer-row"><SelectField label="Stampante scontrini collegata" value={receiptPrinterDraft} onChange={setReceiptPrinterDraft} options={['', ...printers.map((printer) => printer.name)]} labels={['Seleziona stampante', ...printers.map((printer) => printer.displayName || printer.name)]} /><button className="button button-outline" type="button" onClick={() => void window.gestionale.getPrinters().then(setPrinters).catch((error: unknown) => notify(errorText(error)))}><Printer size={15} /> Rileva stampanti</button></div><div className="printer-connection-actions"><span>{data.settings.receipt_printer_thermal ? `Collegata: ${printers.find((printer) => printer.name === data.settings.receipt_printer_thermal)?.displayName || data.settings.receipt_printer_thermal}` : 'Nessuna stampante scontrini collegata.'}</span><div><button className="button button-primary" type="button" disabled={!receiptPrinterDraft} onClick={() => void saveThermalReceiptPrinter(receiptPrinterDraft)}>Collega</button><button className="button button-outline" type="button" disabled={!data.settings.receipt_printer_thermal} onClick={() => void saveThermalReceiptPrinter('')}>Scollega</button></div></div>{!printers.length && <p className="help-copy">Nessuna stampante rilevata. Verifica che sia collegata e installata nel sistema.</p>}</div></>)}
         {settingsTab === 'Homepage' && <><div className="settings-title"><h2>Homepage</h2><p>Personalizza l’immagine o il video mostrato nella pagina iniziale.</p></div><div className="homepage-media-frame" ref={homeMediaFrameRef}>{(homepageMediaDraft?.home_video ?? data.settings.home_video) ? <video src={homepageMediaDraft?.home_video ?? data.settings.home_video} autoPlay muted loop playsInline /> : <img src={homepageMediaDraft?.home_image || data.settings.home_image || homeBanner} alt="Anteprima homepage" />}</div><small className="homepage-media-size">Dimensioni: {homeMediaWidthCm} × 5 cm</small><div className="homepage-media-actions"><button className="button button-outline" type="button" onClick={() => void chooseHomepageImage()}><House size={15} /> Sostituisci immagine</button><button className="button button-outline" type="button" onClick={() => void chooseHomepageVideo()}><Video size={15} /> Sostituisci video</button></div><div className="homepage-media-confirmation"><button className="button button-primary" type="button" disabled={!homepageMediaDraft} onClick={() => void applyHomepageMedia()}><Check size={16} /> Applica</button><button className="button button-outline" type="button" disabled={!homepageMediaDraft} onClick={cancelHomepageMedia}><X size={16} /> Annulla</button></div></>}
+        {settingsTab === 'Permessi di accesso' && isOwner && <AccessPermissionsPanel roles={permissionRoles} role={permissionsRole} permissions={rolePermissions} onRoleChange={setPermissionsRole} onPermissionChange={(role, page, enabled) => void updateRolePermission(role, page, enabled)} />}
         {settingsTab === 'Operativo' && <><div className="settings-title"><h2>Stato operativo</h2><p>Stato corrente del gestionale.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Operativo</div></>}
       </section>}</div></div>}
     </main>
 
-    {section === 'cash' && isOwner && !ownerCashSiteId && <div className="cash-site-prompt-backdrop"><section className="panel cash-site-prompt" role="dialog" aria-modal="true" aria-labelledby="cash-site-prompt-title"><div className="security-icon"><ShoppingBasket size={20} /></div><div><h2 id="cash-site-prompt-title">Quale cassa vuoi aprire?</h2><p>Seleziona la sede. Gli articoli e le quantità disponibili verranno caricati per questa cassa.</p></div><SelectField label="Sede" value={ownerCashSiteDraft} onChange={setOwnerCashSiteDraft} options={cashSites.map((site) => String(site.id))} labels={cashSites.map((site) => site.name)} /><button className="button button-primary full-width" type="button" disabled={!ownerCashSiteDraft} onClick={() => { setOwnerCashSiteId(ownerCashSiteDraft); setScannerSearch(''); }}>Apri cassa</button>{!cashSites.length && <p className="help-copy">Registra prima una sede di vendita per aprire la cassa.</p>}</section></div>}
+    {section === 'cash' && isOwner && !ownerCashSiteId && <div className="cash-site-prompt-backdrop"><section className="panel cash-site-prompt" role="dialog" aria-modal="true" aria-labelledby="cash-site-prompt-title"><div className="security-icon"><ShoppingBasket size={20} /></div><h2 id="cash-site-prompt-title">Quale cassa vuoi aprire?</h2><div className="cash-site-options" role="group" aria-label="Seleziona la sede">{cashSites.map((site) => <button className={`cash-site-option${ownerCashSiteDraft === String(site.id) ? ' selected' : ''}`} key={site.id} type="button" aria-pressed={ownerCashSiteDraft === String(site.id)} onClick={() => setOwnerCashSiteDraft(String(site.id))}><Store size={17} /><span>{site.name}</span></button>)}</div><div className="cash-site-actions"><button className="button button-primary full-width" type="button" disabled={!ownerCashSiteDraft} onClick={() => { setOwnerCashSiteId(ownerCashSiteDraft); setScannerSearch(''); }}>Apri cassa</button><button className="button button-outline full-width" type="button" onClick={() => { setOwnerCashSiteDraft(''); navigateTo('home'); }}>Annulla</button></div>{!cashSites.length && <p className="help-copy">Registra prima una sede per aprire la cassa.</p>}</section></div>}
     {section === 'settings' && isCashierRole(activeRole) && settingsTab === null && <div className="cashier-settings-backdrop"><nav className="settings-nav cashier-settings-nav" aria-label="Impostazioni"><button type="button" onClick={() => { setSettingsTab('Dispositivi'); setDeviceTab(null); }}><Barcode size={17} />Dispositivi</button><button type="button" onClick={() => setSettingsTab('Archivio dati')}><Archive size={17} />Archivio dati</button><button type="button" onClick={() => setSettingsTab('Operativo')}><Check size={17} />Operatività</button></nav></div>}
     {unsoldListOpen && <Modal title="Articoli ancora in magazzino" close={() => setUnsoldListOpen(false)} wide><details className="statistics-period-dropdown unsold-site-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.statistics-period-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Sede: {unsoldSite === 'Tutto' ? 'Tutto' : storeSites.find((site) => String(site.id) === unsoldSite)?.name ?? 'Tutto'}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra articoli per sede">{['Tutto', ...storeSites.map((site) => String(site.id))].map((siteId) => { const name = siteId === 'Tutto' ? 'Tutto' : storeSites.find((site) => String(site.id) === siteId)?.name ?? ''; return <button key={siteId} className={`status-filter${unsoldSite === siteId ? ' active' : ''}`} aria-pressed={unsoldSite === siteId} onClick={(event) => { setUnsoldSite(siteId); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{name}</button>; })}</div></details><div id="unsold-list-print"><Table headings={['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']}><>{unsoldListProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td>{product.category}</td><td>{product.stock} {product.unit ?? 'PEZZO'}</td><td>{money.format(product.sale_price)}</td></tr>)}</>{!unsoldListProducts.length && <tr><td colSpan={4} className="empty-cell">Non risultano articoli rimanenti in magazzino.</td></tr>}</Table></div><div className="unsold-list-actions no-print"><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa</button><button className="button button-primary" onClick={() => void shareUnsoldList()}><Share2 size={16} /> Condividi</button></div></Modal>}
     {reportExportOpen && <Modal title={reportExportType.startsWith('sales') ? 'Esporta report vendite' : 'Esporta report contabilità e finanza'} close={() => setReportExportOpen(false)}><div className="report-export-options"><p>Vuoi applicare al report il filtro temporale selezionato ({reportExportType.startsWith('sales') ? salesPeriod : balancePeriod}) o includere tutto il periodo disponibile?</p><button className="button button-primary" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(true); else if (reportExportType === 'sales-xlsx') void exportSalesXlsx(true); else void downloadFinancialBalance(true); }}><Check size={15} /> Rispetta il filtro di tempo</button><button className="button button-outline" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(false); else if (reportExportType === 'sales-xlsx') void exportSalesXlsx(false); else void downloadFinancialBalance(false); }}><ArrowDownToLine size={15} /> Esporta tutto</button></div></Modal>}

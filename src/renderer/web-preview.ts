@@ -40,6 +40,10 @@ function migrateDemoSiteRecognitionCodes(state: AppState): boolean {
   const reservedCodes = new Set<string>();
   let changed = false;
   for (const site of state.sites) {
+    if (!site.site_role?.trim() || site.site_role === 'Responsabile sede') {
+      site.site_role = 'Punto vendita';
+      changed = true;
+    }
     if (/^[a-z0-9]{15}$/.test(site.recognition_code) && !reservedCodes.has(site.recognition_code)) {
       reservedCodes.add(site.recognition_code);
       continue;
@@ -52,9 +56,9 @@ function migrateDemoSiteRecognitionCodes(state: AppState): boolean {
 
 function createDemoState(): AppState {
   const sites: AppState['sites'] = [
-    { id: 1, name: 'Centro', address: 'Via Roma 12', phone: '02 555 0101', email: 'centro@example.test', tax_id: '', manager_name: 'Giulia Bianchi', opening_hours: 'Lun-Sab 08:00-20:00', notes: '', site_type: 'store', recognition_code: 'centro000000000', created_at: day(-120) },
-    { id: 2, name: 'Nord', address: 'Via Milano 48', phone: '02 555 0102', email: 'nord@example.test', tax_id: '', manager_name: 'Marco Verdi', opening_hours: 'Lun-Sab 08:00-20:00', notes: '', site_type: 'store', recognition_code: 'nord00000000000', created_at: day(-90) },
-    { id: 3, name: 'Magazzino', address: 'Via Industria 5', phone: '02 555 0103', email: '', tax_id: '', manager_name: '', opening_hours: '', notes: '', site_type: 'store', recognition_code: 'magaz0000000000', created_at: day(-75) },
+    { id: 1, name: 'Centro', site_role: 'Punto vendita', address: 'Via Roma 12', phone: '02 555 0101', email: 'centro@example.test', tax_id: '', manager_name: 'Giulia Bianchi', opening_hours: 'Lun-Sab 08:00-20:00', notes: '', site_type: 'store', recognition_code: 'centro000000000', created_at: day(-120) },
+    { id: 2, name: 'Nord', site_role: 'Punto vendita', address: 'Via Milano 48', phone: '02 555 0102', email: 'nord@example.test', tax_id: '', manager_name: 'Marco Verdi', opening_hours: 'Lun-Sab 08:00-20:00', notes: '', site_type: 'store', recognition_code: 'nord00000000000', created_at: day(-90) },
+    { id: 3, name: 'Magazzino', site_role: 'Magazzino', address: 'Via Industria 5', phone: '02 555 0103', email: '', tax_id: '', manager_name: '', opening_hours: '', notes: '', site_type: 'store', recognition_code: 'magaz0000000000', created_at: day(-75) },
   ];
   const products: AppState['products'] = [
     { id: 1, code: '800123450001', name: 'Pasta di semola', unit: 'PEZZO', category: 'Dispensa', sale_price: 1.49, purchase_price: 0.72, stock: 132, low_stock_threshold: 24 },
@@ -127,6 +131,7 @@ function createDemoState(): AppState {
       shop_address: 'Via Roma 12, Milano', shop_phone: '02 555 0101', shop_email: 'info@example.test',
       shop_tax_id: 'IT00000000000', currency: 'EUR', setup_complete: true,
       main_site_id: '1',
+      role_permissions: '{}',
       auth_trial_expires_at: day(365), archive_folder: '', database_file: 'Demo locale (nessun database)',
       receipt_printer: '', receipt_printer_thermal: '', barcode_scanner_enabled: false, barcode_scanner_detected: false,
     },
@@ -377,14 +382,16 @@ function installWebPreview(): void {
         const site = state.sites.find((item) => item.id === input.id);
         if (site) {
           const previousName = site.name;
-          Object.assign(site, input, { email: input.email ?? '', tax_id: input.tax_id ?? '', manager_name: input.manager_name ?? '', opening_hours: input.opening_hours ?? '', notes: input.notes ?? '', site_type: 'store' as const });
+          const siteRole = input.site_role ?? site.site_role ?? 'Punto vendita';
+          Object.assign(site, input, { site_role: siteRole, email: input.email ?? '', tax_id: input.tax_id ?? '', manager_name: input.manager_name ?? '', opening_hours: input.opening_hours ?? '', notes: input.notes ?? '', site_type: siteRole === 'Magazzino' ? 'warehouse' as const : 'store' as const });
           state.employees.forEach((employee) => { if (employee.operational_site === previousName) employee.operational_site = site.name; });
           state.sales.forEach((sale) => { if (sale.site === previousName) sale.site = site.name; });
           state.expenses.forEach((expense) => { if (expense.site === previousName) expense.site = site.name; });
         }
       } else {
         const recognitionCode = uniqueSiteRecognitionCode(new Set(state.sites.map((item) => item.recognition_code)));
-        const site = { ...input, email: input.email ?? '', tax_id: input.tax_id ?? '', manager_name: input.manager_name ?? '', opening_hours: input.opening_hours ?? '', notes: input.notes ?? '', id: nextId(state.sites), site_type: 'store' as const, recognition_code: recognitionCode, created_at: new Date().toISOString() };
+        const siteRole = input.site_role ?? 'Punto vendita';
+        const site = { ...input, site_role: siteRole, email: input.email ?? '', tax_id: input.tax_id ?? '', manager_name: input.manager_name ?? '', opening_hours: input.opening_hours ?? '', notes: input.notes ?? '', id: nextId(state.sites), site_type: siteRole === 'Magazzino' ? 'warehouse' as const : 'store' as const, recognition_code: recognitionCode, created_at: new Date().toISOString() };
         state.sites.push(site);
       }
       persist();

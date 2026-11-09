@@ -93,6 +93,7 @@ export function saveSite(database: Database.Database, input: SiteInput): void {
   if (!input || typeof input.name !== 'string' || !input.name.trim() || input.name.trim().length > 80
     || typeof input.address !== 'string' || input.address.length > 200
     || typeof input.phone !== 'string' || input.phone.length > 40
+    || (input.site_role !== undefined && (typeof input.site_role !== 'string' || input.site_role.trim().length > 80))
     || (input.email !== undefined && (typeof input.email !== 'string' || input.email.length > 254 || (input.email.trim() !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim()))))
     || (input.tax_id !== undefined && (typeof input.tax_id !== 'string' || input.tax_id.length > 32))
     || (input.manager_name !== undefined && (typeof input.manager_name !== 'string' || input.manager_name.length > 100))
@@ -104,6 +105,7 @@ export function saveSite(database: Database.Database, input: SiteInput): void {
 
   const name = input.name.trim();
   const details = {
+    site_role: input.site_role?.trim() || 'Punto vendita',
     address: input.address.trim(),
     phone: input.phone.trim(),
     email: input.email?.trim() ?? '',
@@ -118,18 +120,18 @@ export function saveSite(database: Database.Database, input: SiteInput): void {
         { name: string } | undefined;
       if (!existing) throw new Error('Sede non trovata.');
       database.transaction(() => {
-        database.prepare(`UPDATE sites SET name = @name, address = @address, phone = @phone, email = @email,
+        database.prepare(`UPDATE sites SET name = @name, site_role = @site_role, site_type = @site_type, address = @address, phone = @phone, email = @email,
           tax_id = @tax_id, manager_name = @manager_name, opening_hours = @opening_hours, notes = @notes WHERE id = @id`)
-          .run({ name, ...details, id: input.id });
+          .run({ name, ...details, site_type: details.site_role === 'Magazzino' ? 'warehouse' : 'store', id: input.id });
         if (existing.name !== name) moveSiteReferences(database, existing.name, name);
       })();
     } else {
       const code = uniqueRecognitionCode(database, new Set());
       const isFirstSite = !(database.prepare('SELECT 1 FROM sites LIMIT 1').get());
       const result = database.prepare(`INSERT INTO sites
-        (name, address, phone, email, tax_id, manager_name, opening_hours, notes, created_at, site_type, recognition_code)
-        VALUES (@name, @address, @phone, @email, @tax_id, @manager_name, @opening_hours, @notes, @created_at, 'store', @code)`)
-        .run({ name, ...details, created_at: new Date().toISOString(), code });
+        (name, site_role, address, phone, email, tax_id, manager_name, opening_hours, notes, created_at, site_type, recognition_code)
+        VALUES (@name, @site_role, @address, @phone, @email, @tax_id, @manager_name, @opening_hours, @notes, @created_at, @site_type, @code)`)
+        .run({ name, ...details, site_type: details.site_role === 'Magazzino' ? 'warehouse' : 'store', created_at: new Date().toISOString(), code });
       if (isFirstSite) {
         database.prepare(`INSERT OR IGNORE INTO site_inventory (product_id, site_id, stock)
           SELECT id, ?, stock FROM products`).run(Number(result.lastInsertRowid));
