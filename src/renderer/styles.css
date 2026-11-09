@@ -392,6 +392,20 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .shop-logo-setting img { max-width: min(100%, 360px); max-height: 150px; border: 1px solid #000; object-fit: contain; }
 .shop-logo-setting .field-label { flex-basis: 100%; }
 .settings-form { display: grid; max-width: 460px; gap: 16px; padding-top: 20px; }
+.supplier-form { max-width: none; }
+.supplier-notes { grid-column: 1 / -1; }
+.supplier-order-layout { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); align-items: start; gap: 14px; }
+.supplier-order-form, .supplier-order-items { display: grid; gap: 12px; padding: 16px; }
+.supplier-order-line-inputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.supplier-order-item-list { display: grid; }
+.supplier-order-item { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.supplier-order-item > div { display: grid; gap: 4px; }
+.supplier-order-item small { color: var(--muted); font-size: 10px; }
+.supplier-order-total { display: flex; justify-content: space-between; padding-top: 12px; color: var(--ink); font-size: 12px; }
+.supplier-orders-history { margin-top: 24px; }
+@media (max-width: 760px) {
+  .supplier-order-layout { grid-template-columns: minmax(0, 1fr); }
+}
 .site-form .site-notes-field, .site-form .form-actions { grid-column: 1 / -1; }
 .site-form .form-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .site-form .form-actions .button { width: 100%; justify-content: center; }

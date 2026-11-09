@@ -10,7 +10,7 @@ import arabicPdfFontUrl from './DejaVuSans.ttf?url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
 import homeBanner from './home-banner.svg';
-import type { AppState, AuthenticatedEmployee, Employee, EmployeeInput, Expense, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, RolePermissionMap, Sale, SaleItem, Section, Site, SiteInput, SiteStock } from '../shared/types';
+import type { AppState, AuthenticatedEmployee, Employee, EmployeeInput, Expense, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, RolePermissionMap, Sale, SaleItem, Section, Site, SiteInput, SiteStock, Supplier, SupplierInput, SupplierOrder, SupplierOrderInput } from '../shared/types';
 
 let money: Pick<Intl.NumberFormat, 'format'> = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
 let appCurrencySymbol = '€';
@@ -433,6 +433,7 @@ const sectionNames: Partial<Record<Section, string>> = {
   employees: 'Lista Dipendenti', 'employee-create': 'Crea Dipendente', payroll: 'Paga Stipendi', 'employee-tracker': 'Tracker Dipendenti',
   'site-statistics': 'Statistiche sedi', 'site-management': 'Gestisci sedi', 'site-create': 'Aggiungi sede', 'site-list': 'Lista sedi',
   'low-stock': 'Merce in esaurimento', 'available-stock': 'Merce nelle sedi',
+  'supplier-list': 'Lista fornitori', 'supplier-order': 'Registra ordine',
   'customer-list': 'Lista clienti', 'loyalty-generate': 'Sviluppa tessere', 'loyalty-activate': 'Attiva tessera', 'loyalty-active': 'Tessere attive',
 };
 const permissionPages: Array<{ section: Section; label: string }> = [
@@ -448,7 +449,8 @@ const permissionPages: Array<{ section: Section; label: string }> = [
   { section: 'payroll', label: 'Paga Stipendi' }, { section: 'employee-tracker', label: 'Tracker Dipendenti' },
   { section: 'site-statistics', label: 'Statistiche sedi' }, { section: 'site-management', label: 'Gestione sedi' },
   { section: 'site-create', label: 'Aggiungi sede' }, { section: 'site-list', label: 'Lista sedi' },
-  { section: 'low-stock', label: 'Merce in esaurimento' }, { section: 'customer-list', label: 'Lista clienti' },
+  { section: 'low-stock', label: 'Merce in esaurimento' }, { section: 'supplier-list', label: 'Lista fornitori' },
+  { section: 'supplier-order', label: 'Registra ordine' }, { section: 'customer-list', label: 'Lista clienti' },
   { section: 'loyalty-generate', label: 'Sviluppa tessere' }, { section: 'loyalty-activate', label: 'Attiva tessere' },
   { section: 'loyalty-active', label: 'Tessere attive' }, { section: 'settings', label: 'Impostazioni' },
 ];
@@ -506,6 +508,80 @@ function AccessPermissionsPanel({ roles, role, permissions, onRoleChange, onPerm
       <div className="access-permission-list">{permissionPages.map(({ section, label }) => <label className="access-permission-row" key={section}><span>{label}</span><input type="checkbox" checked={enabledSections.includes(section)} aria-label={`Consenti ${label} al ruolo ${role}`} onChange={(event) => onPermissionChange(role, section, event.target.checked)} /></label>)}</div>
     </> : <p className="help-copy">Non ci sono ruoli dipendente da configurare.</p>}
   </>;
+}
+function SupplierListPage({ suppliers, onSave, notify }: { suppliers: Supplier[]; onSave: (supplier: SupplierInput) => Promise<void>; notify: (message: string) => void }) {
+  const [draft, setDraft] = useState<SupplierInput | null>(null);
+  const [saving, setSaving] = useState(false);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!draft) return;
+    setSaving(true);
+    try {
+      await onSave(draft);
+      setDraft(null);
+    } catch (error) {
+      notify(errorText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return <div className="page-content supplier-page">
+    <div className="page-toolbar"><div><h2>Lista fornitori</h2><p>{suppliers.length} fornitori registrati</p></div><button className="button button-primary" type="button" onClick={() => setDraft({ name: '', contact_name: '', phone: '', email: '', address: '', notes: '' })}><Plus size={16} /> Aggiungi fornitore</button></div>
+    <Table headings={['Fornitore', 'Contatto', 'Telefono', 'Email', 'Indirizzo', 'Azioni']}><>{suppliers.map((supplier) => <tr key={supplier.id}><td className="cell-primary">{supplier.name}</td><td>{supplier.contact_name || '—'}</td><td>{supplier.phone || '—'}</td><td>{supplier.email || '—'}</td><td>{supplier.address || '—'}</td><td><button className="button button-outline" type="button" onClick={() => setDraft({ id: supplier.id, name: supplier.name, contact_name: supplier.contact_name, phone: supplier.phone, email: supplier.email, address: supplier.address, notes: supplier.notes })}><Pencil size={14} /> Modifica</button></td></tr>)}{!suppliers.length && <tr><td colSpan={6} className="empty-cell">Nessun fornitore registrato.</td></tr>}</></Table>
+    {draft && <Modal title={draft.id ? 'Modifica fornitore' : 'Aggiungi fornitore'} close={() => setDraft(null)}><form className="form-grid supplier-form" onSubmit={(event) => void submit(event)}><Field label="Nome fornitore" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} maxLength={120} required autoFocus /><Field label="Nome referente" value={draft.contact_name} onChange={(event) => setDraft({ ...draft, contact_name: event.target.value })} maxLength={120} /><Field label="Telefono" type="tel" value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} maxLength={40} /><Field label="Email" type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} maxLength={254} /><Field label="Indirizzo" value={draft.address} onChange={(event) => setDraft({ ...draft, address: event.target.value })} maxLength={240} /><label className="field supplier-notes"><span>Note</span><textarea rows={3} maxLength={1000} value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} /></label><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => setDraft(null)}>Annulla</button><button className="button button-primary" disabled={saving}><Check size={16} /> Salva fornitore</button></div></form></Modal>}
+  </div>;
+}
+function SupplierOrderPage({ suppliers, products, orders, onSave, notify }: { suppliers: Supplier[]; products: Product[]; orders: SupplierOrder[]; onSave: (order: SupplierOrderInput) => Promise<void>; notify: (message: string) => void }) {
+  const [supplierId, setSupplierId] = useState('');
+  const [productId, setProductId] = useState('');
+  const [quantity, setQuantity] = useState('1');
+  const [unitCost, setUnitCost] = useState('');
+  const [notes, setNotes] = useState('');
+  const [items, setItems] = useState<SupplierOrderInput['items']>([]);
+  const [saving, setSaving] = useState(false);
+  const selectedProduct = products.find((product) => String(product.id) === productId);
+  const addItem = () => {
+    const parsedQuantity = Number(quantity);
+    const parsedCost = Number(unitCost);
+    if (!selectedProduct || !Number.isFinite(parsedQuantity) || parsedQuantity <= 0 || !Number.isFinite(parsedCost) || parsedCost < 0) {
+      notify('Seleziona un articolo e inserisci quantità e costo validi.');
+      return;
+    }
+    if (items.some((item) => item.product_id === selectedProduct.id)) {
+      notify('L’articolo è già presente nell’ordine.');
+      return;
+    }
+    setItems((current) => [...current, { product_id: selectedProduct.id, quantity: parsedQuantity, unit_cost: parsedCost }]);
+    setProductId('');
+    setQuantity('1');
+    setUnitCost('');
+  };
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!supplierId || !items.length) {
+      notify('Seleziona un fornitore e aggiungi almeno un articolo.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave({ supplier_id: Number(supplierId), notes, items });
+      setSupplierId('');
+      setNotes('');
+      setItems([]);
+    } catch (error) {
+      notify(errorText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return <div className="page-content supplier-page">
+    <div className="page-toolbar"><div><h2>Registra ordine</h2><p>Gli ordini registrati non modificano le giacenze.</p></div></div>
+    {!suppliers.length ? <Empty icon={Store} title="Registra prima un fornitore" detail="Aggiungi un fornitore dalla sezione Lista fornitori." /> : <div className="supplier-order-layout">
+      <form className="panel supplier-order-form" onSubmit={(event) => void submit(event)}><SelectField label="Fornitore" value={supplierId} onChange={setSupplierId} options={['', ...suppliers.map((supplier) => String(supplier.id))]} labels={['Seleziona fornitore', ...suppliers.map((supplier) => supplier.name)]} /><SelectField label="Articolo" value={productId} onChange={(value) => { setProductId(value); const product = products.find((item) => String(item.id) === value); setUnitCost(product ? String(product.purchase_price) : ''); }} options={['', ...products.map((product) => String(product.id))]} labels={['Seleziona articolo', ...products.map((product) => `${product.name} · ${product.code}`)]} /><div className="supplier-order-line-inputs"><Field label="Quantità" type="number" min="0.001" step={selectedProduct?.unit === 'PEZZO' || !selectedProduct?.unit ? '1' : '0.001'} value={quantity} onChange={(event) => setQuantity(event.target.value)} /><Field label="Costo unitario (€)" type="number" min="0" step="0.01" value={unitCost} onChange={(event) => setUnitCost(event.target.value)} /></div><button className="button button-outline" type="button" disabled={!productId} onClick={addItem}><Plus size={15} /> Aggiungi articolo</button><label className="field supplier-notes"><span>Note ordine</span><textarea rows={3} maxLength={1000} value={notes} onChange={(event) => setNotes(event.target.value)} /></label><button className="button button-primary full-width" disabled={saving || !items.length}><Check size={16} /> Registra ordine</button></form>
+      <section className="panel supplier-order-items"><div className="panel-heading"><div><h3>Articoli nell’ordine</h3><p>{items.length} articoli</p></div></div><div className="supplier-order-item-list">{items.map((item) => { const product = products.find((candidate) => candidate.id === item.product_id); if (!product) return null; return <div className="supplier-order-item" key={item.product_id}><div><strong>{product.name}</strong><small>{quantityFormat.format(item.quantity)} {product.unit ?? 'PEZZO'} × {money.format(item.unit_cost)}</small></div><strong>{money.format(item.quantity * item.unit_cost)}</strong><button className="icon-button small" type="button" title="Rimuovi articolo" aria-label={`Rimuovi ${product.name}`} onClick={() => setItems((current) => current.filter((entry) => entry.product_id !== item.product_id))}><X size={14} /></button></div>; })}{!items.length && <p className="empty-cell">Aggiungi articoli per comporre l’ordine.</p>}<div className="supplier-order-total"><span>Totale stimato</span><strong>{money.format(items.reduce((sum, item) => sum + item.quantity * item.unit_cost, 0))}</strong></div></div></section>
+    </div>}
+    <section className="supplier-orders-history"><div className="panel-heading"><div><h3>Ordini registrati</h3><p>{orders.length} ordini</p></div></div><Table headings={['Ordine', 'Data', 'Fornitore', 'Articoli', 'Totale', 'Note']}><>{orders.map((order) => <tr key={order.id}><td className="cell-primary">#{order.id}</td><td>{dateTimeText(new Date(order.created_at))}</td><td>{order.supplier_name}</td><td>{order.items.length}</td><td>{money.format(order.items.reduce((sum, item) => sum + item.quantity * item.unit_cost, 0))}</td><td>{order.notes || '—'}</td></tr>)}{!orders.length && <tr><td colSpan={6} className="empty-cell">Nessun ordine registrato.</td></tr>}</></Table></section>
+  </div>;
 }
 const voucherCodeSpace = 10_000_000_000;
 function randomVoucherCode(prefix: string, usedCodes: Set<string>): string {
@@ -789,7 +865,7 @@ export default function App() {
   const [siteCustomRole, setSiteCustomRole] = useState('');
   const [showSiteCustomRole, setShowSiteCustomRole] = useState(false);
   const inventoryFilterKey = section === 'available-stock' ? 'available-stock' : 'inventory';
-  const [openSidebarMenu, setOpenSidebarMenu] = useState<'inventory' | 'offers' | 'statistics' | 'employees' | 'sites' | null>(null);
+  const [openSidebarMenu, setOpenSidebarMenu] = useState<'inventory' | 'offers' | 'statistics' | 'employees' | 'sites' | 'suppliers' | null>(null);
   const siteMenuOpen = openSidebarMenu === 'sites';
   const [customerFirstName, setCustomerFirstName] = useState('');
   const [customerLastName, setCustomerLastName] = useState('');
@@ -3763,7 +3839,7 @@ export default function App() {
             {canAccess('expenses') && <button className={`sidebar-subitem${section === 'expenses' ? ' selected' : ''}`} onClick={() => navigateTo('expenses')}>Spese</button>}
           </div>}
         </>}
-        {(canAccess('sale-management') || canAccess('promotions') || canAccess('vouchers-create') || canAccess('vouchers-list') || canAccess('employees') || canAccess('employee-create') || canAccess('payroll') || canAccess('employee-tracker') || canAccess('site-statistics') || canAccess('site-management') || canAccess('site-create') || canAccess('site-list') || canAccess('low-stock') || canAccess('available-stock')) && <div className="nav-label nav-label-extra">GESTIONE CLIENTI</div>}
+        {(canAccess('sale-management') || canAccess('promotions') || canAccess('vouchers-create') || canAccess('vouchers-list') || canAccess('employees') || canAccess('employee-create') || canAccess('payroll') || canAccess('employee-tracker') || canAccess('site-statistics') || canAccess('site-management') || canAccess('site-create') || canAccess('site-list') || canAccess('low-stock') || canAccess('available-stock') || canAccess('supplier-list') || canAccess('supplier-order')) && <div className="nav-label nav-label-extra">GESTIONE CLIENTI</div>}
         {canAccess('sale-management') && <>
           <button className={`nav-item${section === 'sale-management' ? ' active' : ''}`} onClick={() => navigateTo('sale-management')}><ClipboardList size={18} /><span>Modifica o Elimina</span></button>
         </>}
@@ -3771,8 +3847,8 @@ export default function App() {
           <button aria-expanded={openSidebarMenu === 'offers'} className={`nav-item${['promotions', 'vouchers-create', 'vouchers-list'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'offers' ? null : 'offers')}><TrendingUp size={18} /><span>Offerta</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'offers' ? ' open' : ''}`} size={15} /></button>
           {openSidebarMenu === 'offers' && <div className="sidebar-submenu">{canAccess('promotions') && <button className={`sidebar-subitem${section === 'promotions' ? ' selected' : ''}`} onClick={() => navigateTo('promotions')}>Promozioni</button>}{canAccess('vouchers-create') && <button className={`sidebar-subitem${section === 'vouchers-create' ? ' selected' : ''}`} onClick={() => { cancelVoucherPreview(); navigateTo('vouchers-create'); }}>Crea buoni sconto</button>}{canAccess('vouchers-list') && <button className={`sidebar-subitem${section === 'vouchers-list' ? ' selected' : ''}`} onClick={() => navigateTo('vouchers-list')}>Lista buoni sconto</button>}</div>}
         </>}
-        {(canAccess('promotions') || canAccess('vouchers-create') || canAccess('vouchers-list') || canAccess('employees') || canAccess('employee-create') || canAccess('payroll') || canAccess('employee-tracker') || canAccess('site-statistics') || canAccess('site-management') || canAccess('site-create') || canAccess('site-list') || canAccess('low-stock') || canAccess('available-stock')) && <div className="nav-label nav-label-extra">GESTIONE EXTRA</div>}
-        {(canAccess('employees') || canAccess('employee-create') || canAccess('payroll') || canAccess('employee-tracker') || canAccess('site-statistics') || canAccess('site-management') || canAccess('site-create') || canAccess('site-list') || canAccess('low-stock') || canAccess('available-stock')) && <>
+        {(canAccess('promotions') || canAccess('vouchers-create') || canAccess('vouchers-list') || canAccess('employees') || canAccess('employee-create') || canAccess('payroll') || canAccess('employee-tracker') || canAccess('site-statistics') || canAccess('site-management') || canAccess('site-create') || canAccess('site-list') || canAccess('low-stock') || canAccess('available-stock') || canAccess('supplier-list') || canAccess('supplier-order')) && <div className="nav-label nav-label-extra">GESTIONE EXTRA</div>}
+        {(canAccess('employees') || canAccess('employee-create') || canAccess('payroll') || canAccess('employee-tracker') || canAccess('site-statistics') || canAccess('site-management') || canAccess('site-create') || canAccess('site-list') || canAccess('low-stock') || canAccess('available-stock') || canAccess('supplier-list') || canAccess('supplier-order')) && <>
           {(canAccess('employees') || canAccess('employee-create') || canAccess('payroll') || canAccess('employee-tracker')) && <>
             <button aria-expanded={openSidebarMenu === 'employees'} className={`nav-item${['employees', 'employee-create', 'payroll', 'employee-tracker'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'employees' ? null : 'employees')}><ClipboardList size={18} /><span>Dipendenti</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'employees' ? ' open' : ''}`} size={15} /></button>
             {openSidebarMenu === 'employees' && <div className="sidebar-submenu">{canAccess('employees') && <button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => navigateTo('employees')}>Lista Dipendenti</button>}{canAccess('payroll') && <button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => navigateTo('payroll')}>Paga Stipendi</button>}{canAccess('employee-tracker') && <button className={`sidebar-subitem${section === 'employee-tracker' ? ' selected' : ''}`} onClick={() => navigateTo('employee-tracker')}>Tracker Dipendenti</button>}</div>}
@@ -3780,6 +3856,10 @@ export default function App() {
           {(canAccess('site-statistics') || canAccess('site-management') || canAccess('site-create') || canAccess('site-list') || canAccess('low-stock') || canAccess('available-stock')) && <>
             <button aria-expanded={siteMenuOpen} className={`nav-item${['site-statistics', 'site-management', 'site-create', 'site-list', 'low-stock', 'available-stock'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'sites' ? null : 'sites')}><Store size={18} /><span>Gestione sedi</span><ChevronDown className={`nav-chevron${siteMenuOpen ? ' open' : ''}`} size={15} /></button>
             {siteMenuOpen && <div className="sidebar-submenu">{canAccess('available-stock') && <button className={`sidebar-subitem${section === 'available-stock' ? ' selected' : ''}`} onClick={() => navigateTo('available-stock')}>Merce nelle sedi</button>}{canAccess('low-stock') && <button className={`sidebar-subitem${section === 'low-stock' ? ' selected' : ''}`} onClick={() => navigateTo('low-stock')}>Merce in esaurimento</button>}{canAccess('site-list') && <button className={`sidebar-subitem${section === 'site-list' ? ' selected' : ''}`} onClick={() => navigateTo('site-list')}>Lista sedi</button>}{canAccess('site-statistics') && <button className={`sidebar-subitem${section === 'site-statistics' ? ' selected' : ''}`} onClick={() => navigateTo('site-statistics')}>Statistiche sedi</button>}</div>}
+          </>}
+          {(canAccess('supplier-list') || canAccess('supplier-order')) && <>
+            <button aria-expanded={openSidebarMenu === 'suppliers'} className={`nav-item${['supplier-list', 'supplier-order'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'suppliers' ? null : 'suppliers')}><Store size={18} /><span>Gestione Fornitori</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'suppliers' ? ' open' : ''}`} size={15} /></button>
+            {openSidebarMenu === 'suppliers' && <div className="sidebar-submenu">{canAccess('supplier-list') && <button className={`sidebar-subitem${section === 'supplier-list' ? ' selected' : ''}`} onClick={() => navigateTo('supplier-list')}>Lista fornitori</button>}{canAccess('supplier-order') && <button className={`sidebar-subitem${section === 'supplier-order' ? ' selected' : ''}`} onClick={() => navigateTo('supplier-order')}>Registra ordine</button>}</div>}
           </>}
         </>}
       </nav>
@@ -4014,6 +4094,8 @@ export default function App() {
         {settingsTab === 'Permessi di accesso' && isOwner && <AccessPermissionsPanel roles={permissionRoles} role={permissionsRole} permissions={rolePermissions} onRoleChange={setPermissionsRole} onPermissionChange={(role, page, enabled) => void updateRolePermission(role, page, enabled)} />}
         {settingsTab === 'Operativo' && <><div className="settings-title"><h2>Stato operativo</h2><p>Stato corrente del gestionale.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Operativo</div></>}
       </section>}</div></div>}
+      {section === 'supplier-list' && canAccess('supplier-list') && <SupplierListPage suppliers={data.suppliers} notify={notify} onSave={async (supplier) => { await window.gestionale.saveSupplier(supplier); await refresh(); notify('Fornitore salvato.'); }} />}
+      {section === 'supplier-order' && canAccess('supplier-order') && <SupplierOrderPage suppliers={data.suppliers} products={data.products} orders={data.supplierOrders} notify={notify} onSave={async (order) => { await window.gestionale.saveSupplierOrder(order); await refresh(); notify('Ordine registrato.'); }} />}
     </main>
     {permissionsAuthorizationOpen && isOwner && <Modal title="Verifica barcode Proprietario" close={() => { setPermissionsAuthorizationOpen(false); setPermissionsAuthorizationBarcode(''); }}><form className="site-authorization" onSubmit={(event) => void confirmPermissionsAuthorization(event)}><p>Scansiona o inserisci il barcode del Proprietario per aprire i permessi di accesso.</p><Field label="Barcode del Proprietario" value={permissionsAuthorizationBarcode} onChange={(event) => setPermissionsAuthorizationBarcode(event.target.value.trim())} autoFocus required /><div className="form-actions"><button className="button button-outline" type="button" onClick={() => { setPermissionsAuthorizationOpen(false); setPermissionsAuthorizationBarcode(''); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Verifica barcode</button></div></form></Modal>}
 

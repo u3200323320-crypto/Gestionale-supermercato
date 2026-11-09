@@ -7,7 +7,7 @@ import { basename, dirname, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
-import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, Employee, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, RolePermissionMap, Sale, SaleItem, Section, Site, SiteInput, SiteStock, StockDistributionRecord, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
+import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, Employee, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, RolePermissionMap, Sale, SaleItem, Section, Site, SiteInput, SiteStock, StockDistributionRecord, Supplier, SupplierInput, SupplierOrder, SupplierOrderInput, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
 import { deleteSite, migrateSites, saveSite } from './site-service';
 
 let database: Database.Database;
@@ -22,7 +22,7 @@ const validPermissionSections = new Set<Section>([
   'home', 'inventory', 'available-stock', 'expired-products', 'inventory-history', 'stock-movement', 'stock-distribution',
   'cash', 'sales', 'statistics', 'sale-management', 'promotions', 'vouchers-create', 'vouchers-list', 'expenses',
   'financial-balance', 'employees', 'employee-create', 'payroll', 'employee-tracker', 'site-statistics',
-  'site-management', 'site-create', 'site-list', 'low-stock', 'customer-list', 'loyalty-generate', 'loyalty-activate',
+  'site-management', 'site-create', 'site-list', 'low-stock', 'supplier-list', 'supplier-order', 'customer-list', 'loyalty-generate', 'loyalty-activate',
   'loyalty-active', 'settings',
 ]);
 
@@ -196,6 +196,25 @@ function requireSession(senderId: number, allowedRoles?: string[]): Authenticate
   return session;
 }
 
+type SupplierPage = 'supplier-list' | 'supplier-order';
+function sessionCanAccessSupplierPage(session: AuthenticatedEmployee | undefined, page: SupplierPage): boolean {
+  if (!session) return false;
+  if (normalizedEmployeeRole(session.role) === 'proprietario') return true;
+  try {
+    const permissions = JSON.parse(setting('role_permissions', '{}')) as RolePermissionMap;
+    const rolePermissions = permissions[session.role];
+    return Array.isArray(rolePermissions) && rolePermissions.includes(page);
+  } catch {
+    return false;
+  }
+}
+
+function requireSupplierPage(senderId: number, page: SupplierPage): AuthenticatedEmployee {
+  const session = requireSession(senderId);
+  if (!sessionCanAccessSupplierPage(session, page)) throw new Error('Il tuo ruolo non ha accesso alla gestione fornitori.');
+  return session;
+}
+
 function consumeSaleAuthorization(senderId: number, barcode: string): void {
   const authorization = saleActionAuthorizations.get(senderId);
   saleActionAuthorizations.delete(senderId);
@@ -241,6 +260,19 @@ function allSales(): unknown[] {
   return sales.map((sale) => ({ ...sale, items: saleItems(sale.id as number) }));
 }
 
+function allSupplierOrders(): SupplierOrder[] {
+  const orders = database.prepare(`SELECT orders.id, orders.supplier_id, suppliers.name AS supplier_name,
+      orders.created_at, orders.notes
+    FROM supplier_orders orders JOIN suppliers ON suppliers.id = orders.supplier_id
+    ORDER BY orders.created_at DESC, orders.id DESC`).all() as Omit<SupplierOrder, 'items'>[];
+  const itemsForOrder = database.prepare(`SELECT product_id, product_name, product_code, unit, quantity, unit_cost
+    FROM supplier_order_items WHERE order_id = ? ORDER BY id`);
+  return orders.map((order) => ({
+    ...order,
+    items: itemsForOrder.all(order.id) as SupplierOrder['items'],
+  }));
+}
+
 function state() {
   removeExpiredVouchers();
   removeExpiredRecords();
@@ -267,6 +299,8 @@ function state() {
     refunds: database.prepare('SELECT * FROM refunds ORDER BY created_at DESC, id DESC').all(),
     sites: database.prepare('SELECT * FROM sites ORDER BY name').all() as Site[],
     customers: database.prepare('SELECT * FROM customers ORDER BY last_name, first_name').all(),
+    suppliers: database.prepare('SELECT * FROM suppliers ORDER BY name COLLATE NOCASE').all() as Supplier[],
+    supplierOrders: allSupplierOrders(),
     loyaltyCards: database.prepare(`SELECT cards.*, CASE WHEN customers.id IS NULL THEN NULL
       ELSE TRIM(customers.first_name || ' ' || customers.last_name) END AS customer_name
       FROM loyalty_cards cards LEFT JOIN customers ON customers.id = cards.customer_id
@@ -304,6 +338,9 @@ function state() {
 function stateForSession(session?: AuthenticatedEmployee): ReturnType<typeof state> {
   const snapshot = state();
   const role = normalizedEmployeeRole(session?.role ?? '');
+  const canViewSuppliers = sessionCanAccessSupplierPage(session, 'supplier-list')
+    || sessionCanAccessSupplierPage(session, 'supplier-order');
+  const canViewSupplierOrders = sessionCanAccessSupplierPage(session, 'supplier-order');
 
   const maskedEmployee = (employee: Employee): Employee => ({
     ...employee,
@@ -358,12 +395,18 @@ function stateForSession(session?: AuthenticatedEmployee): ReturnType<typeof sta
       sites: [],
       customers: [],
       loyaltyCards: [],
+      suppliers: [],
+      supplierOrders: [],
       settings: publicSettings,
     };
   }
 
   if (role === 'proprietario' || role === 'direttore') {
-    return snapshot;
+    return {
+      ...snapshot,
+      suppliers: canViewSuppliers ? snapshot.suppliers : [],
+      supplierOrders: canViewSupplierOrders ? snapshot.supplierOrders : [],
+    };
   }
 
   const ownEmployee = snapshot.employees.find((employee) => employee.id === session.id);
@@ -390,6 +433,8 @@ function stateForSession(session?: AuthenticatedEmployee): ReturnType<typeof sta
     sites: ownSite ? [ownSite] : [],
     customers: [],
     loyaltyCards: [],
+    suppliers: canViewSuppliers ? snapshot.suppliers : [],
+    supplierOrders: canViewSupplierOrders ? snapshot.supplierOrders : [],
     settings: publicSettings,
   };
 }
@@ -482,6 +527,20 @@ function initDatabase(): void {
     CREATE TABLE IF NOT EXISTS customers (
       id INTEGER PRIMARY KEY AUTOINCREMENT, first_name TEXT NOT NULL, last_name TEXT NOT NULL,
       phone TEXT NOT NULL, email TEXT NOT NULL, address TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS suppliers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+      contact_name TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '',
+      address TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS supplier_orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+      created_at TEXT NOT NULL, notes TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS supplier_order_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER NOT NULL REFERENCES supplier_orders(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL, product_name TEXT NOT NULL, product_code TEXT NOT NULL,
+      unit TEXT NOT NULL DEFAULT 'PEZZO', quantity REAL NOT NULL CHECK(quantity > 0), unit_cost REAL NOT NULL CHECK(unit_cost >= 0)
     );
     CREATE TABLE IF NOT EXISTS loyalty_cards (
       id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, barcode TEXT NOT NULL UNIQUE, discount_percentage REAL NOT NULL,
@@ -1773,6 +1832,83 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     }
     database.prepare(`INSERT INTO customers (first_name, last_name, phone, email, address, created_at)
       VALUES (?, ?, ?, ?, ?, ?)`).run(firstName, lastName, phone, email, address, new Date().toISOString());
+  });
+  ipcMain.handle('supplier:save', (event, input: SupplierInput) => {
+    requireSupplierPage(event.sender.id, 'supplier-list');
+    if (!input || typeof input !== 'object' || Array.isArray(input)
+      || [input.name, input.contact_name, input.phone, input.email, input.address, input.notes]
+        .some((value) => typeof value !== 'string')) {
+      throw new Error('Dati del fornitore non validi.');
+    }
+    const supplier = {
+      name: input.name.trim(),
+      contact_name: input.contact_name.trim(),
+      phone: input.phone.trim(),
+      email: input.email.trim(),
+      address: input.address.trim(),
+      notes: input.notes.trim(),
+    };
+    if (!supplier.name || supplier.name.length > 120 || supplier.contact_name.length > 120
+      || supplier.phone.length > 40 || supplier.email.length > 254
+      || (supplier.email !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supplier.email))
+      || supplier.address.length > 240 || supplier.notes.length > 1000
+      || (input.id !== undefined && (!Number.isSafeInteger(input.id) || input.id < 1))) {
+      throw new Error('Controlla nome, contatti e note del fornitore.');
+    }
+    try {
+      if (input.id !== undefined) {
+        const result = database.prepare(`UPDATE suppliers SET name = @name, contact_name = @contact_name,
+          phone = @phone, email = @email, address = @address, notes = @notes WHERE id = @id`)
+          .run({ ...supplier, id: input.id });
+        if (!result.changes) throw new Error('Fornitore non trovato.');
+      } else {
+        database.prepare(`INSERT INTO suppliers (name, contact_name, phone, email, address, notes, created_at)
+          VALUES (@name, @contact_name, @phone, @email, @address, @notes, @created_at)`)
+          .run({ ...supplier, created_at: new Date().toISOString() });
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('UNIQUE constraint failed: suppliers.name')) {
+        throw new Error('Esiste già un fornitore con questo nome.');
+      }
+      throw error;
+    }
+  });
+  ipcMain.handle('supplier-order:save', (event, input: SupplierOrderInput) => {
+    requireSupplierPage(event.sender.id, 'supplier-order');
+    if (!input || typeof input !== 'object' || Array.isArray(input)
+      || !Number.isSafeInteger(input.supplier_id) || input.supplier_id < 1
+      || typeof input.notes !== 'string' || input.notes.length > 1000
+      || !Array.isArray(input.items) || input.items.length < 1 || input.items.length > 100) {
+      throw new Error('Dati dell’ordine non validi.');
+    }
+    const supplier = database.prepare('SELECT id FROM suppliers WHERE id = ?').get(input.supplier_id) as { id: number } | undefined;
+    if (!supplier) throw new Error('Seleziona un fornitore valido.');
+    const seenProducts = new Set<number>();
+    const items = input.items.map((item) => {
+      if (!item || !Number.isSafeInteger(item.product_id) || item.product_id < 1
+        || !Number.isFinite(item.quantity) || item.quantity <= 0 || item.quantity > 1_000_000
+        || !Number.isFinite(item.unit_cost) || item.unit_cost < 0 || item.unit_cost > 1_000_000
+        || seenProducts.has(item.product_id)) {
+        throw new Error('Verifica articoli, quantità e costi dell’ordine.');
+      }
+      seenProducts.add(item.product_id);
+      const product = database.prepare('SELECT id, name, code, unit FROM products WHERE id = ?').get(item.product_id) as
+        { id: number; name: string; code: string; unit: Product['unit'] } | undefined;
+      if (!product) throw new Error('Un articolo selezionato non esiste più.');
+      return { ...item, product_name: product.name, product_code: product.code, unit: product.unit ?? 'PEZZO' };
+    });
+    const createdAt = new Date().toISOString();
+    database.transaction(() => {
+      const result = database.prepare('INSERT INTO supplier_orders (supplier_id, created_at, notes) VALUES (?, ?, ?)')
+        .run(supplier.id, createdAt, input.notes.trim());
+      const orderId = Number(result.lastInsertRowid);
+      const insertItem = database.prepare(`INSERT INTO supplier_order_items
+        (order_id, product_id, product_name, product_code, unit, quantity, unit_cost)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`);
+      for (const item of items) {
+        insertItem.run(orderId, item.product_id, item.product_name, item.product_code, item.unit, item.quantity, item.unit_cost);
+      }
+    })();
   });
   ipcMain.handle('loyalty-cards:generate', (event, input: { quantity: number; discount_percentage: number }) => {
     requireSession(event.sender.id, ['proprietario']);

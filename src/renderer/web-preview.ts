@@ -11,6 +11,10 @@ import type {
   Sale,
   SaleItem,
   SiteInput,
+  Supplier,
+  SupplierInput,
+  SupplierOrder,
+  SupplierOrderInput,
   VoucherBatchInput,
 } from '../shared/types';
 
@@ -146,6 +150,8 @@ function createDemoState(): AppState {
     ],
     customers: [{ id: 1, first_name: 'Sara', last_name: 'Moretti', phone: '333 000 2001', email: 'sara@example.test', address: 'Via Manzoni 9', created_at: day(-20) }],
     loyaltyCards: [{ id: 1, code: 'DEMO0001', barcode: 'DEMO0001', discount_percentage: 5, customer_id: 1, customer_name: 'Sara Moretti', status: 'Attiva', points: 120, created_at: day(-15), activated_at: day(-14) }],
+    suppliers: [],
+    supplierOrders: [],
   };
 }
 
@@ -155,7 +161,15 @@ function installWebPreview(): void {
   const storedState = window.localStorage.getItem(storageKey);
   let state = storedState ? JSON.parse(storedState) as AppState : createDemoState();
   const persist = () => window.localStorage.setItem(storageKey, JSON.stringify(state));
-  const migrationChanged = migrateDemoSiteRecognitionCodes(state);
+  let migrationChanged = migrateDemoSiteRecognitionCodes(state);
+  if (!Array.isArray(state.suppliers)) {
+    state.suppliers = [];
+    migrationChanged = true;
+  }
+  if (!Array.isArray(state.supplierOrders)) {
+    state.supplierOrders = [];
+    migrationChanged = true;
+  }
   if (!state.settings.main_site_id || !state.sites.some((site) => String(site.id) === state.settings.main_site_id)) {
     state.settings.main_site_id = String([...state.sites].sort((a, b) => a.id - b.id)[0]?.id ?? '');
     persist();
@@ -350,6 +364,42 @@ function installWebPreview(): void {
     deleteSale: async (id) => { state.sales = state.sales.filter((item) => item.id !== id); persist(); },
     saveCustomer: async (customer: CustomerInput) => {
       state.customers.push({ ...customer, id: nextId(state.customers), created_at: new Date().toISOString() });
+      persist();
+    },
+    saveSupplier: async (input: SupplierInput) => {
+      const name = input.name.trim();
+      if (!name || name.length > 120 || input.contact_name.length > 120 || input.phone.length > 40
+        || input.email.length > 254 || input.address.length > 240 || input.notes.length > 1000
+        || (input.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email))) {
+        throw new Error('Dati del fornitore non validi.');
+      }
+      const duplicate = state.suppliers.find((supplier) => supplier.id !== input.id
+        && supplier.name.toLocaleLowerCase('it') === name.toLocaleLowerCase('it'));
+      if (duplicate) throw new Error('Esiste già un fornitore con questo nome.');
+      const fields = { ...input, name };
+      if (input.id !== undefined) {
+        const supplier = state.suppliers.find((item) => item.id === input.id);
+        if (!supplier) throw new Error('Fornitore non trovato.');
+        Object.assign(supplier, fields);
+      } else {
+        state.suppliers.push({ ...fields, id: nextId(state.suppliers), created_at: new Date().toISOString() });
+      }
+      persist();
+    },
+    saveSupplierOrder: async (input: SupplierOrderInput) => {
+      const supplier = state.suppliers.find((item) => item.id === input.supplier_id);
+      if (!supplier || !Array.isArray(input.items) || input.items.length < 1 || input.items.length > 100
+        || typeof input.notes !== 'string' || input.notes.length > 1000) throw new Error('Dati dell’ordine non validi.');
+      const items = input.items.map((item) => {
+        const product = state.products.find((candidate) => candidate.id === item.product_id);
+        if (!product || !Number.isFinite(item.quantity) || item.quantity <= 0 || item.quantity > 1_000_000
+          || !Number.isFinite(item.unit_cost) || item.unit_cost < 0 || item.unit_cost > 1_000_000) {
+          throw new Error('Articolo, quantità o costo dell’ordine non validi.');
+        }
+        return { product_id: product.id, product_name: product.name, product_code: product.code, unit: product.unit ?? 'PEZZO', quantity: item.quantity, unit_cost: item.unit_cost };
+      });
+      const order: SupplierOrder = { id: nextId(state.supplierOrders), supplier_id: supplier.id, supplier_name: supplier.name, created_at: new Date().toISOString(), notes: input.notes.trim(), items };
+      state.supplierOrders.unshift(order);
       persist();
     },
     generateLoyaltyCards: async ({ quantity, discount_percentage }) => {

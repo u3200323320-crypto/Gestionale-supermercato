@@ -1,4 +1,4 @@
-export type Section = 'home' | 'inventory' | 'available-stock' | 'expired-products' | 'inventory-history' | 'stock-movement' | 'stock-distribution' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'expenses' | 'financial-balance' | 'employees' | 'employee-create' | 'payroll' | 'employee-tracker' | 'site-statistics' | 'site-management' | 'site-create' | 'site-list' | 'low-stock' | 'customer-list' | 'loyalty-generate' | 'loyalty-activate' | 'loyalty-active' | 'settings';
+export type Section = 'home' | 'inventory' | 'available-stock' | 'expired-products' | 'inventory-history' | 'stock-movement' | 'stock-distribution' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'expenses' | 'financial-balance' | 'employees' | 'employee-create' | 'payroll' | 'employee-tracker' | 'site-statistics' | 'site-management' | 'site-create' | 'site-list' | 'low-stock' | 'supplier-list' | 'supplier-order' | 'customer-list' | 'loyalty-generate' | 'loyalty-activate' | 'loyalty-active' | 'settings';
 export type RolePermissionMap = Partial<Record<string, Section[]>>;
 export type ProductUnit = 'KG' | 'LITRO' | 'PEZZO';
 export type Printer = { name: string; displayName: string };
@@ -36,6 +36,40 @@ export interface Customer {
   address: string;
   created_at: string;
 }
+
+export interface Supplier {
+  id: number;
+  name: string;
+  contact_name: string;
+  phone: string;
+  email: string;
+  address: string;
+  notes: string;
+  created_at: string;
+}
+export type SupplierInput = Pick<Supplier, 'name' | 'contact_name' | 'phone' | 'email' | 'address' | 'notes'> & { id?: number };
+
+export interface SupplierOrderItem {
+  product_id: number;
+  product_name: string;
+  product_code: string;
+  unit: ProductUnit;
+  quantity: number;
+  unit_cost: number;
+}
+export interface SupplierOrder {
+  id: number;
+  supplier_id: number;
+  supplier_name: string;
+  created_at: string;
+  notes: string;
+  items: SupplierOrderItem[];
+}
+export type SupplierOrderInput = {
+  supplier_id: number;
+  notes: string;
+  items: Array<Pick<SupplierOrderItem, 'product_id' | 'quantity' | 'unit_cost'>>;
+};
 
 export interface LoyaltyCard {
   id: number;
@@ -215,6 +249,8 @@ export interface AppState {
   sites: Site[];
   customers: Customer[];
   loyaltyCards: LoyaltyCard[];
+  suppliers: Supplier[];
+  supplierOrders: SupplierOrder[];
 }
 
 export interface ProductInput {
@@ -268,6 +304,8 @@ declare global {
     updateSale: (sale: Pick<Sale, 'id' | 'payment_method' | 'discount'> & { items: SaleItem[]; employee_barcode: string }) => Promise<void>;
     deleteSale: (id: number, employeeBarcode: string) => Promise<void>;
     saveCustomer: (customer: CustomerInput) => Promise<void>;
+    saveSupplier: (supplier: SupplierInput) => Promise<void>;
+    saveSupplierOrder: (order: SupplierOrderInput) => Promise<void>;
     generateLoyaltyCards: (input: { quantity: number; discount_percentage: number }) => Promise<void>;
     activateLoyaltyCard: (input: { card_id: number; customer_id: number }) => Promise<void>;
     deleteLoyaltyCard: (id: number) => Promise<void>;
