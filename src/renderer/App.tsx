@@ -193,7 +193,7 @@ const arabicUiTranslations: Record<string, string> = {
   'Usa il PIN': 'استخدام رمز PIN', 'PIN alternativo attivo': 'رمز PIN البديل مفعل', 'Nessun PIN alternativo configurato': 'لم يتم إعداد رمز PIN بديل',
   'Configura un PIN da 4 a 8 cifre come alternativa al barcode.': 'قم بإعداد رمز PIN من 4 إلى 8 أرقام كبديل للرمز الشريطي.',
   'All’avvio viene richiesto il barcode di un dipendente; puoi mantenere il PIN come alternativa.': 'يُطلب عند التشغيل الرمز الشريطي للموظف؛ ويمكنك الاحتفاظ برمز PIN كبديل.',
-  'Operativo': 'يعمل', 'Stato operativo': 'حالة التشغيل', 'Stato corrente del gestionale.': 'الحالة الحالية للنظام.',
+  'Operativo': 'يعمل', 'Operatività': 'العمليات', 'Stato operativo': 'حالة التشغيل', 'Stato corrente del gestionale.': 'الحالة الحالية للنظام.',
   'Database SQLite': 'قاعدة بيانات SQLite', 'Archivio locale': 'الأرشيف المحلي', 'Archivio locale attivo': 'الأرشيف المحلي نشط',
   'Database SQLite e copie giornaliere dei dati.': 'قاعدة بيانات SQLite ونسخ يومية من البيانات.', 'Scegli cartella': 'اختيار مجلد',
   'Cartella esportazioni giornaliere': 'مجلد التصدير اليومي', 'Ogni giorno a mezzanotte vengono aggiornati file TXT e PDF nelle cartelle Magazzino, Cassa, Vendite e Statistiche.': 'يتم تحديث ملفات TXT وPDF يوميًا عند منتصف الليل في مجلدات المخزن ونقطة البيع والمبيعات والإحصاءات.',
@@ -426,7 +426,7 @@ function canAccessSection(role: string, section: Section): boolean {
   if (['customer-list', 'loyalty-generate', 'loyalty-activate', 'loyalty-active'].includes(section)) return false;
   switch (normalizedRole(role)) {
     case 'cassiere':
-      return section === 'cash' || section === 'sale-management';
+      return section === 'cash' || section === 'sale-management' || section === 'settings';
     case 'direttore':
       return !['cash', 'sale-management', 'employees', 'employee-create', 'payroll', 'employee-tracker', 'site-management', 'site-create', 'low-stock', 'promotions', 'vouchers-create', 'vouchers-list'].includes(section);
     case 'contabilita':
@@ -859,6 +859,8 @@ export default function App() {
   const [salesTo, setSalesTo] = useState('');
   const [salesCategory, setSalesCategory] = useState('Tutte');
   const [salesSite, setSalesSite] = useState('Tutte');
+  const [ownerCashSiteId, setOwnerCashSiteId] = useState('');
+  const [ownerCashSiteDraft, setOwnerCashSiteDraft] = useState('');
   const [category, setCategory] = useState('Tutte');
   const [paymentMethod, setPaymentMethod] = useState('Contanti');
   const [voucherCode, setVoucherCode] = useState('');
@@ -958,10 +960,15 @@ export default function App() {
     }
   };
   const activeRole = currentUser?.role ?? (data && data.employees.length === 0 ? 'Proprietario' : 'cassiere');
-  const activeSiteName = data?.employees.find((employee) => employee.id === currentUser?.id)?.operational_site ?? '';
-  const salesDisabled = !activeSiteName;
-  const activeSiteId = data?.sites.find((site) => site.name === activeSiteName)?.id;
   const storeSites = data?.sites ?? [];
+  const cashSites = storeSites.filter((site) => site.site_type === 'store');
+  const isOwner = normalizedRole(activeRole) === 'proprietario';
+  const employeeSiteName = data?.employees.find((employee) => employee.id === currentUser?.id)?.operational_site ?? '';
+  const activeSiteName = isOwner && section === 'cash'
+    ? cashSites.find((site) => String(site.id) === ownerCashSiteId)?.name ?? ''
+    : employeeSiteName;
+  const activeSiteId = storeSites.find((site) => site.name === activeSiteName)?.id;
+  const salesDisabled = !activeSiteName || activeSiteName === 'Magazzino';
   const mainStockSiteId = storeSites.some((site) => String(site.id) === data?.settings.main_site_id)
     ? data?.settings.main_site_id ?? ''
     : String([...storeSites].sort((a, b) => a.id - b.id)[0]?.id ?? '');
@@ -1009,6 +1016,13 @@ export default function App() {
     if (nextTarget !== section) trackActivity(sectionNames[nextTarget] ?? nav.find((item) => item.section === nextTarget)?.label ?? nextTarget, 'Apertura sezione');
     setSection(nextTarget);
     if (nextTarget !== 'sale-management') setSaleManagementSearch('');
+    if (nextTarget === 'cash' && isOwner) {
+      setOwnerCashSiteId('');
+      setOwnerCashSiteDraft('');
+      setCart([]);
+      setManualPromotionId(undefined);
+      setAutomaticPromotionId(undefined);
+    }
     setOpenSidebarMenu(null);
     if (nextTarget === 'employee-tracker') void refresh();
   };
@@ -1705,6 +1719,8 @@ export default function App() {
       setCurrentUser(employee);
       setLocked(false);
       trackActivity('Accesso', 'Accesso al gestionale', '', employee.barcode);
+      setOwnerCashSiteId('');
+      setOwnerCashSiteDraft('');
       setSection(defaultSectionForRole(employee.role));
       setLoginBarcode('');
       loginBarcodeAttempt.current = '';
@@ -2224,6 +2240,7 @@ export default function App() {
         items: cart,
         payment_method: paymentMethod,
         employee_barcode: currentUser?.barcode || undefined,
+        site_id: isOwner ? activeSiteId : undefined,
         voucher_code: voucherCode || undefined,
         manual_promotion_id: promotionDiscounts.manualPromotion?.id,
         automatic_promotion_id: automaticPromotionId,
@@ -3574,7 +3591,7 @@ export default function App() {
     ...data.employees.flatMap((employee) => [employee.first_name, employee.last_name, `${employee.first_name} ${employee.last_name}`.trim()]),
     ...data.sales.flatMap((sale) => sale.items.map((item) => item.name)),
   ].filter(Boolean));
-  return <AppLanguageContext.Provider value={language}><AppDynamicNamesContext.Provider value={dynamicNames}><LocalizedNodes><div className="app-shell" onPointerMove={(event) => { if (cursorGlowRef.current) { cursorGlowRef.current.style.left = `${event.clientX}px`; cursorGlowRef.current.style.top = `${event.clientY}px`; } }}>
+  return <AppLanguageContext.Provider value={language}><AppDynamicNamesContext.Provider value={dynamicNames}><LocalizedNodes><div className={`app-shell${isCashierRole(activeRole) ? ' cashier-mode' : ''}`} onPointerMove={(event) => { if (cursorGlowRef.current) { cursorGlowRef.current.style.left = `${event.clientX}px`; cursorGlowRef.current.style.top = `${event.clientY}px`; } }}>
     <div className="app-cursor-glow" ref={cursorGlowRef} aria-hidden="true" />
     <WebPreviewNotice />
     <aside className="sidebar">
@@ -3843,6 +3860,8 @@ export default function App() {
       </section>}</div></div>}
     </main>
 
+    {section === 'cash' && isOwner && !ownerCashSiteId && <div className="cash-site-prompt-backdrop"><section className="panel cash-site-prompt" role="dialog" aria-modal="true" aria-labelledby="cash-site-prompt-title"><div className="security-icon"><ShoppingBasket size={20} /></div><div><h2 id="cash-site-prompt-title">Quale cassa vuoi aprire?</h2><p>Seleziona la sede. Gli articoli e le quantità disponibili verranno caricati per questa cassa.</p></div><SelectField label="Sede" value={ownerCashSiteDraft} onChange={setOwnerCashSiteDraft} options={cashSites.map((site) => String(site.id))} labels={cashSites.map((site) => site.name)} /><button className="button button-primary full-width" type="button" disabled={!ownerCashSiteDraft} onClick={() => { setOwnerCashSiteId(ownerCashSiteDraft); setScannerSearch(''); }}>Apri cassa</button>{!cashSites.length && <p className="help-copy">Registra prima una sede di vendita per aprire la cassa.</p>}</section></div>}
+    {section === 'settings' && isCashierRole(activeRole) && settingsTab === null && <div className="cashier-settings-backdrop"><nav className="settings-nav cashier-settings-nav" aria-label="Impostazioni"><button type="button" onClick={() => { setSettingsTab('Dispositivi'); setDeviceTab(null); }}><Barcode size={17} />Dispositivi</button><button type="button" onClick={() => setSettingsTab('Archivio dati')}><Archive size={17} />Archivio dati</button><button type="button" onClick={() => setSettingsTab('Operativo')}><Check size={17} />Operatività</button></nav></div>}
     {unsoldListOpen && <Modal title="Articoli ancora in magazzino" close={() => setUnsoldListOpen(false)} wide><details className="statistics-period-dropdown unsold-site-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.statistics-period-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Sede: {unsoldSite === 'Tutto' ? 'Tutto' : storeSites.find((site) => String(site.id) === unsoldSite)?.name ?? 'Tutto'}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra articoli per sede">{['Tutto', ...storeSites.map((site) => String(site.id))].map((siteId) => { const name = siteId === 'Tutto' ? 'Tutto' : storeSites.find((site) => String(site.id) === siteId)?.name ?? ''; return <button key={siteId} className={`status-filter${unsoldSite === siteId ? ' active' : ''}`} aria-pressed={unsoldSite === siteId} onClick={(event) => { setUnsoldSite(siteId); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{name}</button>; })}</div></details><div id="unsold-list-print"><Table headings={['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']}><>{unsoldListProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td>{product.category}</td><td>{product.stock} {product.unit ?? 'PEZZO'}</td><td>{money.format(product.sale_price)}</td></tr>)}</>{!unsoldListProducts.length && <tr><td colSpan={4} className="empty-cell">Non risultano articoli rimanenti in magazzino.</td></tr>}</Table></div><div className="unsold-list-actions no-print"><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa</button><button className="button button-primary" onClick={() => void shareUnsoldList()}><Share2 size={16} /> Condividi</button></div></Modal>}
     {reportExportOpen && <Modal title={reportExportType.startsWith('sales') ? 'Esporta report vendite' : 'Esporta report contabilità e finanza'} close={() => setReportExportOpen(false)}><div className="report-export-options"><p>Vuoi applicare al report il filtro temporale selezionato ({reportExportType.startsWith('sales') ? salesPeriod : balancePeriod}) o includere tutto il periodo disponibile?</p><button className="button button-primary" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(true); else if (reportExportType === 'sales-xlsx') void exportSalesXlsx(true); else void downloadFinancialBalance(true); }}><Check size={15} /> Rispetta il filtro di tempo</button><button className="button button-outline" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(false); else if (reportExportType === 'sales-xlsx') void exportSalesXlsx(false); else void downloadFinancialBalance(false); }}><ArrowDownToLine size={15} /> Esporta tutto</button></div></Modal>}
     {employeeDetails && <Modal title={`${employeeDetails.first_name} ${employeeDetails.last_name}`} close={() => setEmployeeDetails(null)} rightHalf>

@@ -242,7 +242,9 @@ function installWebPreview(): void {
     openDistributionRecord: async () => undefined,
     checkout: async (checkout: CheckoutInput) => {
       const owner = employeeByBarcode(checkout.employee_barcode ?? demoOwnerBarcode);
-      const site = state.sites.find((item) => item.name === owner?.operational_site) ?? state.sites[0];
+      const site = state.sites.find((item) => item.id === checkout.site_id)
+        ?? state.sites.find((item) => item.name === owner?.operational_site)
+        ?? state.sites.find((item) => item.site_type === 'store');
       if (!site) throw new Error('Aggiungi una sede prima di registrare una vendita.');
       const items = checkout.items.map((item) => ({ ...item }));
       const grossTotal = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);

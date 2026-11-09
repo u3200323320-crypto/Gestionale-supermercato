@@ -1220,6 +1220,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       || (sale.employee_barcode && sale.employee_barcode !== session.barcode)) {
       throw new Error('La sessione non è autorizzata a registrare vendite. Accedi con il badge del dipendente di cassa.');
     }
+    const ownerSession = normalizedEmployeeRole(session.role) === 'proprietario';
+    if (ownerSession && !sale.site_id) throw new Error('Seleziona la sede della cassa prima di registrare la vendita.');
+    if (!ownerSession && sale.site_id !== undefined) throw new Error('La sessione non è autorizzata a selezionare la sede della vendita.');
     if (!sale.items.length) throw new Error('Il carrello è vuoto.');
     const products = database.prepare('SELECT * FROM products').all() as Product[];
     const items = sale.items.map((item) => {
@@ -1238,10 +1241,11 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       const employee = employeeForLogin(session.barcode);
       const employeeSite = employee
         ? (database.prepare('SELECT operational_site FROM employees WHERE id = ?').get(employee.id) as { operational_site: string }).operational_site
-        : (database.prepare("SELECT name FROM sites WHERE site_type = 'store' ORDER BY id LIMIT 1").get() as { name: string } | undefined)?.name;
-      if (!employeeSite) throw new Error('Crea prima una sede operativa per registrare le vendite.');
-      const site = database.prepare('SELECT name FROM sites WHERE name = ?').get(employeeSite) as { name: string } | undefined;
-      if (!site) throw new Error('La sede assegnata al dipendente non esiste.');
+        : '';
+      const site = ownerSession
+        ? database.prepare("SELECT id, name FROM sites WHERE id = ? AND site_type = 'store'").get(sale.site_id) as { id: number; name: string } | undefined
+        : database.prepare('SELECT id, name FROM sites WHERE name = ?').get(employeeSite) as { id: number; name: string } | undefined;
+      if (!site) throw new Error(ownerSession ? 'La sede selezionata non esiste o non è una sede di vendita.' : employeeSite ? 'La sede assegnata al dipendente non esiste.' : 'Crea prima una sede operativa per registrare le vendite.');
       const voucher = voucherCode ? findValidVoucher(voucherCode) : undefined;
       if (voucherCode && !voucher) throw new Error('Buono sconto non valido, scaduto o già utilizzato.');
       const voucherDiscount = voucher
@@ -1253,7 +1257,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       const employeeName = employee ? `${employee.first_name} ${employee.last_name}`.trim() : '';
       const result = database.prepare('INSERT INTO sales (receipt_no, created_at, employee_name, payment_method, discount, gross_total, total, site) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
         .run(receiptNo, new Date().toISOString(), employeeName, sale.payment_method, discount, grossTotal, amountPaid, site.name);
-      replaceItems(Number(result.lastInsertRowid), items, siteIdByName(site.name));
+      replaceItems(Number(result.lastInsertRowid), items, site.id);
       items.forEach((item) => recordStockMovement(
         item.product_id,
         item.name,

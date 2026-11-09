@@ -194,7 +194,7 @@ export type PayrollPaymentInput = { employee_id: number; pay_month: string; paym
 export type CustomerInput = { first_name: string; last_name: string; phone: string; email: string; address: string };
 export type VoucherBatchInput = Pick<VoucherBatch, 'discount_percentage' | 'starts_at' | 'ends_at' | 'codes'> & { id?: number };
 export type PromotionInput = Omit<Promotion, 'id'> & { id?: number };
-export type CheckoutInput = { items: SaleItem[]; payment_method: string; employee_barcode?: string; voucher_code?: string; manual_promotion_id?: number; automatic_promotion_id?: number | null };
+export type CheckoutInput = { items: SaleItem[]; payment_method: string; employee_barcode?: string; site_id?: number; voucher_code?: string; manual_promotion_id?: number; automatic_promotion_id?: number | null };
 export type VoucherValidation = { valid: true; discount_percentage: number } | { valid: false; message: string };
 
 export interface AppState {
