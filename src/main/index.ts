@@ -17,6 +17,7 @@ let salesRetentionInterval: NodeJS.Timeout | undefined;
 const authenticatedSessions = new Map<number, AuthenticatedEmployee>();
 const trialSessions = new Set<number>();
 const saleActionAuthorizations = new Map<number, { barcode: string; expiresAt: number }>();
+const loginFailures = new Map<number, { attempts: number; windowStartedAt: number; lockedUntil: number }>();
 const validPermissionSections = new Set<Section>([
   'home', 'inventory', 'available-stock', 'expired-products', 'inventory-history', 'stock-movement', 'stock-distribution',
   'cash', 'sales', 'statistics', 'sale-management', 'promotions', 'vouchers-create', 'vouchers-list', 'expenses',
@@ -73,6 +74,32 @@ function setting(key: string, fallback = ''): string {
 function authenticationTrialActive(): boolean {
   const expiresAt = Date.parse(setting('auth_trial_expires_at'));
   return Number.isFinite(expiresAt) && expiresAt > Date.now();
+}
+
+function requireMainWindowSender(senderId: number): void {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.id !== senderId) {
+    throw new Error('Richiesta non autorizzata.');
+  }
+}
+
+function assertLoginAllowed(senderId: number): void {
+  const attempt = loginFailures.get(senderId);
+  if (!attempt) return;
+  const now = Date.now();
+  if (attempt.lockedUntil > now) throw new Error('Troppi tentativi di accesso. Riprova tra un minuto.');
+  if (now - attempt.windowStartedAt >= 60_000) loginFailures.delete(senderId);
+}
+
+function recordLoginFailure(senderId: number): void {
+  const now = Date.now();
+  const previous = loginFailures.get(senderId);
+  const reset = !previous || now - previous.windowStartedAt >= 60_000;
+  const attempts = reset ? 1 : previous.attempts + 1;
+  loginFailures.set(senderId, {
+    attempts,
+    windowStartedAt: reset ? now : previous.windowStartedAt,
+    lockedUntil: attempts >= 5 ? now + 60_000 : 0,
+  });
 }
 
 function sessionForSender(senderId: number): AuthenticatedEmployee | undefined {
@@ -154,12 +181,13 @@ function isEmployeeBarcode(value: unknown): boolean {
 }
 
 function employeeForLogin(value: unknown): AuthenticatedEmployee | null {
-  if (typeof value !== 'string' || !value.trim()) return null;
+  if (typeof value !== 'string' || !value.trim() || value.length > 128) return null;
   return database.prepare(`SELECT id, first_name, last_name, role, barcode FROM employees
     WHERE recognition_code = ? AND barcode = ?`).get(value.trim(), value.trim()) as AuthenticatedEmployee | undefined ?? null;
 }
 
 function requireSession(senderId: number, allowedRoles?: string[]): AuthenticatedEmployee {
+  requireMainWindowSender(senderId);
   const session = sessionForSender(senderId);
   if (!session || !session.id) throw new Error('Sessione non autenticata. Accedi nuovamente con il badge dipendente.');
   if (allowedRoles && normalizedEmployeeRole(session.role) !== 'proprietario' && !allowedRoles.includes(normalizedEmployeeRole(session.role))) {
@@ -895,14 +923,24 @@ function createWindow(): void {
     backgroundColor: '#f6f7f5',
     title: 'Gestione Supermercato',
     icon: iconPath,
-    webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
+    },
   });
   const rendererUrl = process.env.ELECTRON_RENDERER_URL;
+  mainWindow.webContents.on('will-attach-webview', (event) => event.preventDefault());
   mainWindow.webContents.setWindowOpenHandler(({ url }) => ({ action: url === 'about:blank' ? 'allow' : 'deny' }));
   const sessionId = mainWindow.webContents.id;
   mainWindow.webContents.once('destroyed', () => {
     authenticatedSessions.delete(sessionId);
     saleActionAuthorizations.delete(sessionId);
+    loginFailures.delete(sessionId);
   });
   mainWindow.webContents.on('will-navigate', (event, url) => {
     const sameOrigin = rendererUrl && new URL(url).origin === new URL(rendererUrl).origin;
@@ -932,7 +970,10 @@ if (!hasSingleInstanceLock) {
 
 if (hasSingleInstanceLock) app.whenReady().then(() => {
   initDatabase();
-  ipcMain.handle('state:get', (event) => stateForSession(sessionForSender(event.sender.id)));
+  ipcMain.handle('state:get', (event) => {
+    requireMainWindowSender(event.sender.id);
+    return stateForSession(sessionForSender(event.sender.id));
+  });
   ipcMain.handle('employee:authorize', (event, barcode: string) => {
     requireSession(event.sender.id, ['proprietario', 'direttore']);
     return isEmployeeBarcode(barcode);
@@ -943,17 +984,22 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     return Boolean(employee && ['proprietario', 'direttore'].includes(normalizedEmployeeRole(employee.role)));
   });
   ipcMain.handle('employee:login', (event, barcode: string) => {
+    requireMainWindowSender(event.sender.id);
+    assertLoginAllowed(event.sender.id);
     const employee = employeeForLogin(barcode);
     if (employee) {
+      loginFailures.delete(event.sender.id);
       authenticatedSessions.set(event.sender.id, employee);
       trialSessions.delete(event.sender.id);
     } else {
+      recordLoginFailure(event.sender.id);
       authenticatedSessions.delete(event.sender.id);
       trialSessions.delete(event.sender.id);
     }
     return employee;
   });
   ipcMain.handle('session:logout', (event) => {
+    requireMainWindowSender(event.sender.id);
     saleActionAuthorizations.delete(event.sender.id);
     trialSessions.delete(event.sender.id);
     return authenticatedSessions.delete(event.sender.id);
@@ -1551,6 +1597,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     deleteSite(database, siteId);
   });
   ipcMain.handle('site:setup', (_event, input: SiteInput) => {
+    requireMainWindowSender(_event.sender.id);
     if (setting('setup_complete') === 'true'
       || (database.prepare('SELECT COUNT(*) AS count FROM employees').get() as { count: number }).count > 0) {
       throw new Error('La configurazione iniziale è già stata completata.');
@@ -1560,6 +1607,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     saveSite(database, existing ? { ...input, id: existing.id } : input);
   });
   ipcMain.handle('employee:save', (event, employee: EmployeeInput) => {
+    requireMainWindowSender(event.sender.id);
     const requiredText: Array<keyof EmployeeInput> = [
       'first_name', 'last_name', 'gender', 'home_address', 'email', 'phone',
       'role', 'shift', 'payment_method',
@@ -1706,17 +1754,28 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       database.prepare('DELETE FROM employees WHERE id = ?').run(employeeId);
     })();
   });
-  ipcMain.handle('customer:save', (_event, customer: CustomerInput) => {
-    if (!customer || [customer.first_name, customer.last_name, customer.phone, customer.email]
-      .some((value) => typeof value !== 'string' || !value.trim())
-      || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email.trim())) {
+  ipcMain.handle('customer:save', (event, customer: CustomerInput) => {
+    requireSession(event.sender.id, ['proprietario']);
+    if (!customer || typeof customer !== 'object' || Array.isArray(customer)
+      || [customer.first_name, customer.last_name, customer.phone, customer.email, customer.address]
+        .some((value) => typeof value !== 'string')) {
+      throw new Error('Inserisci nome, cognome, telefono ed email validi.');
+    }
+    const firstName = customer.first_name.trim();
+    const lastName = customer.last_name.trim();
+    const phone = customer.phone.trim();
+    const email = customer.email.trim();
+    const address = customer.address.trim();
+    if (!firstName || firstName.length > 100 || !lastName || lastName.length > 100
+      || !phone || phone.length > 40 || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+      || address.length > 200) {
       throw new Error('Inserisci nome, cognome, telefono ed email validi.');
     }
     database.prepare(`INSERT INTO customers (first_name, last_name, phone, email, address, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)`).run(customer.first_name.trim(), customer.last_name.trim(),
-      customer.phone.trim(), customer.email.trim(), customer.address.trim(), new Date().toISOString());
+      VALUES (?, ?, ?, ?, ?, ?)`).run(firstName, lastName, phone, email, address, new Date().toISOString());
   });
-  ipcMain.handle('loyalty-cards:generate', (_event, input: { quantity: number; discount_percentage: number }) => {
+  ipcMain.handle('loyalty-cards:generate', (event, input: { quantity: number; discount_percentage: number }) => {
+    requireSession(event.sender.id, ['proprietario']);
     if (!input || !Number.isInteger(input.quantity) || input.quantity < 1 || input.quantity > 5000
       || !Number.isFinite(input.discount_percentage) || input.discount_percentage < 0 || input.discount_percentage > 100) {
       throw new Error('Inserisci una quantità da 1 a 5000 e uno sconto tra 0 e 100%.');
@@ -1744,12 +1803,14 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       }
     })();
   });
-  ipcMain.handle('loyalty-card:delete', (_event, id: number) => {
+  ipcMain.handle('loyalty-card:delete', (event, id: number) => {
+    requireSession(event.sender.id, ['proprietario']);
     if (!Number.isInteger(id) || id < 1) throw new Error('Tessera non valida.');
     const result = database.prepare("DELETE FROM loyalty_cards WHERE id = ? AND status = 'Sviluppata'").run(id);
     if (!result.changes) throw new Error('La tessera non esiste o è già attiva.');
   });
-  ipcMain.handle('loyalty-card:activate', (_event, input: { card_id: number; customer_id: number }) => {
+  ipcMain.handle('loyalty-card:activate', (event, input: { card_id: number; customer_id: number }) => {
+    requireSession(event.sender.id, ['proprietario']);
     if (!input || !Number.isInteger(input.card_id) || !Number.isInteger(input.customer_id)) {
       throw new Error('Seleziona una tessera e un cliente validi.');
     }
@@ -1758,7 +1819,8 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       .run(input.customer_id, new Date().toISOString(), input.card_id, input.customer_id);
     if (result.changes === 0) throw new Error('Tessera già attivata o cliente non trovato.');
   });
-  ipcMain.handle('loyalty-card:collect-points', (_event, input: { card_id: number; amount_spent: number }) => {
+  ipcMain.handle('loyalty-card:collect-points', (event, input: { card_id: number; amount_spent: number }) => {
+    requireSession(event.sender.id, ['proprietario']);
     if (!input || !Number.isInteger(input.card_id) || !Number.isFinite(input.amount_spent) || input.amount_spent < 1) {
       throw new Error('Inserisci un importo speso di almeno 1 euro.');
     }
@@ -1772,7 +1834,8 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         .run(input.card_id, points, input.amount_spent, new Date().toISOString());
     })();
   });
-  ipcMain.handle('loyalty-card:redeem-points', (_event, input: { card_id: number; points: number }) => {
+  ipcMain.handle('loyalty-card:redeem-points', (event, input: { card_id: number; points: number }) => {
+    requireSession(event.sender.id, ['proprietario']);
     if (!input || !Number.isInteger(input.card_id) || !Number.isInteger(input.points) || input.points < 1) {
       throw new Error('Inserisci un numero di punti valido.');
     }
@@ -1858,9 +1921,10 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     });
     pay();
   });
-  ipcMain.handle('voucher:validate', (_event, code: string): VoucherValidation => {
+  ipcMain.handle('voucher:validate', (event, code: string): VoucherValidation => {
+    requireSession(event.sender.id);
     const normalized = typeof code === 'string' ? code.trim() : '';
-    if (!normalized) return { valid: false, message: 'Codice buono sconto non valido.' };
+    if (!normalized || normalized.length > 80) return { valid: false, message: 'Codice buono sconto non valido.' };
     const today = localDate(new Date());
     const voucher = database.prepare(`SELECT b.discount_percentage, b.starts_at, b.ends_at FROM vouchers v
       JOIN voucher_batches b ON b.id = v.batch_id WHERE v.code = ?`).get(normalized) as
@@ -1874,6 +1938,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     return { valid: true, discount_percentage: voucher.discount_percentage };
   });
   ipcMain.handle('settings:save', (event, key: string, value: string) => {
+    requireMainWindowSender(event.sender.id);
     if (!['shop_name', 'shop_number', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id', 'currency', 'main_site_id', 'role_permissions', 'archive_folder', 'receipt_printer', 'receipt_printer_thermal', 'barcode_scanner_enabled', 'barcode_scanner_detected', 'home_image', 'home_video'].includes(key)) throw new Error('Impostazione non valida.');
     if (key === 'currency' && !['EUR', 'USD', 'EGP', 'GBP', 'CHF', 'SAR', 'AED'].includes(value)) throw new Error('Moneta non valida.');
     if (key === 'main_site_id' && (!/^[1-9]\d*$/.test(value) || !database.prepare('SELECT 1 FROM sites WHERE id = ?').get(Number(value)))) {
@@ -1972,6 +2037,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     return imageData;
   };
   ipcMain.handle('settings:choose-shop-logo', (event) => {
+    requireMainWindowSender(event.sender.id);
     const firstSetup = !authenticatedSessions.has(event.sender.id)
       && (database.prepare('SELECT COUNT(*) AS count FROM employees').get() as { count: number }).count === 0;
     if (!firstSetup) requireSession(event.sender.id, ['proprietario']);
