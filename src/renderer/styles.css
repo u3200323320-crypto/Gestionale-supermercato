@@ -807,6 +807,9 @@ html[dir='rtl'] .stats-metrics > .metric-card:last-child .metric-action { flex: 
 #inventory-history-print table tbody tr:nth-child(even) { background-color: #fff; }
 #employee-tracker-print table tbody tr:nth-child(odd) { background-color: #eaf3ff; }
 #employee-tracker-print table tbody tr:nth-child(even) { background-color: #fff; }
+#sales-list-table thead th { background: #1685dc; color: #fff !important; }
+#sales-list-table tbody tr:nth-child(odd) { background-color: #eaf3ff; }
+#sales-list-table tbody tr:nth-child(even) { background-color: #fff; }
 #inventory-history-print table tbody tr.inventory-history-first-row .movement-badge { background: #dbeafe; color: #1d4ed8; }
 .unsold-list-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
 .unsold-list-actions .button { width: 100%; }
