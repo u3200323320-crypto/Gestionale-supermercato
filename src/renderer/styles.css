@@ -222,7 +222,6 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .filter-row, .sale-tools { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
 .filter-row { flex-wrap: wrap; }
 .filter-row > .search-field { flex: 1 1 220px; }
-.inventory-scope-page:not(.available-stock-page) .filter-row > details:last-child .status-filter:first-child { display: none; }
 .inventory-status-filters { display: flex; flex-wrap: wrap; gap: 7px; margin: -5px 0 18px; }
 .inventory-filter-dropdown { position: relative; flex: 0 0 180px; }
 .inventory-filter-dropdown.filter-dropdown { flex: 0 0 180px; }
@@ -806,6 +805,8 @@ html[dir='rtl'] .stats-metrics > .metric-card:last-child .metric-action { flex: 
 #inventory-history-print table tbody tr.inventory-history-first-row { background: #e8f2ff; }
 #inventory-history-print table tbody tr:nth-child(odd) { background-color: #eaf3ff; }
 #inventory-history-print table tbody tr:nth-child(even) { background-color: #fff; }
+#employee-tracker-print table tbody tr:nth-child(odd) { background-color: #eaf3ff; }
+#employee-tracker-print table tbody tr:nth-child(even) { background-color: #fff; }
 #inventory-history-print table tbody tr.inventory-history-first-row .movement-badge { background: #dbeafe; color: #1d4ed8; }
 .unsold-list-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
 .unsold-list-actions .button { width: 100%; }
@@ -839,7 +840,8 @@ html[dir='rtl'] .stats-metrics > .metric-card:last-child .metric-action { flex: 
 #employee-tracker-print td { font-size: 12px; }
 
 body { color: var(--ink); }
-#inventory-history-print table thead th { background: #1685dc; color: #fff !important; }
+#inventory-history-print table thead th,
+#employee-tracker-print table thead th { background: #1685dc; color: #fff !important; }
 .app-cursor-glow { position: fixed; top: 0; left: 0; z-index: 0; width: 380px; height: 380px; border-radius: 50%; background: radial-gradient(circle, rgb(55 155 255 / 12%) 0, rgb(55 155 255 / 5%) 35%, transparent 72%); pointer-events: none; transform: translate(-50%, -50%); }
 .main-content { position: relative; z-index: 1; }
 .sidebar { z-index: 5; }

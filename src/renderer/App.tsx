@@ -829,6 +829,8 @@ export default function App() {
   const [unsoldListOpen, setUnsoldListOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
   const [permissionsRole, setPermissionsRole] = useState('');
+  const [permissionsAuthorizationOpen, setPermissionsAuthorizationOpen] = useState(false);
+  const [permissionsAuthorizationBarcode, setPermissionsAuthorizationBarcode] = useState('');
   const [mainSiteDraft, setMainSiteDraft] = useState('');
   const [homeMediaWidthCm, setHomeMediaWidthCm] = useState(0);
   const [deviceTab, setDeviceTab] = useState<string | null>(null);
@@ -1046,9 +1048,7 @@ export default function App() {
   const mainStockSiteId = storeSites.some((site) => String(site.id) === data?.settings.main_site_id)
     ? data?.settings.main_site_id ?? ''
     : String([...storeSites].sort((a, b) => a.id - b.id)[0]?.id ?? '');
-  const availableStockSites = section === 'available-stock'
-    ? storeSites.filter((site) => String(site.id) !== mainStockSiteId)
-    : storeSites.filter((site) => String(site.id) === mainStockSiteId);
+  const availableStockSites = storeSites.filter((site) => site.site_role === (section === 'available-stock' ? 'Punto vendita' : 'Magazzino'));
   useEffect(() => {
     if (section === 'stock-distribution' && !distributionFromSiteId && mainStockSiteId) {
       setDistributionFromSiteId(mainStockSiteId);
@@ -1332,6 +1332,22 @@ export default function App() {
       notify(errorText(error));
     }
   };
+  const confirmPermissionsAuthorization = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      if (!await window.gestionale.authorizeSiteAction(permissionsAuthorizationBarcode.trim())) {
+        notify('Barcode del Proprietario non riconosciuto.');
+        setPermissionsAuthorizationBarcode('');
+        return;
+      }
+      setSettingsTab('Permessi di accesso');
+      setPermissionsRole(permissionRoles[0] ?? '');
+      setPermissionsAuthorizationOpen(false);
+      setPermissionsAuthorizationBarcode('');
+    } catch (error) {
+      notify(errorText(error));
+    }
+  };
   const deleteSite = async (site: Site, requesterBarcode: string) => {
     if (!window.confirm(`Eliminare la sede "${site.name}"? L’eliminazione è possibile solo dopo aver eliminato o riassegnato tutti i dati associati. Nessun dato verrà cancellato automaticamente.`)) return;
     try {
@@ -1595,13 +1611,11 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!data) return;
-    if (section === 'inventory' && mainStockSiteId && inventorySiteId !== mainStockSiteId) {
-      setInventorySiteId(mainStockSiteId);
-    } else if (inventorySiteId !== 'all' && (!data.sites.some((site) => String(site.id) === inventorySiteId)
-      || (section === 'available-stock' && inventorySiteId === mainStockSiteId))) {
+    const expectedSiteRole = section === 'available-stock' ? 'Punto vendita' : 'Magazzino';
+    if (inventorySiteId !== 'all' && !data.sites.some((site) => String(site.id) === inventorySiteId && site.site_role === expectedSiteRole)) {
       setInventorySiteId('all');
     }
-  }, [data, inventorySiteId, mainStockSiteId, section]);
+  }, [data, inventorySiteId, section]);
   useEffect(() => {
     if (salesSite !== 'Tutte' && data && !data.sites.some((site) => site.name === salesSite)) {
       setSalesSite('Tutte');
@@ -3275,15 +3289,12 @@ export default function App() {
     product.expiry_enabled && product.expiry_date && product.expiry_date < todayKey && product.stock > 0
   ) ?? [];
   const inventoryStockFor = (productId: number) => {
-    const mainSiteId = Number(mainStockSiteId);
-    if (section === 'available-stock') {
-      return (data?.siteStocks ?? [])
-        .filter((stock) => stock.product_id === productId
-          && stock.site_id !== mainSiteId
-          && (inventorySiteId === 'all' || String(stock.site_id) === inventorySiteId))
-        .reduce((sum, stock) => sum + stock.stock, 0);
-    }
-    return siteStockFor(productId, mainSiteId);
+    const siteIds = new Set(availableStockSites.map((site) => site.id));
+    return (data?.siteStocks ?? [])
+      .filter((stock) => stock.product_id === productId
+        && siteIds.has(stock.site_id)
+        && (inventorySiteId === 'all' || String(stock.site_id) === inventorySiteId))
+      .reduce((sum, stock) => sum + stock.stock, 0);
   };
   const inventoryList = data?.products.filter((item) => {
     const stock = inventoryStockFor(item.id);
@@ -3734,7 +3745,7 @@ export default function App() {
         {canAccess('home') && <button className={`nav-item${section === 'home' ? ' active' : ''}`} onClick={() => navigateTo('home')}><House size={18} /><span>Homepage</span></button>}
         {(canAccess('inventory') || canAccess('expired-products') || canAccess('inventory-history') || canAccess('stock-movement') || canAccess('stock-distribution')) && <>
           <button aria-expanded={openSidebarMenu === 'inventory'} className={`nav-item${['inventory', 'expired-products', 'inventory-history', 'stock-movement', 'stock-distribution'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'inventory' ? null : 'inventory')}><Package size={18} /><span>{language === 'ar' ? 'المخزن' : 'Magazzino'}</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'inventory' ? ' open' : ''}`} size={15} /></button>
-          {openSidebarMenu === 'inventory' && <div className="sidebar-submenu">{canAccess('inventory') && <button className={`sidebar-subitem${section === 'inventory' ? ' selected' : ''}`} onClick={() => navigateTo('inventory')}>{language === 'ar' ? 'المخزن' : 'Magazzino'}</button>}{canAccess('expired-products') && <button className={`sidebar-subitem${section === 'expired-products' ? ' selected' : ''}`} onClick={() => navigateTo('expired-products')}>Gestione prodotti scaduti</button>}{canAccess('inventory-history') && <button className={`sidebar-subitem${section === 'inventory-history' ? ' selected' : ''}`} onClick={() => navigateTo('inventory-history')}>{language === 'ar' ? 'سجل المخزن' : 'Storico Magazzino'}</button>}{canAccess('stock-movement') && <button className={`sidebar-subitem${section === 'stock-movement' ? ' selected' : ''}`} onClick={() => navigateTo('stock-movement')}>Carica e scarica merce</button>}{canAccess('stock-distribution') && <button className={`sidebar-subitem${section === 'stock-distribution' ? ' selected' : ''}`} onClick={() => navigateTo('stock-distribution')}>Distribuisci merce</button>}</div>}
+          {openSidebarMenu === 'inventory' && <div className="sidebar-submenu">{canAccess('inventory') && <button className={`sidebar-subitem${section === 'inventory' ? ' selected' : ''}`} onClick={() => navigateTo('inventory')}>{language === 'ar' ? 'المخزن' : 'Magazzino'}</button>}{canAccess('inventory-history') && <button className={`sidebar-subitem${section === 'inventory-history' ? ' selected' : ''}`} onClick={() => navigateTo('inventory-history')}>{language === 'ar' ? 'سجل المخزن' : 'Storico Magazzino'}</button>}{canAccess('stock-distribution') && <button className={`sidebar-subitem${section === 'stock-distribution' ? ' selected' : ''}`} onClick={() => navigateTo('stock-distribution')}>Distribuisci merce</button>}</div>}
         </>}
         {canAccess('available-stock') && <button className={`nav-item${section === 'available-stock' ? ' active' : ''}`} onClick={() => navigateTo('available-stock')}><Package size={18} /><span>Merce nelle sedi</span></button>}
         {nav.filter((item) => ['cash', 'sales'].includes(item.section) && canAccess(item.section)).map(({ section: target, label, icon: Icon }) => <button key={target} className={`nav-item${section === target ? ' active' : ''}`} onClick={() => navigateTo(target)}><Icon size={18} /><span>{label}</span>{target === 'cash' && <kbd>F2</kbd>}</button>)}
@@ -3758,11 +3769,11 @@ export default function App() {
         {(canAccess('employees') || canAccess('employee-create') || canAccess('payroll') || canAccess('employee-tracker') || canAccess('site-statistics') || canAccess('site-management') || canAccess('site-create') || canAccess('site-list') || canAccess('low-stock')) && <>
           {(canAccess('employees') || canAccess('employee-create') || canAccess('payroll') || canAccess('employee-tracker')) && <>
             <button aria-expanded={openSidebarMenu === 'employees'} className={`nav-item${['employees', 'employee-create', 'payroll', 'employee-tracker'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'employees' ? null : 'employees')}><ClipboardList size={18} /><span>Dipendenti</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'employees' ? ' open' : ''}`} size={15} /></button>
-            {openSidebarMenu === 'employees' && <div className="sidebar-submenu">{canAccess('employees') && <button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => navigateTo('employees')}>Lista Dipendenti</button>}{canAccess('employee-create') && <button className={`sidebar-subitem${section === 'employee-create' ? ' selected' : ''}`} onClick={startEmployeeCreation}>Crea Dipendente</button>}{canAccess('payroll') && <button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => navigateTo('payroll')}>Paga Stipendi</button>}{canAccess('employee-tracker') && <button className={`sidebar-subitem${section === 'employee-tracker' ? ' selected' : ''}`} onClick={() => navigateTo('employee-tracker')}>Tracker Dipendenti</button>}</div>}
+            {openSidebarMenu === 'employees' && <div className="sidebar-submenu">{canAccess('employees') && <button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => navigateTo('employees')}>Lista Dipendenti</button>}{canAccess('payroll') && <button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => navigateTo('payroll')}>Paga Stipendi</button>}{canAccess('employee-tracker') && <button className={`sidebar-subitem${section === 'employee-tracker' ? ' selected' : ''}`} onClick={() => navigateTo('employee-tracker')}>Tracker Dipendenti</button>}</div>}
           </>}
           {(canAccess('site-statistics') || canAccess('site-management') || canAccess('site-create') || canAccess('site-list') || canAccess('low-stock')) && <>
             <button aria-expanded={siteMenuOpen} className={`nav-item${['site-statistics', 'site-management', 'site-create', 'site-list', 'low-stock'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'sites' ? null : 'sites')}><Store size={18} /><span>Gestione sedi</span><ChevronDown className={`nav-chevron${siteMenuOpen ? ' open' : ''}`} size={15} /></button>
-            {siteMenuOpen && <div className="sidebar-submenu">{canAccess('site-statistics') && <button className={`sidebar-subitem${section === 'site-statistics' ? ' selected' : ''}`} onClick={() => navigateTo('site-statistics')}>Statistiche sedi</button>}{canAccess('site-management') && <button className={`sidebar-subitem${section === 'site-management' ? ' selected' : ''}`} onClick={() => navigateTo('site-management')}>Gestione sedi</button>}{canAccess('site-list') && <button className={`sidebar-subitem${section === 'site-list' ? ' selected' : ''}`} onClick={() => navigateTo('site-list')}>Lista sedi</button>}{canAccess('site-create') && <button className={`sidebar-subitem${section === 'site-create' ? ' selected' : ''}`} onClick={() => { setSiteDraft({ name: '', address: '', phone: '', site_role: 'Punto vendita' }); navigateTo('site-create'); }}>Aggiungi sede</button>}{canAccess('low-stock') && <button className={`sidebar-subitem${section === 'low-stock' ? ' selected' : ''}`} onClick={() => navigateTo('low-stock')}>Merce in esaurimento</button>}</div>}
+            {siteMenuOpen && <div className="sidebar-submenu">{canAccess('site-statistics') && <button className={`sidebar-subitem${section === 'site-statistics' ? ' selected' : ''}`} onClick={() => navigateTo('site-statistics')}>Statistiche sedi</button>}{canAccess('site-list') && <button className={`sidebar-subitem${section === 'site-list' ? ' selected' : ''}`} onClick={() => navigateTo('site-list')}>Lista sedi</button>}{canAccess('low-stock') && <button className={`sidebar-subitem${section === 'low-stock' ? ' selected' : ''}`} onClick={() => navigateTo('low-stock')}>Merce in esaurimento</button>}</div>}
           </>}
         </>}
       </nav>
@@ -3988,7 +3999,7 @@ export default function App() {
         <section className="panel category-panel"><div className="panel-heading"><div><h3>Vendite per categoria</h3><p>Valore degli articoli venduti nel periodo selezionato</p></div></div><div className="category-chart"><ResponsiveContainer width="100%" height={230}><PieChart><Pie data={Object.entries(categoriesSales).map(([name, value]) => ({ name, value }))} dataKey="value" nameKey="name" innerRadius={57} outerRadius={88} paddingAngle={3}>{Object.keys(categoriesSales).map((name, i) => <Cell key={name} fill={colors[i % colors.length]} />)}</Pie><Tooltip formatter={(value) => money.format(Number(value))} /></PieChart></ResponsiveContainer><div className="chart-legend">{Object.entries(categoriesSales).length ? Object.entries(categoriesSales).map(([name, value], i) => <div key={name}><span style={{ backgroundColor: colors[i % colors.length] }} /><span>{name}</span><strong>{money.format(value)}</strong></div>) : <span className="muted">Le categorie appariranno dopo la prima vendita.</span>}</div></div></section>
       </div>}
 
-      {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">{settingsTab === null ? <nav className="settings-nav">{[{ name: 'Info Negozio', icon: Store }, { name: 'Sede principale', icon: Package }, { name: 'Homepage', icon: House }, { name: 'Dispositivi', icon: Barcode }, { name: 'Archivio dati', icon: Archive }, { name: 'Permessi di accesso', icon: ShieldCheck }, { name: 'Operativo', icon: Check }].filter(({ name }) => normalizedRole(activeRole) === 'proprietario' || !['Info Negozio', 'Sede principale', 'Archivio dati', 'Homepage', 'Permessi di accesso'].includes(name)).map(({ name, icon: Icon }) => <button key={name} onClick={() => { setSettingsTab(name); setDeviceTab(null); if (name === 'Sede principale') setMainSiteDraft(mainStockSiteId); if (name === 'Permessi di accesso') setPermissionsRole(permissionRoles[0] ?? ''); }}><Icon size={17} />{name === 'Homepage' ? 'Immagine Homepage' : name}</button>)}</nav> : <section className="settings-panel"><button className="settings-back" onClick={() => { if (settingsTab === 'Dispositivi' && deviceTab) setDeviceTab(null); else { setSettingsTab(null); setDeviceTab(null); } }}><ArrowLeft size={15} />{settingsTab === 'Dispositivi' && deviceTab ? 'Dispositivi' : 'Impostazioni'}</button>
+      {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">{settingsTab === null ? <nav className="settings-nav">{[{ name: 'Info Negozio', icon: Store }, { name: 'Sede principale', icon: Package }, { name: 'Homepage', icon: House }, { name: 'Dispositivi', icon: Barcode }, { name: 'Archivio dati', icon: Archive }, { name: 'Permessi di accesso', icon: ShieldCheck }, { name: 'Operativo', icon: Check }].filter(({ name }) => normalizedRole(activeRole) === 'proprietario' || !['Info Negozio', 'Sede principale', 'Archivio dati', 'Homepage', 'Permessi di accesso'].includes(name)).map(({ name, icon: Icon }) => <button key={name} onClick={() => { setDeviceTab(null); if (name === 'Permessi di accesso') { setPermissionsAuthorizationBarcode(''); setPermissionsAuthorizationOpen(true); return; } setSettingsTab(name); if (name === 'Sede principale') setMainSiteDraft(mainStockSiteId); }}><Icon size={17} />{name === 'Homepage' ? 'Immagine Homepage' : name}</button>)}</nav> : <section className="settings-panel"><button className="settings-back" onClick={() => { if (settingsTab === 'Dispositivi' && deviceTab) setDeviceTab(null); else { setSettingsTab(null); setDeviceTab(null); } }}><ArrowLeft size={15} />{settingsTab === 'Dispositivi' && deviceTab ? 'Dispositivi' : 'Impostazioni'}</button>
         {settingsTab === 'Info Negozio' && <><div className="settings-title"><h2>Info Negozio</h2><p>Nome, logo e moneta utilizzata dal negozio.</p></div><form className="settings-form store-info-form" onSubmit={saveStoreName}><Field label="Nome attività" value={shopName} onChange={(e) => setShopName(e.target.value)} required /><Field label="Numero negozio" value={shopNumber} onChange={(e) => setShopNumber(e.target.value)} /><label className="field"><span>{language === 'ar' ? 'العملة المستخدمة' : 'Moneta utilizzata'}</span><select value={currencyCode} onChange={(event) => void changeCurrency(event.target.value)}>{currencyChoices.map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select></label><div className="receipt-preview"><Store size={17} /><span>{shopName || 'Nome negozio'}</span><small>Anteprima intestazione scontrino</small></div><div className="shop-logo-setting store-info-logo"><span className="field-label">Logo del negozio</span>{data.settings.shop_logo && <img src={data.settings.shop_logo} alt="Logo attuale" />}<button className="button button-outline" type="button" onClick={() => void chooseShopLogo()}><Store size={15} /> {data.settings.shop_logo ? 'Sostituisci logo' : 'Scegli logo'}</button></div><button className="button button-primary"><Check size={16} /> {language === 'ar' ? 'حفظ الإعدادات' : 'Salva impostazioni'}</button></form></>}
         {settingsTab === 'Sede principale' && <><div className="settings-title"><h2>Sede principale</h2><p>Scegli dove registrare inizialmente le nuove giacenze. Potrai poi distribuire la merce alle altre sedi.</p></div><form className="settings-form" onSubmit={(event) => void applyMainSite(event)}><SelectField label="Sede principale" value={mainSiteDraft} onChange={setMainSiteDraft} options={storeSites.map((site) => String(site.id))} labels={storeSites.map((site) => site.name)} /><button className="button button-primary" type="submit" disabled={!mainSiteDraft || mainSiteDraft === data.settings.main_site_id}><Check size={16} /> Applica sede principale</button></form></>}
         {settingsTab === 'Archivio dati' && <><div className="settings-title"><h2>Archivio locale</h2><p>Database SQLite e copie giornaliere dei dati.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Archivio locale attivo</div><div className="database-card"><div className="security-icon"><Archive size={20} /></div><div><strong>Database SQLite</strong><span className="database-path">{data.settings.database_file}</span></div><span className="stock-badge">Attivo</span></div><div className="settings-form"><label className="field"><span>Cartella esportazioni giornaliere</span><div className="folder-input"><input value={archiveFolder} readOnly /><button className="button button-outline" type="button" onClick={() => void chooseFolder()}>Scegli cartella</button></div></label><p className="help-copy">Ogni giorno a mezzanotte vengono aggiornati file TXT e PDF nelle cartelle Magazzino, Cassa, Vendite e Statistiche.</p></div></>}
@@ -3998,6 +4009,7 @@ export default function App() {
         {settingsTab === 'Operativo' && <><div className="settings-title"><h2>Stato operativo</h2><p>Stato corrente del gestionale.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Operativo</div></>}
       </section>}</div></div>}
     </main>
+    {permissionsAuthorizationOpen && isOwner && <Modal title="Verifica barcode Proprietario" close={() => { setPermissionsAuthorizationOpen(false); setPermissionsAuthorizationBarcode(''); }}><form className="site-authorization" onSubmit={(event) => void confirmPermissionsAuthorization(event)}><p>Scansiona o inserisci il barcode del Proprietario per aprire i permessi di accesso.</p><Field label="Barcode del Proprietario" value={permissionsAuthorizationBarcode} onChange={(event) => setPermissionsAuthorizationBarcode(event.target.value.trim())} autoFocus required /><div className="form-actions"><button className="button button-outline" type="button" onClick={() => { setPermissionsAuthorizationOpen(false); setPermissionsAuthorizationBarcode(''); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Verifica barcode</button></div></form></Modal>}
 
     {section === 'cash' && isOwner && !ownerCashSiteId && <div className="cash-site-prompt-backdrop"><section className="panel cash-site-prompt" role="dialog" aria-modal="true" aria-labelledby="cash-site-prompt-title"><div className="security-icon"><ShoppingBasket size={20} /></div><h2 id="cash-site-prompt-title">Quale cassa vuoi aprire?</h2><div className="cash-site-options" role="group" aria-label="Seleziona la sede">{cashSites.map((site) => <button className={`cash-site-option${ownerCashSiteDraft === String(site.id) ? ' selected' : ''}`} key={site.id} type="button" aria-pressed={ownerCashSiteDraft === String(site.id)} onClick={() => setOwnerCashSiteDraft(String(site.id))}><Store size={17} /><span>{site.name}</span></button>)}</div><div className="cash-site-actions"><button className="button button-primary full-width" type="button" disabled={!ownerCashSiteDraft} onClick={() => { setOwnerCashSiteId(ownerCashSiteDraft); setScannerSearch(''); }}>Apri cassa</button><button className="button button-outline full-width" type="button" onClick={() => { setOwnerCashSiteDraft(''); navigateTo('home'); }}>Annulla</button></div>{!cashSites.length && <p className="help-copy">Registra prima una sede per aprire la cassa.</p>}</section></div>}
     {section === 'settings' && isCashierRole(activeRole) && settingsTab === null && <div className="cashier-settings-backdrop"><nav className="settings-nav cashier-settings-nav" aria-label="Impostazioni"><button type="button" onClick={() => { setSettingsTab('Dispositivi'); setDeviceTab(null); }}><Barcode size={17} />Dispositivi</button><button type="button" onClick={() => setSettingsTab('Archivio dati')}><Archive size={17} />Archivio dati</button><button type="button" onClick={() => setSettingsTab('Operativo')}><Check size={17} />Operatività</button></nav></div>}
