@@ -170,6 +170,18 @@ function installWebPreview(): void {
     state.supplierOrders = [];
     migrationChanged = true;
   }
+  for (const order of state.supplierOrders) {
+    for (const item of order.items) {
+      if (!Number.isSafeInteger(item.id)) {
+        item.id = item.product_id;
+        migrationChanged = true;
+      }
+      if (typeof item.received_at !== 'string' && item.received_at !== null) {
+        item.received_at = order.received_at ?? null;
+        migrationChanged = true;
+      }
+    }
+  }
   if (!state.settings.main_site_id || !state.sites.some((site) => String(site.id) === state.settings.main_site_id)) {
     state.settings.main_site_id = String([...state.sites].sort((a, b) => a.id - b.id)[0]?.id ?? '');
     persist();
@@ -179,6 +191,7 @@ function installWebPreview(): void {
     ?? [...state.sites].sort((a, b) => a.id - b.id)[0];
   const employeeByBarcode = (barcode: string) => state.employees.find((employee) =>
     employee.barcode === barcode.trim() || employee.recognition_code === barcode.trim());
+  let activeEmployeeBarcode = '';
   const stockAtSite = (productId: number, siteId: number) =>
     state.siteStocks.find((stock) => stock.product_id === productId && stock.site_id === siteId);
   const refreshProductStock = (productId: number) => {
@@ -193,9 +206,10 @@ function installWebPreview(): void {
     authorizeTracker: async (barcode) => ['proprietario', 'direttore'].includes((employeeByBarcode(barcode)?.role ?? '').toLocaleLowerCase('it')),
     loginEmployee: async (barcode): Promise<AuthenticatedEmployee | null> => {
       const employee = employeeByBarcode(barcode);
+      activeEmployeeBarcode = employee?.barcode ?? '';
       return employee ? { id: employee.id, first_name: employee.first_name, last_name: employee.last_name, role: employee.role, barcode: employee.barcode } : null;
     },
-    logout: async () => undefined,
+    logout: async () => { activeEmployeeBarcode = ''; },
     saveProduct: async (input: ProductInput, selectedSiteId?: number) => {
       const product = state.products.find((item) => item.code === input.code.trim());
       const site = selectedSiteId === undefined
@@ -388,18 +402,49 @@ function installWebPreview(): void {
     },
     saveSupplierOrder: async (input: SupplierOrderInput) => {
       const supplier = state.suppliers.find((item) => item.id === input.supplier_id);
+      const site = state.sites.find((item) => item.id === input.site_id);
       if (!supplier || !Array.isArray(input.items) || input.items.length < 1 || input.items.length > 100
-        || typeof input.notes !== 'string' || input.notes.length > 1000) throw new Error('Dati dell’ordine non validi.');
-      const items = input.items.map((item) => {
+        || !site || typeof input.notes !== 'string' || input.notes.length > 1000) throw new Error('Dati dell’ordine non validi.');
+      const items: SupplierOrder['items'] = input.items.map((item) => {
         const product = state.products.find((candidate) => candidate.id === item.product_id);
         if (!product || !Number.isFinite(item.quantity) || item.quantity <= 0 || item.quantity > 1_000_000
           || !Number.isFinite(item.unit_cost) || item.unit_cost < 0 || item.unit_cost > 1_000_000) {
           throw new Error('Articolo, quantità o costo dell’ordine non validi.');
         }
-        return { product_id: product.id, product_name: product.name, product_code: product.code, unit: product.unit ?? 'PEZZO', quantity: item.quantity, unit_cost: item.unit_cost };
+        return { id: product.id, product_id: product.id, product_name: product.name, product_code: product.code, unit: product.unit ?? 'PEZZO', quantity: item.quantity, unit_cost: item.unit_cost, received_at: null };
       });
-      const order: SupplierOrder = { id: nextId(state.supplierOrders), supplier_id: supplier.id, supplier_name: supplier.name, created_at: new Date().toISOString(), notes: input.notes.trim(), items };
+      const createdAt = new Date().toISOString();
+      if (input.employee_barcode.trim() !== activeEmployeeBarcode || !employeeByBarcode(input.employee_barcode)) {
+        throw new Error('Il barcode non corrisponde al dipendente autenticato.');
+      }
+      if (input.received) items.forEach((item) => { item.received_at = createdAt; });
+      const order: SupplierOrder = { id: nextId(state.supplierOrders), supplier_id: supplier.id, supplier_name: supplier.name, site_id: site.id, site_name: site.name, created_at: createdAt, expected_arrival_date: input.expected_arrival_date, received_at: input.received ? createdAt : null, notes: input.notes.trim(), items };
+      if (input.received) {
+        for (const item of items) {
+          const stock = stockAtSite(item.product_id, site.id);
+          if (stock) stock.stock += item.quantity;
+          else state.siteStocks.push({ product_id: item.product_id, site_id: site.id, site_name: site.name, stock: item.quantity });
+          refreshProductStock(item.product_id);
+        }
+      }
       state.supplierOrders.unshift(order);
+      persist();
+    },
+    receiveSupplierOrder: async (orderId, itemId, employeeBarcode) => {
+      const employee = employeeByBarcode(employeeBarcode);
+      const order = state.supplierOrders.find((item) => item.id === orderId);
+      if (!employee || employee.barcode !== activeEmployeeBarcode || employeeBarcode.trim() !== activeEmployeeBarcode
+        || !order || !order.site_id || order.received_at) throw new Error('Verifica barcode e ordine da ricevere.');
+      const items = itemId === null ? order.items.filter((item) => !item.received_at) : order.items.filter((item) => item.id === itemId && !item.received_at);
+      if (!items.length) throw new Error('Non ci sono articoli da ricevere.');
+      for (const item of items) {
+        const stock = stockAtSite(item.product_id, order.site_id);
+        if (stock) stock.stock += item.quantity;
+        else state.siteStocks.push({ product_id: item.product_id, site_id: order.site_id, site_name: order.site_name ?? '', stock: item.quantity });
+        refreshProductStock(item.product_id);
+        item.received_at = new Date().toISOString();
+      }
+      if (order.items.every((item) => item.received_at)) order.received_at = new Date().toISOString();
       persist();
     },
     generateLoyaltyCards: async ({ quantity, discount_percentage }) => {

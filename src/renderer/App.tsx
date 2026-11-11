@@ -1,12 +1,14 @@
-import { cloneElement, createContext, isValidElement, useContext, useEffect, useRef, useState } from 'react';
+import { cloneElement, createContext, Fragment, isValidElement, useContext, useEffect, useRef, useState } from 'react';
 import type { FormEvent, InputHTMLAttributes, ReactNode } from 'react';
-import { Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Bell, Camera, Check, ChevronDown, CircleAlert, ClipboardList, CreditCard, Eye, House, LockKeyhole, Minus, Package, Pencil, Plus, Printer, RefreshCw, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Store, Trash2, TrendingUp, Users, Video, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Bell, Camera, Check, ChevronDown, CircleAlert, ClipboardList, CreditCard, Eye, FolderOpen, House, LockKeyhole, Minus, Package, Pencil, Plus, Printer, RefreshCw, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Store, Trash2, TrendingUp, Users, Video, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { jsPDF } from 'jspdf';
 import autoTable, { Table as AutoTableTable } from 'jspdf-autotable';
 import JSZip from 'jszip';
 import JsBarcode from 'jsbarcode';
 import arabicPdfFontUrl from './DejaVuSans.ttf?url';
+import supermarketBackgroundUrl from '../animazione/supermarket-bg.html?url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
 import homeBanner from './home-banner.svg';
@@ -526,18 +528,23 @@ function SupplierListPage({ suppliers, onSave, notify }: { suppliers: Supplier[]
     }
   };
   return <div className="page-content supplier-page">
-    <div className="page-toolbar"><div><h2>Lista fornitori</h2><p>{suppliers.length} fornitori registrati</p></div><button className="button button-primary" type="button" onClick={() => setDraft({ name: '', contact_name: '', phone: '', email: '', address: '', notes: '' })}><Plus size={16} /> Aggiungi fornitore</button></div>
+    <div className="page-toolbar"><div><p>{suppliers.length} fornitori registrati</p></div><button className="button button-primary" type="button" onClick={() => setDraft({ name: '', contact_name: '', phone: '', email: '', address: '', notes: '' })}><Plus size={16} /> Aggiungi fornitore</button></div>
     <Table headings={['Fornitore', 'Contatto', 'Telefono', 'Email', 'Indirizzo', 'Azioni']}><>{suppliers.map((supplier) => <tr key={supplier.id}><td className="cell-primary">{supplier.name}</td><td>{supplier.contact_name || '—'}</td><td>{supplier.phone || '—'}</td><td>{supplier.email || '—'}</td><td>{supplier.address || '—'}</td><td><button className="button button-outline" type="button" onClick={() => setDraft({ id: supplier.id, name: supplier.name, contact_name: supplier.contact_name, phone: supplier.phone, email: supplier.email, address: supplier.address, notes: supplier.notes })}><Pencil size={14} /> Modifica</button></td></tr>)}{!suppliers.length && <tr><td colSpan={6} className="empty-cell">Nessun fornitore registrato.</td></tr>}</></Table>
-    {draft && <Modal title={draft.id ? 'Modifica fornitore' : 'Aggiungi fornitore'} close={() => setDraft(null)}><form className="form-grid supplier-form" onSubmit={(event) => void submit(event)}><Field label="Nome fornitore" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} maxLength={120} required autoFocus /><Field label="Nome referente" value={draft.contact_name} onChange={(event) => setDraft({ ...draft, contact_name: event.target.value })} maxLength={120} /><Field label="Telefono" type="tel" value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} maxLength={40} /><Field label="Email" type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} maxLength={254} /><Field label="Indirizzo" value={draft.address} onChange={(event) => setDraft({ ...draft, address: event.target.value })} maxLength={240} /><label className="field supplier-notes"><span>Note</span><textarea rows={3} maxLength={1000} value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} /></label><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => setDraft(null)}>Annulla</button><button className="button button-primary" disabled={saving}><Check size={16} /> Salva fornitore</button></div></form></Modal>}
+    {draft && <Modal title={draft.id ? 'Modifica fornitore' : 'Aggiungi fornitore'} close={() => setDraft(null)} wide portal><form className="form-grid supplier-form" onSubmit={(event) => void submit(event)}><Field label="Nome fornitore" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} maxLength={120} required autoFocus /><Field label="Nome referente" value={draft.contact_name} onChange={(event) => setDraft({ ...draft, contact_name: event.target.value })} maxLength={120} /><Field label="Telefono" type="tel" value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} maxLength={40} /><Field label="Email" type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} maxLength={254} /><Field label="Indirizzo" value={draft.address} onChange={(event) => setDraft({ ...draft, address: event.target.value })} maxLength={240} /><label className="field supplier-notes"><span>Note</span><textarea rows={3} maxLength={1000} value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} /></label><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => setDraft(null)}>Annulla</button><button className="button button-primary" disabled={saving}><Check size={16} /> Salva fornitore</button></div></form></Modal>}
   </div>;
 }
-function SupplierOrderPage({ suppliers, products, orders, onSave, notify }: { suppliers: Supplier[]; products: Product[]; orders: SupplierOrder[]; onSave: (order: SupplierOrderInput) => Promise<void>; notify: (message: string) => void }) {
+function SupplierOrderPage({ suppliers, products, sites, orders, onSave, onReceive, notify }: { suppliers: Supplier[]; products: Product[]; sites: Site[]; orders: SupplierOrder[]; onSave: (order: SupplierOrderInput) => Promise<void>; onReceive: (orderId: number, itemId: number | null, barcode: string) => Promise<void>; notify: (message: string) => void }) {
   const [supplierId, setSupplierId] = useState('');
+  const [siteId, setSiteId] = useState('');
   const [productId, setProductId] = useState('');
-  const [quantity, setQuantity] = useState('1');
+  const [quantity, setQuantity] = useState('');
   const [unitCost, setUnitCost] = useState('');
-  const [notes, setNotes] = useState('');
+  const [expectedArrivalDate, setExpectedArrivalDate] = useState('');
+  const [orderStatus, setOrderStatus] = useState<'pending' | 'received'>('pending');
   const [items, setItems] = useState<SupplierOrderInput['items']>([]);
+  const [barcodeAction, setBarcodeAction] = useState<{ type: 'register' } | { type: 'receive'; order: SupplierOrder; itemId: number | null; itemName?: string } | null>(null);
+  const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
+  const [employeeBarcode, setEmployeeBarcode] = useState('');
   const [saving, setSaving] = useState(false);
   const selectedProduct = products.find((product) => String(product.id) === productId);
   const addItem = () => {
@@ -553,21 +560,38 @@ function SupplierOrderPage({ suppliers, products, orders, onSave, notify }: { su
     }
     setItems((current) => [...current, { product_id: selectedProduct.id, quantity: parsedQuantity, unit_cost: parsedCost }]);
     setProductId('');
-    setQuantity('1');
+    setQuantity('');
     setUnitCost('');
   };
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!supplierId || !items.length) {
-      notify('Seleziona un fornitore e aggiungi almeno un articolo.');
+  const submitOrder = () => {
+    if (!supplierId || !siteId || !items.length || (orderStatus === 'pending' && !expectedArrivalDate)) {
+      notify('Seleziona fornitore e sede, aggiungi articoli e indica la data prevista di arrivo.');
       return;
     }
+    setEmployeeBarcode('');
+    setBarcodeAction({ type: 'register' });
+  };
+  const confirmBarcodeAction = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!employeeBarcode.trim() || !barcodeAction) return;
     setSaving(true);
     try {
-      await onSave({ supplier_id: Number(supplierId), notes, items });
-      setSupplierId('');
-      setNotes('');
-      setItems([]);
+      if (barcodeAction.type === 'register') {
+        const received = orderStatus === 'received';
+        await onSave({ supplier_id: Number(supplierId), site_id: Number(siteId), expected_arrival_date: received ? null : expectedArrivalDate, received, employee_barcode: employeeBarcode.trim(), notes: '', items });
+        setSupplierId('');
+        setSiteId('');
+        setProductId('');
+        setQuantity('');
+        setUnitCost('');
+        setItems([]);
+      } else {
+        await onReceive(barcodeAction.order.id, barcodeAction.itemId, employeeBarcode.trim());
+      }
+      setExpectedArrivalDate('');
+      setOrderStatus('pending');
+      setBarcodeAction(null);
+      setEmployeeBarcode('');
     } catch (error) {
       notify(errorText(error));
     } finally {
@@ -575,12 +599,15 @@ function SupplierOrderPage({ suppliers, products, orders, onSave, notify }: { su
     }
   };
   return <div className="page-content supplier-page">
-    <div className="page-toolbar"><div><h2>Registra ordine</h2><p>Gli ordini registrati non modificano le giacenze.</p></div></div>
     {!suppliers.length ? <Empty icon={Store} title="Registra prima un fornitore" detail="Aggiungi un fornitore dalla sezione Lista fornitori." /> : <div className="supplier-order-layout">
-      <form className="panel supplier-order-form" onSubmit={(event) => void submit(event)}><SelectField label="Fornitore" value={supplierId} onChange={setSupplierId} options={['', ...suppliers.map((supplier) => String(supplier.id))]} labels={['Seleziona fornitore', ...suppliers.map((supplier) => supplier.name)]} /><SelectField label="Articolo" value={productId} onChange={(value) => { setProductId(value); const product = products.find((item) => String(item.id) === value); setUnitCost(product ? String(product.purchase_price) : ''); }} options={['', ...products.map((product) => String(product.id))]} labels={['Seleziona articolo', ...products.map((product) => `${product.name} · ${product.code}`)]} /><div className="supplier-order-line-inputs"><Field label="Quantità" type="number" min="0.001" step={selectedProduct?.unit === 'PEZZO' || !selectedProduct?.unit ? '1' : '0.001'} value={quantity} onChange={(event) => setQuantity(event.target.value)} /><Field label="Costo unitario (€)" type="number" min="0" step="0.01" value={unitCost} onChange={(event) => setUnitCost(event.target.value)} /></div><button className="button button-outline" type="button" disabled={!productId} onClick={addItem}><Plus size={15} /> Aggiungi articolo</button><label className="field supplier-notes"><span>Note ordine</span><textarea rows={3} maxLength={1000} value={notes} onChange={(event) => setNotes(event.target.value)} /></label><button className="button button-primary full-width" disabled={saving || !items.length}><Check size={16} /> Registra ordine</button></form>
-      <section className="panel supplier-order-items"><div className="panel-heading"><div><h3>Articoli nell’ordine</h3><p>{items.length} articoli</p></div></div><div className="supplier-order-item-list">{items.map((item) => { const product = products.find((candidate) => candidate.id === item.product_id); if (!product) return null; return <div className="supplier-order-item" key={item.product_id}><div><strong>{product.name}</strong><small>{quantityFormat.format(item.quantity)} {product.unit ?? 'PEZZO'} × {money.format(item.unit_cost)}</small></div><strong>{money.format(item.quantity * item.unit_cost)}</strong><button className="icon-button small" type="button" title="Rimuovi articolo" aria-label={`Rimuovi ${product.name}`} onClick={() => setItems((current) => current.filter((entry) => entry.product_id !== item.product_id))}><X size={14} /></button></div>; })}{!items.length && <p className="empty-cell">Aggiungi articoli per comporre l’ordine.</p>}<div className="supplier-order-total"><span>Totale stimato</span><strong>{money.format(items.reduce((sum, item) => sum + item.quantity * item.unit_cost, 0))}</strong></div></div></section>
+      <div className="panel supplier-order-form"><SelectField label="Fornitore" value={supplierId} onChange={setSupplierId} options={['', ...suppliers.map((supplier) => String(supplier.id))]} labels={['Seleziona fornitore', ...suppliers.map((supplier) => supplier.name)]} /><SelectField label="Sede di ricevimento" value={siteId} onChange={setSiteId} options={['', ...sites.map((site) => String(site.id))]} labels={['Seleziona sede', ...sites.map((site) => site.name)]} /><SelectField label="Articolo" value={productId} onChange={(value) => { setProductId(value); const product = products.find((item) => String(item.id) === value); setUnitCost(product ? String(product.purchase_price) : ''); }} options={['', ...products.map((product) => String(product.id))]} labels={['Seleziona articolo', ...products.map((product) => `${product.name} · ${product.code}`)]} /><div className="supplier-order-line-inputs"><Field label="Quantità" type="number" min="1" step="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} /><Field label="Costo unitario (€)" type="number" min="0" step="0.01" value={unitCost} onChange={(event) => setUnitCost(event.target.value)} /></div><button className="button button-outline" type="button" disabled={!productId} onClick={addItem}><Plus size={15} /> Aggiungi articolo</button></div>
+      <section className="panel supplier-order-items"><div className="panel-heading"><div><h3>Articoli nell’ordine</h3><p>{items.length} articoli</p></div></div><div className="supplier-order-item-list">{items.map((item) => { const product = products.find((candidate) => candidate.id === item.product_id); if (!product) return null; return <div className="supplier-order-item" key={item.product_id}><div><strong>{product.name}</strong><small>{quantityFormat.format(item.quantity)} {product.unit ?? 'PEZZO'} × {money.format(item.unit_cost)}</small></div><strong>{money.format(item.quantity * item.unit_cost)}</strong><button className="icon-button small" type="button" title="Rimuovi articolo" aria-label={`Rimuovi ${product.name}`} onClick={() => setItems((current) => current.filter((entry) => entry.product_id !== item.product_id))}><X size={14} /></button></div>; })}{!items.length && <p className="empty-cell">Aggiungi articoli per comporre l’ordine.</p>}<div className="supplier-order-total"><span>Totale stimato</span><strong>{money.format(items.reduce((sum, item) => sum + item.quantity * item.unit_cost, 0))}</strong></div><div className="supplier-order-controls"><div className="supplier-order-status"><SelectField label="Stato ordine" value={orderStatus} onChange={(value) => setOrderStatus(value as 'pending' | 'received')} options={['pending', 'received']} labels={['In attesa di ricevimento', 'Ordine già ricevuto']} />{orderStatus === 'pending' && <Field label="Data prevista di arrivo" type="date" value={expectedArrivalDate} onChange={(event) => setExpectedArrivalDate(event.target.value)} />}</div><button className="button button-primary full-width" type="button" disabled={saving || !items.length || !supplierId || !siteId || (orderStatus === 'pending' && !expectedArrivalDate)} onClick={submitOrder}><Check size={16} /> Registra ordine</button></div></div></section>
     </div>}
-    <section className="supplier-orders-history"><div className="panel-heading"><div><h3>Ordini registrati</h3><p>{orders.length} ordini</p></div></div><Table headings={['Ordine', 'Data', 'Fornitore', 'Articoli', 'Totale', 'Note']}><>{orders.map((order) => <tr key={order.id}><td className="cell-primary">#{order.id}</td><td>{dateTimeText(new Date(order.created_at))}</td><td>{order.supplier_name}</td><td>{order.items.length}</td><td>{money.format(order.items.reduce((sum, item) => sum + item.quantity * item.unit_cost, 0))}</td><td>{order.notes || '—'}</td></tr>)}{!orders.length && <tr><td colSpan={6} className="empty-cell">Nessun ordine registrato.</td></tr>}</></Table></section>
+    <section className="supplier-orders-history"><div className="panel-heading"><div><h3>Ordini registrati</h3><p>{orders.length} ordini</p></div></div><Table headings={['Ordine', 'Data', 'Fornitore', 'Sede', 'Articoli', 'Stato', 'Totale']}><>{orders.map((order) => {
+      const hasReceivedItems = order.items.some((item) => item.received_at);
+      return <Fragment key={order.id}><tr><td><button className="supplier-order-folder" type="button" aria-expanded={expandedOrderId === order.id} onClick={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}><FolderOpen size={15} /> #{order.id}<ChevronDown size={13} /></button></td><td>{dateTimeText(new Date(order.created_at))}</td><td>{order.supplier_name}</td><td>{order.site_name || '—'}</td><td>{order.items.length}</td><td>{order.received_at ? 'Ricevuto' : hasReceivedItems ? 'Parzialmente ricevuto' : order.expected_arrival_date ? `Previsto ${formatLocalDate(order.expected_arrival_date)}` : '—'}</td><td>{money.format(order.items.reduce((sum, item) => sum + item.quantity * item.unit_cost, 0))}</td></tr>{expandedOrderId === order.id && <tr><td className="supplier-order-details-cell" colSpan={7}><div className="supplier-order-details"><div className="supplier-order-details-heading"><strong>Articoli dell’ordine #{order.id}</strong>{!order.received_at && <button className="button button-outline" type="button" onClick={() => { setEmployeeBarcode(''); setBarcodeAction({ type: 'receive', order, itemId: null }); }}><Check size={14} /> Ricevi tutto l’ordine</button>}</div>{order.items.map((item) => <div className="supplier-order-received-item" key={item.id}><div><strong>{item.product_name}</strong><small>{item.product_code} · {quantityFormat.format(item.quantity)} {item.unit} × {money.format(item.unit_cost)}</small></div>{item.received_at ? <span className="supplier-order-received-label">Ricevuto</span> : <button className="button button-outline" type="button" onClick={() => { setEmployeeBarcode(''); setBarcodeAction({ type: 'receive', order, itemId: item.id, itemName: item.product_name }); }}><Check size={14} /> Ricevi articolo</button>}</div>)}</div></td></tr>}</Fragment>;
+    })}{!orders.length && <tr><td colSpan={7} className="empty-cell">Nessun ordine registrato.</td></tr>}</></Table></section>
+    {barcodeAction && <Modal title={barcodeAction.type === 'receive' ? barcodeAction.itemId === null ? 'Conferma ricevimento ordine' : 'Conferma ricevimento articolo' : 'Conferma registrazione ordine'} close={() => setBarcodeAction(null)} wide portal><form className="form-grid supplier-order-barcode-form" onSubmit={(event) => void confirmBarcodeAction(event)}><p className="supplier-order-barcode-description">{barcodeAction.type === 'receive' ? `${barcodeAction.itemName ? `Articolo: ${barcodeAction.itemName}` : `Ordine #${barcodeAction.order.id}`}. Scansiona il barcode della persona che conferma il ricevimento.` : 'Scansiona il barcode del dipendente che registra l’ordine.'}</p><Field label="Barcode dipendente" value={employeeBarcode} onChange={(event) => setEmployeeBarcode(event.target.value)} autoFocus required /><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => setBarcodeAction(null)}>Annulla</button><button className="button button-primary" disabled={saving}><Check size={16} /> {barcodeAction.type === 'register' ? 'Registra e conferma' : 'Conferma ricevimento'}</button></div></form></Modal>}
   </div>;
 }
 const voucherCodeSpace = 10_000_000_000;
@@ -696,9 +723,10 @@ function Field({ label, fieldClassName, ...props }: InputHTMLAttributes<HTMLInpu
   return <label className={`field${fieldClassName ? ` ${fieldClassName}` : ''}`}><span>{localizedText(label, language)}</span><input {...props} lang={language === 'ar' ? 'ar-EG' : 'it-IT'} dir={language === 'ar' ? 'rtl' : 'ltr'} placeholder={props.placeholder ? localizedText(props.placeholder, language) : undefined} /></label>;
 }
 
-function Modal({ title, close, children, wide = false, rightHalf = false, narrowPanel = false }: { title: string; close: () => void; children: ReactNode; wide?: boolean; rightHalf?: boolean; narrowPanel?: boolean }) {
+function Modal({ title, close, children, wide = false, rightHalf = false, narrowPanel = false, portal = false }: { title: string; close: () => void; children: ReactNode; wide?: boolean; rightHalf?: boolean; narrowPanel?: boolean; portal?: boolean }) {
   const language = useContext(AppLanguageContext);
-  return <div className={`modal-backdrop${rightHalf ? ' modal-right-half' : ''}`} onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><section className={`modal${wide ? ' modal-wide' : ''}${rightHalf ? ' modal-payment-panel' : ''}${narrowPanel ? ' modal-payment-narrow' : ''}`} role="dialog" aria-modal="true"><header className="modal-header"><div><p className="eyebrow">GESTIONALE</p><h2>{localizedText(title, language)}</h2></div><button className="icon-button" onClick={close} aria-label={localizedText('Chiudi', language)}><X size={18} /></button></header><LocalizedNodes>{children}</LocalizedNodes></section></div>;
+  const content = <div className={`modal-backdrop${rightHalf ? ' modal-right-half' : ''}`} onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><section className={`modal${wide ? ' modal-wide' : ''}${rightHalf ? ' modal-payment-panel' : ''}${narrowPanel ? ' modal-payment-narrow' : ''}`} role="dialog" aria-modal="true"><header className="modal-header"><div><p className="eyebrow">GESTIONALE</p><h2>{localizedText(title, language)}</h2></div><button className="icon-button" onClick={close} aria-label={localizedText('Chiudi', language)}><X size={18} /></button></header><LocalizedNodes>{children}</LocalizedNodes></section></div>;
+  return portal ? createPortal(content, document.body) : content;
 }
 
 function BarcodeImage({ value }: { value: string }) {
@@ -1047,6 +1075,21 @@ export default function App() {
   const scannerSequence = useRef({ value: '', startedAt: 0, lastAt: 0 });
   const cursorGlowRef = useRef<HTMLDivElement>(null);
   const homeMediaFrameRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!locked) return;
+    const screen = document.querySelector<HTMLElement>('.lock-screen:not(.setup-screen)');
+    if (!screen) return;
+    const frame = document.createElement('iframe');
+    frame.src = supermarketBackgroundUrl;
+    frame.title = '';
+    frame.setAttribute('aria-hidden', 'true');
+    frame.setAttribute('tabindex', '-1');
+    frame.setAttribute('sandbox', 'allow-scripts');
+    frame.className = 'lock-animation';
+    screen.prepend(frame);
+    return () => frame.remove();
+  }, [locked]);
 
   const refresh = async () => { const next = await window.gestionale.getState(); setData(next); setShopName(next.settings.shop_name); setShopNumber(next.settings.shop_number); setCurrencyCode(next.settings.currency); setArchiveFolder(next.settings.archive_folder); return next; };
   useEffect(() => {
@@ -2606,6 +2649,16 @@ export default function App() {
     if (!data) return;
     try {
       const reportSales = data.sales.filter((sale) => !respectTimeFilters || matchesSalesPeriod(sale.created_at));
+      const reportLocale = language === 'ar' ? 'ar-EG-u-nu-latn' : 'it-IT';
+      const reportDate = new Intl.DateTimeFormat(reportLocale, { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const reportTime = new Intl.DateTimeFormat(reportLocale, { hour: '2-digit', minute: '2-digit', hour12: false });
+      const reportDateTime = (date: Date) => `${reportDate.format(date)}     ${reportTime.format(date)}`;
+      const soldQuantities = new Map<number, { name: string; code: string; unit?: ProductUnit; quantity: number }>();
+      reportSales.forEach((sale) => sale.items.forEach((item) => {
+        const total = soldQuantities.get(item.product_id);
+        if (total) total.quantity += item.quantity;
+        else soldQuantities.set(item.product_id, { name: item.name, code: item.code, unit: item.unit, quantity: item.quantity });
+      }));
       const gross = reportSales.reduce((sum, sale) => sum + sale.gross_total, 0);
       const net = reportSales.reduce((sum, sale) => sum + sale.total, 0);
       const cost = reportSales.reduce((sum, sale) => sum + sale.items.reduce((subtotal, item) => subtotal + item.purchase_price * item.quantity, 0), 0);
@@ -2658,12 +2711,43 @@ export default function App() {
           const purchasePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.purchase_price, 0);
           const salePrice = sale.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
           const totalQuantity = sale.items.reduce((sum, item) => sum + item.quantity, 0);
-          const row = [sale.receipt_no, dateTimeText(new Date(sale.created_at)), sale.person || '—', quantityFormat.format(totalQuantity), rtl ? localizedText(sale.payment_method, language) : sale.payment_method, money.format(purchasePrice), money.format(salePrice), money.format(sale.total - purchasePrice), money.format(sale.discount), money.format(sale.total)];
+          const row = [sale.receipt_no, reportDateTime(new Date(sale.created_at)), sale.person || '—', quantityFormat.format(totalQuantity), rtl ? localizedText(sale.payment_method, language) : sale.payment_method, money.format(purchasePrice), money.format(salePrice), money.format(sale.total - purchasePrice), money.format(sale.discount), money.format(sale.total)];
           return (rtl ? row.reverse() : row).map(reportText);
         }),
         showHead: 'firstPage',
         theme: 'striped',
         styles: { font: rtl ? 'DejaVuSans' : 'helvetica', fontSize: rtl ? 5.25 : 6, cellPadding: 2, overflow: 'linebreak', textColor: [49, 60, 53], lineColor: [224, 230, 224], halign: rtl ? 'right' : 'left' },
+        headStyles: { fillColor: [22, 133, 220], textColor: [255, 255, 255], fontStyle: 'bold', halign: rtl ? 'right' : 'left' },
+        alternateRowStyles: { fillColor: [244, 247, 244] },
+        margin: { left: 8, right: 8, bottom: 14 },
+        didDrawPage: () => {
+          doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'normal');
+          doc.setFontSize(8);
+          doc.setTextColor(120, 130, 122);
+          const footer = rtl
+            ? `${data.settings.shop_name} · الصفحة ${doc.getNumberOfPages()}`
+            : `${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`;
+          if (latinShopName) doc.setR2L(false);
+          doc.text(reportText(footer), rtl ? 202 : 8, 290, rtl ? { align: 'right' } : undefined);
+          if (latinShopName) doc.setR2L(true);
+        },
+      });
+      doc.addPage();
+      doc.setR2L(rtl);
+      doc.setFont(rtl ? 'DejaVuSans' : 'helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(49, 60, 53);
+      const quantityTitle = reportText(rtl ? 'كميات المبيعات حسب المنتج' : 'Quantità vendute per articolo');
+      doc.text(quantityTitle, rtl ? 202 : 8, 18, rtl ? { align: 'right' } : undefined);
+      autoTable(doc, {
+        startY: 25,
+        head: [(rtl ? ['الكمية المباعة', 'الوحدة', 'المنتج', 'الرمز'] : ['Codice', 'Articolo', 'Unità', 'Quantità venduta']).map(reportText)],
+        body: [...soldQuantities.values()].sort((first, second) => first.name.localeCompare(second.name, appLocale)).map((item) => {
+          const row = [item.code, item.name, localizedText(item.unit ?? 'PEZZO', language), quantityFormat.format(item.quantity)];
+          return (rtl ? row.reverse() : row).map(reportText);
+        }),
+        theme: 'striped',
+        styles: { font: rtl ? 'DejaVuSans' : 'helvetica', fontSize: 8, cellPadding: 2, overflow: 'linebreak', textColor: [49, 60, 53], lineColor: [224, 230, 224], halign: rtl ? 'right' : 'left' },
         headStyles: { fillColor: [22, 133, 220], textColor: [255, 255, 255], fontStyle: 'bold', halign: rtl ? 'right' : 'left' },
         alternateRowStyles: { fillColor: [244, 247, 244] },
         margin: { left: 8, right: 8, bottom: 14 },
@@ -2686,13 +2770,18 @@ export default function App() {
   };
   const exportInventoryCsv = () => {
     if (!data) return;
+    const reportProducts = data.products
+      .map((item) => ({ ...item, stock: inventoryStockFor(item.id) }))
+      .filter((item) => item.stock > 0);
+    const selectedSite = availableStockSites.find((site) => String(site.id) === inventorySiteId);
+    const filePrefix = selectedSite ? `Merce nella sede ${safeFilePart(selectedSite.name)}` : 'Merce nelle sedi';
     const escapeCell = (value: string | number, forceText = false) => `"${`${forceText ? "'" : ''}${String(value)}`.replaceAll('"', '""')}"`;
     const rtl = language === 'ar';
     const rows: Array<Array<string | number>> = [
       rtl
         ? ['الاسم', 'الرمز', 'SKU', 'الفئة', 'سعر البيع', 'سعر الشراء', 'المخزون', 'حد التنبيه', 'تاريخ الصلاحية']
         : ['Nome', 'Codice', 'SKU', 'Categoria', 'Prezzo vendita', 'Prezzo acquisto', 'Giacenza', 'Soglia minima', 'Data scadenza'],
-      ...data.products.map((item) => [
+      ...reportProducts.map((item) => [
         item.name, item.code, `SKU-${String(item.id).padStart(6, '0')}`, localizedText(item.category, language), item.sale_price, item.purchase_price, item.stock,
         item.low_stock_threshold, item.expiry_enabled ? item.expiry_date ?? '' : '',
       ]),
@@ -2701,7 +2790,7 @@ export default function App() {
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = rtl ? `المخزون-${todayKey}.csv` : `magazzino-${todayKey}.csv`;
+    link.download = rtl ? `المخزون-${todayKey}.csv` : `${filePrefix} ${todayKey}.csv`;
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -2723,9 +2812,15 @@ export default function App() {
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  const exportInventoryReport = async () => {
+  const exportInventoryReport = async (share = false) => {
     if (!data) return;
     try {
+      const reportProducts = data.products
+        .map((item) => ({ ...item, stock: inventoryStockFor(item.id) }))
+        .filter((item) => item.stock > 0);
+      const selectedSite = availableStockSites.find((site) => String(site.id) === inventorySiteId);
+      const reportName = selectedSite ? `Merce nella sede ${selectedSite.name}` : 'Merce nelle sedi';
+      const filePrefix = selectedSite ? `Merce nella sede ${safeFilePart(selectedSite.name)}` : 'Merce nelle sedi';
       const rtl = language === 'ar';
       const font = rtl ? 'DejaVuSans' : 'helvetica';
       const doc = new jsPDF({ orientation: 'portrait' });
@@ -2734,8 +2829,8 @@ export default function App() {
       const reportText = (value: string) => rtl ? doc.processArabic(value) : value;
       const reportMoney = (amount: number) => money.format(amount);
       const latinShopName = rtl && /^[\x20-\x7E]*$/.test(data.settings.shop_name);
-      const stockValue = data.products.reduce((sum, item) => sum + item.stock * item.purchase_price, 0);
-      const stockSaleValue = data.products.reduce((sum, item) => sum + item.stock * item.sale_price, 0);
+      const stockValue = reportProducts.reduce((sum, item) => sum + item.stock * item.purchase_price, 0);
+      const stockSaleValue = reportProducts.reduce((sum, item) => sum + item.stock * item.sale_price, 0);
       doc.setFillColor(22, 133, 220);
       doc.rect(0, 0, 210, 36, 'F');
       if (data.settings.shop_logo) doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', rtl ? 174 : 12, 5, 24, 24);
@@ -2747,13 +2842,13 @@ export default function App() {
       if (latinShopName) doc.setR2L(true);
       doc.setFont(font, 'normal');
       doc.setFontSize(9);
-      doc.text(reportText(rtl ? `تقرير المخزون · تاريخ التصدير ${receiptDate.format(new Date())}` : 'Report magazzino · Esportato il ' + receiptDate.format(new Date())), rtl ? data.settings.shop_logo ? 168 : 198 : data.settings.shop_logo ? 43 : 14, 26, rtl ? { align: 'right' } : undefined);
+      doc.text(reportText(rtl ? `تقرير المخزون · تاريخ التصدير ${receiptDate.format(new Date())}` : `${reportName} · Esportato il ${receiptDate.format(new Date())}`), rtl ? data.settings.shop_logo ? 168 : 198 : data.settings.shop_logo ? 43 : 14, 26, rtl ? { align: 'right' } : undefined);
       autoTable(doc, {
         startY: 43,
         head: [(rtl
           ? ['المنتج', 'الرمز', 'الفئة', 'سعر البيع', 'سعر الشراء', 'الربح', 'المخزون', 'حد التنبيه', 'تاريخ الصلاحية'].reverse()
           : ['Articolo', 'Codice', 'Categoria', 'Vendita', 'Acquisto', 'Profitto', 'Giacenza', 'Soglia', 'Scadenza']).map(reportText)],
-        body: data.products.map((item) => {
+        body: reportProducts.map((item) => {
           const row = [item.name, item.code, localizedText(item.category, language), reportMoney(item.sale_price), reportMoney(item.purchase_price), reportMoney(item.sale_price - item.purchase_price), `${item.stock} ${rtl ? item.unit === 'KG' ? 'كغ' : item.unit === 'LITRO' ? 'لتر' : 'قطعة' : item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'}`, String(item.low_stock_threshold), item.expiry_enabled && item.expiry_date ? new Intl.DateTimeFormat(rtl ? 'ar-EG' : 'it-IT', { dateStyle: 'short' }).format(new Date(`${item.expiry_date}T00:00:00`)) : '—'];
           return (rtl ? row.reverse() : row).map(reportText);
         }),
@@ -2811,7 +2906,7 @@ export default function App() {
         ['قيمة البيع', reportMoney(stockSaleValue)],
         ['الصافي', reportMoney(stockSaleValue - stockValue)],
       ] : [
-        ['Articoli', String(data.products.length)],
+        ['Articoli', String(reportProducts.length)],
         ['Acq.', reportMoney(stockValue)],
         ['Vend.', reportMoney(stockSaleValue)],
         ['Netto', reportMoney(stockSaleValue - stockValue)],
@@ -2827,7 +2922,19 @@ export default function App() {
           doc.text(text, x, summaryY + 10 + row * 9, { maxWidth: 90 });
         }
       });
-      doc.save(rtl ? `تقرير-المخزون-${todayKey}.pdf` : `report-magazzino-${todayKey}.pdf`);
+      const fileName = rtl ? `تقرير-المخزون-${todayKey}.pdf` : `${filePrefix} ${todayKey}.pdf`;
+      if (share) {
+        const file = new File([doc.output('blob')], fileName, { type: 'application/pdf' });
+        if (typeof navigator.share === 'function') {
+          await navigator.share({ files: [file], title: reportName });
+          notify('Report condiviso.');
+        } else {
+          const savedPath = await window.gestionale.savePdfForSharing({ fileName, pdfBase64: doc.output('datauristring').split(',')[1] });
+          if (savedPath) notify('Report salvato. Puoi allegarlo a un’app di comunicazione.');
+        }
+      } else {
+        doc.save(fileName);
+      }
     } catch (error) {
       notify(errorText(error));
     }
@@ -3362,14 +3469,20 @@ export default function App() {
     });
     doc.save(filename);
   };
+  const retailSiteIds = new Set((data?.sites ?? []).filter((site) => site.site_role === 'Punto vendita').map((site) => site.id));
+  const retailStockFor = (productId: number) => (data?.siteStocks ?? [])
+    .filter((stock) => stock.product_id === productId && retailSiteIds.has(stock.site_id))
+    .reduce((sum, stock) => sum + stock.stock, 0);
   const expiryLimit = new Date();
   expiryLimit.setDate(expiryLimit.getDate() + 10);
   const expiryLimitKey = localDateKey(expiryLimit);
   const expiringProducts = data?.products.filter((product) =>
     product.expiry_enabled && product.expiry_date && product.expiry_date >= todayKey && product.expiry_date <= expiryLimitKey
+      && (section !== 'available-stock' || retailStockFor(product.id) > 0)
   ) ?? [];
   const expiredProducts = data?.products.filter((product) =>
-    product.expiry_enabled && product.expiry_date && product.expiry_date < todayKey && product.stock > 0
+    product.expiry_enabled && product.expiry_date && product.expiry_date < todayKey
+      && (section === 'available-stock' ? retailStockFor(product.id) > 0 : product.stock > 0)
   ) ?? [];
   const inventoryStockFor = (productId: number) => {
     const siteIds = new Set(availableStockSites.map((site) => site.id));
@@ -3382,6 +3495,7 @@ export default function App() {
   const inventoryList = data?.products.filter((item) => {
     const stock = inventoryStockFor(item.id);
     return (item.name.toLowerCase().includes(inventorySearch.toLowerCase()) || item.code.includes(inventorySearch))
+      && (section !== 'available-stock' || data.siteStocks.some((siteStock) => siteStock.product_id === item.id && retailSiteIds.has(siteStock.site_id)))
       && (category === 'Tutte' || item.category === category)
       && (inventoryStatus === 'all' || (inventoryStatus === 'out' ? stock === 0 : stock > 0))
       && (inventoryStatus === 'all'
@@ -3691,17 +3805,14 @@ export default function App() {
         setLowStockExportAction(null);
         return;
       }
-      const dataUri = doc.output('datauristring');
-      const pdfBase64 = dataUri.slice(dataUri.indexOf(',') + 1);
       const file = new File([doc.output('blob')], fileName, { type: 'application/pdf' });
-      if (typeof navigator.share === 'function' && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
-        await navigator.share({ files: [file], title: 'Merce in esaurimento' });
-        notify('Lista condivisa.');
+      if (typeof navigator.share !== 'function' || (navigator.canShare && !navigator.canShare({ files: [file] }))) {
+        notify('La condivisione diretta dei file non è supportata da questa versione dell’app.');
         setLowStockExportAction(null);
         return;
       }
-      const savedPath = await window.gestionale.savePdfForSharing({ fileName, pdfBase64 });
-      if (savedPath) notify('Lista salvata. Puoi allegarla a WhatsApp, Gmail o un’altra app.');
+      await navigator.share({ files: [file], title: 'Merce in esaurimento' });
+      notify('Lista condivisa.');
       setLowStockExportAction(null);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
@@ -3871,7 +3982,7 @@ export default function App() {
       {section === 'home' && <div className="page-content home-page"><img className="home-banner" src={data.settings.home_image || homeBanner} alt="Immagine homepage" /><div className="metric-grid"><Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length} scontrini emessi`} /><Metric icon={ArrowDownToLine} label="Rimborsi" value={money.format(todayRefunds)} detail="Rimborsi registrati oggi" /><Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyProfit)} detail="Profitto dopo sconti e costo merce" /><Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString(appLocale)} detail="Pezzi registrati oggi" /></div><section className="expiry-alert expiry-home-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{canAccess('inventory') && expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section><section className="content-section reorder-section"><SectionHeading icon={CircleAlert} title="Da riordinare" detail={`${data.products.filter((p) => p.stock <= p.low_stock_threshold).length} articoli sotto soglia`} action={canAccess('inventory') ? <button className="text-button" onClick={() => { setInventorySearch(''); setCategory('Tutte'); setInventoryStatus('low'); navigateTo('inventory'); }}>{language === 'ar' ? 'الانتقال إلى المخزن ←' : 'Vai al magazzino →'}</button> : undefined} /><Table headings={['Articolo', 'Codice', 'Categoria', 'Disponibili', 'Soglia', 'Stato']}><>{data.products.filter((p) => p.stock <= p.low_stock_threshold).slice(0, 5).map((p) => <tr key={p.id} onClick={() => { if (canAccess('inventory')) setSelectedProduct(p); }}><td className="cell-primary">{p.name}</td><td className="mono">{p.code}</td><td>{p.category}</td><td>{p.stock}</td><td>{p.low_stock_threshold}</td><td><span className="stock-badge low">Riordinare</span></td></tr>)}</></Table></section><section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => navigateTo('sales')}>{language === 'ar' ? 'كل المبيعات ←' : 'Tutte le vendite →'}</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section></div>}
 
       {(section === 'inventory' || section === 'available-stock') && <div className={`page-content inventory-scope-page${section === 'available-stock' ? ' available-stock-page' : ''}`}>
-        <div className="page-toolbar inventory-toolbar"><div><h2>{section === 'available-stock' ? 'Merce nelle sedi' : 'Articoli in magazzino'}</h2><p>{data.products.length} articoli registrati{!storeSites.length && ' · Registra una sede prima di aggiungere articoli'}</p></div>{!isCashierRole(activeRole) && <div className="toolbar-actions"><button className="button button-outline" onClick={exportInventoryCsv}><ArrowDownToLine size={16} /> {language === 'ar' ? 'تصدير CSV' : 'Esporta CSV'}</button><button className="button button-outline" onClick={exportInventoryReport}><ArrowDownToLine size={16} /> Scarica report</button><button className="button button-primary" disabled={!storeSites.length} onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct }); }}><Plus size={16} /> Aggiungi nuovo articolo</button></div>}</div>
+        <div className="page-toolbar inventory-toolbar"><div><h2>{section === 'available-stock' ? 'Merce nelle sedi' : 'Articoli in magazzino'}</h2><p>{data.products.length} articoli registrati{!availableStockSites.length && ' · Registra un punto vendita prima di aggiungere articoli'}</p></div>{!isCashierRole(activeRole) && <div className="toolbar-actions"><button className="button button-outline" onClick={exportInventoryCsv}><ArrowDownToLine size={16} /> {language === 'ar' ? 'تصدير CSV' : 'Esporta CSV'}</button><button className="button button-outline" onClick={() => void exportInventoryReport()}><ArrowDownToLine size={16} /> Scarica report</button>{section === 'available-stock' ? <button className="button button-outline" disabled={!availableStockSites.length} onClick={() => void exportInventoryReport(true)}><Share2 size={16} /> Condividi</button> : <button className="button button-primary" disabled={!storeSites.length} onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct }); }}><Plus size={16} /> Aggiungi nuovo articolo</button>}</div>}</div>
         <div className="filter-row"><SearchInput value={inventorySearch} onChange={setInventorySearch} placeholder="Cerca per nome o codice…" /><details className="inventory-filter-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Categoria: {category}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra prodotti per categoria">{['Tutte', ...categories].map((item) => <button key={item} className={`status-filter${category === item ? ' active' : ''}`} aria-pressed={category === item} onClick={(event) => { setCategory(item); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{item}</button>)}</div></details><details className="inventory-filter-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Disponibilità: {inventoryFilters.find((item) => item.value === inventoryStatus)?.label}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra prodotti per disponibilità">{inventoryFilters.map(({ value, label }) => <button key={value} className={`status-filter${inventoryStatus === value ? ' active' : ''}`} aria-pressed={inventoryStatus === value} onClick={(event) => { setInventoryStatus(value); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{label}</button>)}</div></details><details className="inventory-filter-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Sede: {inventorySiteId === 'all' ? 'Tutte' : availableStockSites.find((site) => String(site.id) === inventorySiteId)?.name}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra prodotti per sede"><button className={`status-filter${inventorySiteId === 'all' ? ' active' : ''}`} aria-pressed={inventorySiteId === 'all'} onClick={(event) => { setInventorySiteId('all'); event.currentTarget.closest('details')?.removeAttribute('open'); }}>Tutte</button>{availableStockSites.map((site) => <button key={site.id} className={`status-filter${inventorySiteId === String(site.id) ? ' active' : ''}`} aria-pressed={inventorySiteId === String(site.id)} onClick={(event) => { setInventorySiteId(String(site.id)); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{site.name}</button>)}</div></details></div>
         {!isCashierRole(activeRole) && <div className="expiry-panels">
           <section className="expiry-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section>
@@ -4095,7 +4206,7 @@ export default function App() {
         {settingsTab === 'Operativo' && <><div className="settings-title"><h2>Stato operativo</h2><p>Stato corrente del gestionale.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Operativo</div></>}
       </section>}</div></div>}
       {section === 'supplier-list' && canAccess('supplier-list') && <SupplierListPage suppliers={data.suppliers} notify={notify} onSave={async (supplier) => { await window.gestionale.saveSupplier(supplier); await refresh(); notify('Fornitore salvato.'); }} />}
-      {section === 'supplier-order' && canAccess('supplier-order') && <SupplierOrderPage suppliers={data.suppliers} products={data.products} orders={data.supplierOrders} notify={notify} onSave={async (order) => { await window.gestionale.saveSupplierOrder(order); await refresh(); notify('Ordine registrato.'); }} />}
+      {section === 'supplier-order' && canAccess('supplier-order') && <SupplierOrderPage suppliers={data.suppliers} products={data.products} sites={data.sites} orders={data.supplierOrders} notify={notify} onSave={async (order) => { await window.gestionale.saveSupplierOrder(order); await refresh(); notify('Ordine registrato.'); }} onReceive={async (orderId, itemId, barcode) => { await window.gestionale.receiveSupplierOrder(orderId, itemId, barcode); await refresh(); notify(itemId === null ? 'Ricevimento dell’ordine confermato.' : 'Ricevimento dell’articolo confermato.'); }} />}
     </main>
     {permissionsAuthorizationOpen && isOwner && <Modal title="Verifica barcode Proprietario" close={() => { setPermissionsAuthorizationOpen(false); setPermissionsAuthorizationBarcode(''); }}><form className="site-authorization" onSubmit={(event) => void confirmPermissionsAuthorization(event)}><p>Scansiona o inserisci il barcode del Proprietario per aprire i permessi di accesso.</p><Field label="Barcode del Proprietario" value={permissionsAuthorizationBarcode} onChange={(event) => setPermissionsAuthorizationBarcode(event.target.value.trim())} autoFocus required /><div className="form-actions"><button className="button button-outline" type="button" onClick={() => { setPermissionsAuthorizationOpen(false); setPermissionsAuthorizationBarcode(''); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Verifica barcode</button></div></form></Modal>}
 

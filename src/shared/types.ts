@@ -50,23 +50,33 @@ export interface Supplier {
 export type SupplierInput = Pick<Supplier, 'name' | 'contact_name' | 'phone' | 'email' | 'address' | 'notes'> & { id?: number };
 
 export interface SupplierOrderItem {
+  id: number;
   product_id: number;
   product_name: string;
   product_code: string;
   unit: ProductUnit;
   quantity: number;
   unit_cost: number;
+  received_at: string | null;
 }
 export interface SupplierOrder {
   id: number;
   supplier_id: number;
   supplier_name: string;
+  site_id: number | null;
+  site_name: string | null;
   created_at: string;
+  expected_arrival_date: string | null;
+  received_at: string | null;
   notes: string;
   items: SupplierOrderItem[];
 }
 export type SupplierOrderInput = {
   supplier_id: number;
+  site_id: number;
+  expected_arrival_date: string | null;
+  received: boolean;
+  employee_barcode: string;
   notes: string;
   items: Array<Pick<SupplierOrderItem, 'product_id' | 'quantity' | 'unit_cost'>>;
 };
@@ -306,6 +316,7 @@ declare global {
     saveCustomer: (customer: CustomerInput) => Promise<void>;
     saveSupplier: (supplier: SupplierInput) => Promise<void>;
     saveSupplierOrder: (order: SupplierOrderInput) => Promise<void>;
+    receiveSupplierOrder: (orderId: number, itemId: number | null, employeeBarcode: string) => Promise<void>;
     generateLoyaltyCards: (input: { quantity: number; discount_percentage: number }) => Promise<void>;
     activateLoyaltyCard: (input: { card_id: number; customer_id: number }) => Promise<void>;
     deleteLoyaltyCard: (id: number) => Promise<void>;

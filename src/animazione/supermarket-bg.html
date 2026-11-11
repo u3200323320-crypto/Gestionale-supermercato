@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Supermarket Background Animation</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  width: 100vw; height: 100vh;
+  background: #f5f5f5;
+  overflow: hidden;
+  font-family: 'Segoe UI', Arial, sans-serif;
+}
+canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+window.addEventListener('resize', () => {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+});
+
+const W = () => canvas.width;
+const H = () => canvas.height;
+
+const ICONS = [
+  // cart
+  (x,y,s,a) => {
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1.5 * s;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x-14*s, y-10*s);
+    ctx.lineTo(x-10*s, y-10*s);
+    ctx.lineTo(x-7*s, y+5*s);
+    ctx.lineTo(x+10*s, y+5*s);
+    ctx.lineTo(x+12*s, y-4*s);
+    ctx.lineTo(x-10*s, y-4*s);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x-4*s, y+10*s, 2.5*s, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x+8*s, y+10*s, 2.5*s, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  },
+  // barcode
+  (x,y,s,a) => {
+    ctx.globalAlpha = a;
+    const bars = [1.5,1,2,1,1.5,2,1,1.5,1,2,1,1.5];
+    let bx = x - 12*s;
+    bars.forEach(w => {
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(bx, y-8*s, w*s, 16*s);
+      bx += (w + 1)*s;
+    });
+    ctx.fillStyle = '#000000';
+    ctx.font = `${7*s}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText('1234567890', x, y+12*s);
+    ctx.globalAlpha = 1;
+  },
+  // package box
+  (x,y,s,a) => {
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1.5 * s;
+    ctx.beginPath();
+    ctx.rect(x-10*s, y-8*s, 20*s, 18*s);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x-10*s, y-2*s);
+    ctx.lineTo(x+10*s, y-2*s);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x-3*s, y-8*s);
+    ctx.lineTo(x-3*s, y-2*s);
+    ctx.moveTo(x+3*s, y-8*s);
+    ctx.lineTo(x+3*s, y-2*s);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  },
+  // price tag
+  (x,y,s,a) => {
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1.5 * s;
+    ctx.beginPath();
+    ctx.moveTo(x-12*s, y-5*s);
+    ctx.lineTo(x+5*s, y-12*s);
+    ctx.lineTo(x+12*s, y-5*s);
+    ctx.lineTo(x+12*s, y+8*s);
+    ctx.lineTo(x-12*s, y+8*s);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x+6*s, y-6*s, 2.5*s, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.fillStyle = '#000000';
+    ctx.font = `${7*s}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('€ 1.99', x, y+4*s);
+    ctx.globalAlpha = 1;
+  },
+  // scale
+  (x,y,s,a) => {
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1.5 * s;
+    ctx.beginPath();
+    ctx.arc(x, y+6*s, 10*s, Math.PI, 0);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y-10*s);
+    ctx.lineTo(x, y+6*s);
+    ctx.moveTo(x-10*s, y-10*s);
+    ctx.lineTo(x+10*s, y-10*s);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x-9*s, y-10*s, 4*s, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x+9*s, y-10*s, 4*s, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  },
+];
+
+class Particle {
+  constructor() { this.reset(true); }
+  reset(init = false) {
+    this.x = Math.random() * (window.innerWidth || 1000);
+    this.y = init ? Math.random() * (window.innerHeight || 800) : (window.innerHeight || 800) + 30;
+    this.vy = -(0.15 + Math.random() * 0.3);
+    this.vx = (Math.random() - 0.5) * 0.2;
+    this.scale = 0.5 + Math.random() * 0.9;
+    this.alpha = 0.08 + Math.random() * 0.12;
+    this.icon = Math.floor(Math.random() * ICONS.length);
+    this.rotation = (Math.random() - 0.5) * 0.3;
+    this.angle = 0;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.angle += this.rotation * 0.01;
+    if (this.y < -40) this.reset();
+  }
+  draw() {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+    ICONS[this.icon](0, 0, this.scale, this.alpha);
+    ctx.restore();
+  }
+}
+
+// Grid lines
+function drawGrid() {
+  const gapX = 80, gapY = 80;
+  ctx.strokeStyle = 'rgba(100, 120, 170, 0.04)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W(); x += gapX) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H()); ctx.stroke();
+  }
+  for (let y = 0; y < H(); y += gapY) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W(), y); ctx.stroke();
+  }
+}
+
+// Pulsing dots at grid intersections
+class Dot {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.phase = Math.random() * Math.PI * 2;
+    this.speed = 0.005 + Math.random() * 0.01;
+  }
+  draw(t) {
+    const a = 0.03 + 0.04 * Math.sin(t * this.speed + this.phase);
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(136, 153, 187, ${a})`;
+    ctx.fill();
+  }
+}
+
+// Scan line
+class ScanLine {
+  constructor() { this.y = -20; this.speed = 0.4 + Math.random() * 0.3; }
+  update() {
+    this.y += this.speed;
+    if (this.y > H() + 20) { this.y = -20; this.speed = 0.3 + Math.random() * 0.4; }
+  }
+  draw() {
+    const grad = ctx.createLinearGradient(0, this.y - 40, 0, this.y + 40);
+    grad.addColorStop(0, 'rgba(80,80,80,0)');
+    grad.addColorStop(0.5, 'rgba(80,80,80,0.04)');
+    grad.addColorStop(1, 'rgba(80,80,80,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, this.y - 40, W(), 80);
+  }
+}
+
+const NUM_PARTICLES = 35;
+const particles = Array.from({length: NUM_PARTICLES}, () => new Particle());
+
+const dots = [];
+const GAP = 80;
+for (let x = 40; x < 2000; x += GAP)
+  for (let y = 40; y < 1200; y += GAP)
+    dots.push(new Dot(x, y));
+
+const scanLine1 = new ScanLine();
+const scanLine2 = new ScanLine();
+scanLine2.y = (window.innerHeight || 800) / 2;
+
+let t = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  t++;
+
+  ctx.clearRect(0, 0, W(), H());
+
+  // Background
+  ctx.fillStyle = '#f5f5f5';
+  ctx.fillRect(0, 0, W(), H());
+
+  // Subtle radial center glow
+  const rg = ctx.createRadialGradient(W()/2, H()/2, 0, W()/2, H()/2, Math.max(W(),H())*0.6);
+  rg.addColorStop(0, 'rgba(50, 70, 120, 0.15)');
+  rg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = rg;
+  ctx.fillRect(0, 0, W(), H());
+
+  drawGrid();
+  dots.forEach(d => d.draw(t));
+  scanLine1.update(); scanLine1.draw();
+  scanLine2.update(); scanLine2.draw();
+  particles.forEach(p => { p.update(); p.draw(); });
+}
+
+animate();
+</script>
+</body>
+</html>

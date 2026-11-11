@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld('gestionale', {
   saveCustomer: (customer: CustomerInput) => ipcRenderer.invoke('customer:save', customer),
   saveSupplier: (supplier: SupplierInput) => ipcRenderer.invoke('supplier:save', supplier),
   saveSupplierOrder: (order: SupplierOrderInput) => ipcRenderer.invoke('supplier-order:save', order),
+  receiveSupplierOrder: (orderId: number, itemId: number | null, employeeBarcode: string): Promise<void> => ipcRenderer.invoke('supplier-order:receive', orderId, itemId, employeeBarcode),
   generateLoyaltyCards: (input: { quantity: number; discount_percentage: number }) => ipcRenderer.invoke('loyalty-cards:generate', input),
   activateLoyaltyCard: (input: { card_id: number; customer_id: number }) => ipcRenderer.invoke('loyalty-card:activate', input),
   deleteLoyaltyCard: (id: number) => ipcRenderer.invoke('loyalty-card:delete', id),

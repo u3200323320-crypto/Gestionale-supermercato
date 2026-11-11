@@ -262,10 +262,12 @@ function allSales(): unknown[] {
 
 function allSupplierOrders(): SupplierOrder[] {
   const orders = database.prepare(`SELECT orders.id, orders.supplier_id, suppliers.name AS supplier_name,
-      orders.created_at, orders.notes
+      orders.site_id, sites.name AS site_name, orders.created_at, orders.expected_arrival_date,
+      orders.received_at, orders.notes
     FROM supplier_orders orders JOIN suppliers ON suppliers.id = orders.supplier_id
+    LEFT JOIN sites ON sites.id = orders.site_id
     ORDER BY orders.created_at DESC, orders.id DESC`).all() as Omit<SupplierOrder, 'items'>[];
-  const itemsForOrder = database.prepare(`SELECT product_id, product_name, product_code, unit, quantity, unit_cost
+  const itemsForOrder = database.prepare(`SELECT id, product_id, product_name, product_code, unit, quantity, unit_cost, received_at
     FROM supplier_order_items WHERE order_id = ? ORDER BY id`);
   return orders.map((order) => ({
     ...order,
@@ -535,6 +537,7 @@ function initDatabase(): void {
     );
     CREATE TABLE IF NOT EXISTS supplier_orders (
       id INTEGER PRIMARY KEY AUTOINCREMENT, supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+      site_id INTEGER, expected_arrival_date TEXT, received_at TEXT,
       created_at TEXT NOT NULL, notes TEXT NOT NULL DEFAULT ''
     );
     CREATE TABLE IF NOT EXISTS supplier_order_items (
@@ -572,6 +575,18 @@ function initDatabase(): void {
   if (!siteColumns.some((column) => column.name === 'site_role')) {
     database.exec("ALTER TABLE sites ADD COLUMN site_role TEXT NOT NULL DEFAULT 'Punto vendita'");
   }
+  const supplierOrderColumns = database.prepare('PRAGMA table_info(supplier_orders)').all() as Array<{ name: string }>;
+  if (!supplierOrderColumns.some((column) => column.name === 'site_id')) database.exec('ALTER TABLE supplier_orders ADD COLUMN site_id INTEGER');
+  if (!supplierOrderColumns.some((column) => column.name === 'expected_arrival_date')) database.exec('ALTER TABLE supplier_orders ADD COLUMN expected_arrival_date TEXT');
+  if (!supplierOrderColumns.some((column) => column.name === 'received_at')) database.exec('ALTER TABLE supplier_orders ADD COLUMN received_at TEXT');
+  const supplierOrderItemColumns = database.prepare('PRAGMA table_info(supplier_order_items)').all() as Array<{ name: string }>;
+  if (!supplierOrderItemColumns.some((column) => column.name === 'received_at')) database.exec('ALTER TABLE supplier_order_items ADD COLUMN received_at TEXT');
+  database.prepare(`UPDATE supplier_order_items
+    SET received_at = (SELECT received_at FROM supplier_orders WHERE supplier_orders.id = supplier_order_items.order_id)
+    WHERE received_at IS NULL AND EXISTS (
+      SELECT 1 FROM supplier_orders
+      WHERE supplier_orders.id = supplier_order_items.order_id AND supplier_orders.received_at IS NOT NULL
+    )`).run();
   database.prepare("UPDATE sites SET site_role = 'Punto vendita' WHERE TRIM(site_role) = '' OR site_role = 'Responsabile sede'").run();
   for (const column of ['email', 'tax_id', 'manager_name', 'opening_hours', 'notes']) {
     if (!siteColumns.some((existing) => existing.name === column)) database.exec(`ALTER TABLE sites ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`);
@@ -1874,15 +1889,32 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     }
   });
   ipcMain.handle('supplier-order:save', (event, input: SupplierOrderInput) => {
-    requireSupplierPage(event.sender.id, 'supplier-order');
+    const session = requireSupplierPage(event.sender.id, 'supplier-order');
     if (!input || typeof input !== 'object' || Array.isArray(input)
       || !Number.isSafeInteger(input.supplier_id) || input.supplier_id < 1
+      || !Number.isSafeInteger(input.site_id) || input.site_id < 1
+      || typeof input.received !== 'boolean'
       || typeof input.notes !== 'string' || input.notes.length > 1000
       || !Array.isArray(input.items) || input.items.length < 1 || input.items.length > 100) {
       throw new Error('Dati dell’ordine non validi.');
     }
     const supplier = database.prepare('SELECT id FROM suppliers WHERE id = ?').get(input.supplier_id) as { id: number } | undefined;
     if (!supplier) throw new Error('Seleziona un fornitore valido.');
+    const site = database.prepare('SELECT id, name FROM sites WHERE id = ?').get(input.site_id) as { id: number; name: string } | undefined;
+    if (!site) throw new Error('Seleziona una sede valida per il ricevimento.');
+    const expectedDate = input.expected_arrival_date;
+    if (typeof input.employee_barcode !== 'string' || input.employee_barcode.trim() !== session.barcode
+      || !employeeForLogin(input.employee_barcode)) {
+      throw new Error('Il barcode non corrisponde al dipendente autenticato.');
+    }
+    if (input.received) {
+      if (expectedDate !== null) {
+        throw new Error('Verifica il barcode del dipendente per registrare il ricevimento.');
+      }
+    } else if (typeof expectedDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(expectedDate)
+      || localDate(new Date(`${expectedDate}T00:00:00`)) !== expectedDate) {
+      throw new Error('Seleziona una data prevista di arrivo valida.');
+    }
     const seenProducts = new Set<number>();
     const items = input.items.map((item) => {
       if (!item || !Number.isSafeInteger(item.product_id) || item.product_id < 1
@@ -1899,15 +1931,68 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     });
     const createdAt = new Date().toISOString();
     database.transaction(() => {
-      const result = database.prepare('INSERT INTO supplier_orders (supplier_id, created_at, notes) VALUES (?, ?, ?)')
-        .run(supplier.id, createdAt, input.notes.trim());
+      const receivedAt = input.received ? createdAt : null;
+      const result = database.prepare(`INSERT INTO supplier_orders
+        (supplier_id, site_id, expected_arrival_date, received_at, created_at, notes)
+        VALUES (?, ?, ?, ?, ?, ?)`).run(supplier.id, site.id, expectedDate, receivedAt, createdAt, input.notes.trim());
       const orderId = Number(result.lastInsertRowid);
       const insertItem = database.prepare(`INSERT INTO supplier_order_items
-        (order_id, product_id, product_name, product_code, unit, quantity, unit_cost)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`);
+        (order_id, product_id, product_name, product_code, unit, quantity, unit_cost, received_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
       for (const item of items) {
-        insertItem.run(orderId, item.product_id, item.product_name, item.product_code, item.unit, item.quantity, item.unit_cost);
+        insertItem.run(orderId, item.product_id, item.product_name, item.product_code, item.unit, item.quantity, item.unit_cost, receivedAt);
       }
+      if (input.received) {
+        const person = `${session.first_name} ${session.last_name}`.trim();
+        for (const item of items) {
+          database.prepare(`INSERT INTO site_inventory (product_id, site_id, stock) VALUES (?, ?, ?)
+            ON CONFLICT(product_id, site_id) DO UPDATE SET stock = site_inventory.stock + excluded.stock`)
+            .run(item.product_id, site.id, item.quantity);
+          database.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(item.quantity, item.product_id);
+          recordStockMovement(item.product_id, item.product_name, 'Carico', item.quantity,
+            `Ordine fornitore #${orderId}`, person, '', site.name);
+        }
+      }
+    })();
+  });
+  ipcMain.handle('supplier-order:receive', (event, orderId: number, itemId: number | null, employeeBarcode: string) => {
+    const session = requireSupplierPage(event.sender.id, 'supplier-order');
+    const employee = employeeForLogin(employeeBarcode);
+    if (!employee || employee.barcode !== session.barcode || employeeBarcode.trim() !== session.barcode) {
+      throw new Error('Il barcode non corrisponde al dipendente autenticato.');
+    }
+    if (!Number.isSafeInteger(orderId) || orderId < 1) throw new Error('Ordine non valido.');
+    if (itemId !== null && (!Number.isSafeInteger(itemId) || itemId < 1)) throw new Error('Articolo dell’ordine non valido.');
+    const order = database.prepare(`SELECT orders.id, orders.site_id, orders.received_at, sites.name AS site_name
+      FROM supplier_orders orders LEFT JOIN sites ON sites.id = orders.site_id WHERE orders.id = ?`)
+      .get(orderId) as { id: number; site_id: number | null; received_at: string | null; site_name: string | null } | undefined;
+    if (!order || !order.site_id || !order.site_name) throw new Error('Ordine o sede di ricevimento non disponibile.');
+    if (order.received_at) throw new Error('Questo ordine è già stato ricevuto.');
+    const items = itemId === null
+      ? database.prepare(`SELECT id, product_id, product_name, quantity FROM supplier_order_items
+          WHERE order_id = ? AND received_at IS NULL ORDER BY id`).all(orderId) as Array<{ id: number; product_id: number; product_name: string; quantity: number }>
+      : database.prepare(`SELECT id, product_id, product_name, quantity FROM supplier_order_items
+          WHERE order_id = ? AND id = ? AND received_at IS NULL`).all(orderId, itemId) as Array<{ id: number; product_id: number; product_name: string; quantity: number }>;
+    if (!items.length) throw new Error(itemId === null ? 'Non ci sono articoli da ricevere.' : 'Articolo già ricevuto o non appartenente a questo ordine.');
+    if (items.some((item) => !database.prepare('SELECT 1 FROM products WHERE id = ?').get(item.product_id))) {
+      throw new Error('Gli articoli dell’ordine non sono più disponibili.');
+    }
+    const receivedAt = new Date().toISOString();
+    database.transaction(() => {
+      for (const item of items) {
+        database.prepare(`INSERT INTO site_inventory (product_id, site_id, stock) VALUES (?, ?, ?)
+          ON CONFLICT(product_id, site_id) DO UPDATE SET stock = site_inventory.stock + excluded.stock`)
+          .run(item.product_id, order.site_id, item.quantity);
+        database.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(item.quantity, item.product_id);
+        recordStockMovement(item.product_id, item.product_name, 'Carico', item.quantity,
+          `Ordine fornitore #${order.id}`, `${employee.first_name} ${employee.last_name}`.trim(), '', order.site_name ?? '');
+        database.prepare('UPDATE supplier_order_items SET received_at = ? WHERE id = ? AND received_at IS NULL')
+          .run(receivedAt, item.id);
+      }
+      database.prepare(`UPDATE supplier_orders SET received_at = ?
+        WHERE id = ? AND received_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM supplier_order_items WHERE order_id = ? AND received_at IS NULL)`)
+        .run(receivedAt, order.id, order.id);
     })();
   });
   ipcMain.handle('loyalty-cards:generate', (event, input: { quantity: number; discount_percentage: number }) => {
