@@ -159,6 +159,7 @@ const arabicUiTranslations: Record<string, string> = {
   'Stampa su termica USB': 'الطباعة على الطابعة الحرارية عبر USB',
   'GESTIONE CLIENTI': 'إدارة العملاء', 'Gestione sedi': 'إدارة الفروع',
   'Statistiche sedi': 'إحصاءات الفروع', 'Gestisci sedi': 'إدارة الفروع', 'Aggiungi sede': 'إضافة فرع', 'Lista sedi': 'قائمة الفروع',
+  'Merce nelle sedi': 'البضائع في الفروع',
   'Distribuisci merce': 'توزيع البضائع', 'Distribuzione merce tra sedi': 'توزيع البضائع بين الفروع',
   'Trasferisci una quantità dalla giacenza di una sede a quella di un’altra.': 'انقل كمية من مخزون فرع إلى مخزون فرع آخر.',
   'Trasferisci una quantità dal magazzino alla sede selezionata.': 'انقل كمية من المخزن إلى الفرع المحدد.',
