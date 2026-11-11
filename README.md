@@ -32,6 +32,10 @@ npm run dist:win
 Il file `Gestione-Supermercato-Setup-<versione>.exe` viene generato nella cartella `release`.
 La prima installazione attende tre minuti per completare la configurazione iniziale; gli aggiornamenti successivi non includono questa attesa.
 
+## Struttura applicativa
+
+Il renderer comunica con il processo principale tramite il bridge ristretto del preload. Il flusso degli ordini fornitori usa il gateway `application.execute`: il controller applicativo delega autorizzazione e regole al servizio, mentre il repository dedicato incapsula le query SQLite e le transazioni di ordine, ricevimento e giacenze. Gli eventi locali registrano le attività non bloccanti dopo il completamento delle transazioni; i dati essenziali di ordine e magazzino restano invece atomici nel database. Gli altri flussi verranno migrati progressivamente allo stesso schema.
+
 ## Dati e dispositivi
 
 Il database SQLite viene salvato nella cartella dati utente di Windows e conserva prodotti, date di scadenza attivate, movimenti di magazzino, vendite, scontrini, promozioni e impostazioni. La sezione Magazzino include le pagine per il catalogo, lo storico dei carichi e scarichi e la registrazione di nuovi movimenti; Gestione sedi > Merce in esaurimento mostra le giacenze sotto soglia per ogni sede. Al primo avvio aggiornato, le vendite già archiviate vengono importate nello storico senza alterare le giacenze. La sezione Impostazioni > Archivio dati permette di scegliere dove salvare i report giornalieri in PDF, suddivisi in cartelle per Magazzino, Cassa, Vendite, Promozioni e Statistiche. La cartella `Accesso iniziale` viene trasferita quando si sceglie una nuova cartella di archivio. I vecchi file TXT con nome data nelle cartelle di backup vengono rimossi quando il backup giornaliero viene aggiornato. Dopo aver configurato la cartella, per modificarla è richiesta una conferma aggiuntiva. Il backup viene eseguito a mezzanotte; se il gestionale è chiuso, recupera i giorni mancanti al successivo avvio.

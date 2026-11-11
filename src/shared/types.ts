@@ -80,6 +80,9 @@ export type SupplierOrderInput = {
   notes: string;
   items: Array<Pick<SupplierOrderItem, 'product_id' | 'quantity' | 'unit_cost'>>;
 };
+export type ApplicationCommand =
+  | { type: 'supplier-order.save'; input: SupplierOrderInput }
+  | { type: 'supplier-order.receive'; orderId: number; itemId: number | null; employeeBarcode: string };
 
 export interface LoyaltyCard {
   id: number;
@@ -315,8 +318,9 @@ declare global {
     deleteSale: (id: number, employeeBarcode: string) => Promise<void>;
     saveCustomer: (customer: CustomerInput) => Promise<void>;
     saveSupplier: (supplier: SupplierInput) => Promise<void>;
-    saveSupplierOrder: (order: SupplierOrderInput) => Promise<void>;
-    receiveSupplierOrder: (orderId: number, itemId: number | null, employeeBarcode: string) => Promise<void>;
+    application: {
+      execute: (command: ApplicationCommand) => Promise<void>;
+    };
     generateLoyaltyCards: (input: { quantity: number; discount_percentage: number }) => Promise<void>;
     activateLoyaltyCard: (input: { card_id: number; customer_id: number }) => Promise<void>;
     deleteLoyaltyCard: (id: number) => Promise<void>;

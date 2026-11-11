@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, EmployeeInput, Expense, PayrollPaymentInput, Printer, ProductInput, PromotionInput, SaleItem, SiteInput, SupplierInput, SupplierOrderInput, VoucherBatchInput } from '../shared/types';
+import type { ApplicationCommand, AuthenticatedEmployee, CheckoutInput, CustomerInput, EmployeeInput, Expense, PayrollPaymentInput, Printer, ProductInput, PromotionInput, SaleItem, SiteInput, SupplierInput, VoucherBatchInput } from '../shared/types';
 
 contextBridge.exposeInMainWorld('gestionale', {
   isDemo: false,
@@ -41,8 +41,9 @@ contextBridge.exposeInMainWorld('gestionale', {
   deleteSale: (id: number, employeeBarcode: string): Promise<void> => ipcRenderer.invoke('sale:delete', id, employeeBarcode),
   saveCustomer: (customer: CustomerInput) => ipcRenderer.invoke('customer:save', customer),
   saveSupplier: (supplier: SupplierInput) => ipcRenderer.invoke('supplier:save', supplier),
-  saveSupplierOrder: (order: SupplierOrderInput) => ipcRenderer.invoke('supplier-order:save', order),
-  receiveSupplierOrder: (orderId: number, itemId: number | null, employeeBarcode: string): Promise<void> => ipcRenderer.invoke('supplier-order:receive', orderId, itemId, employeeBarcode),
+  application: {
+    execute: (command: ApplicationCommand): Promise<void> => ipcRenderer.invoke('application:execute', command),
+  },
   generateLoyaltyCards: (input: { quantity: number; discount_percentage: number }) => ipcRenderer.invoke('loyalty-cards:generate', input),
   activateLoyaltyCard: (input: { card_id: number; customer_id: number }) => ipcRenderer.invoke('loyalty-card:activate', input),
   deleteLoyaltyCard: (id: number) => ipcRenderer.invoke('loyalty-card:delete', id),

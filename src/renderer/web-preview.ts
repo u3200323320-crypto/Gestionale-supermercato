@@ -1,4 +1,5 @@
 import type {
+  ApplicationCommand,
   AppState,
   AuthenticatedEmployee,
   CheckoutInput,
@@ -197,6 +198,53 @@ function installWebPreview(): void {
   const refreshProductStock = (productId: number) => {
     const product = state.products.find((item) => item.id === productId);
     if (product) product.stock = state.siteStocks.filter((stock) => stock.product_id === productId).reduce((sum, stock) => sum + stock.stock, 0);
+  };
+  const saveSupplierOrder = async (input: SupplierOrderInput): Promise<void> => {
+    const supplier = state.suppliers.find((item) => item.id === input.supplier_id);
+    const site = state.sites.find((item) => item.id === input.site_id);
+    if (!supplier || !Array.isArray(input.items) || input.items.length < 1 || input.items.length > 100
+      || !site || typeof input.notes !== 'string' || input.notes.length > 1000) throw new Error('Dati dell’ordine non validi.');
+    const items: SupplierOrder['items'] = input.items.map((item) => {
+      const product = state.products.find((candidate) => candidate.id === item.product_id);
+      if (!product || !Number.isFinite(item.quantity) || item.quantity <= 0 || item.quantity > 1_000_000
+        || !Number.isFinite(item.unit_cost) || item.unit_cost < 0 || item.unit_cost > 1_000_000) {
+        throw new Error('Articolo, quantità o costo dell’ordine non validi.');
+      }
+      return { id: product.id, product_id: product.id, product_name: product.name, product_code: product.code, unit: product.unit ?? 'PEZZO', quantity: item.quantity, unit_cost: item.unit_cost, received_at: null };
+    });
+    const createdAt = new Date().toISOString();
+    if (input.employee_barcode.trim() !== activeEmployeeBarcode || !employeeByBarcode(input.employee_barcode)) {
+      throw new Error('Il barcode non corrisponde al dipendente autenticato.');
+    }
+    if (input.received) items.forEach((item) => { item.received_at = createdAt; });
+    const order: SupplierOrder = { id: nextId(state.supplierOrders), supplier_id: supplier.id, supplier_name: supplier.name, site_id: site.id, site_name: site.name, created_at: createdAt, expected_arrival_date: input.expected_arrival_date, received_at: input.received ? createdAt : null, notes: input.notes.trim(), items };
+    if (input.received) {
+      for (const item of items) {
+        const stock = stockAtSite(item.product_id, site.id);
+        if (stock) stock.stock += item.quantity;
+        else state.siteStocks.push({ product_id: item.product_id, site_id: site.id, site_name: site.name, stock: item.quantity });
+        refreshProductStock(item.product_id);
+      }
+    }
+    state.supplierOrders.unshift(order);
+    persist();
+  };
+  const receiveSupplierOrder = async (orderId: number, itemId: number | null, employeeBarcode: string): Promise<void> => {
+    const employee = employeeByBarcode(employeeBarcode);
+    const order = state.supplierOrders.find((item) => item.id === orderId);
+    if (!employee || employee.barcode !== activeEmployeeBarcode || employeeBarcode.trim() !== activeEmployeeBarcode
+      || !order || !order.site_id || order.received_at) throw new Error('Verifica barcode e ordine da ricevere.');
+    const items = itemId === null ? order.items.filter((item) => !item.received_at) : order.items.filter((item) => item.id === itemId && !item.received_at);
+    if (!items.length) throw new Error('Non ci sono articoli da ricevere.');
+    for (const item of items) {
+      const stock = stockAtSite(item.product_id, order.site_id);
+      if (stock) stock.stock += item.quantity;
+      else state.siteStocks.push({ product_id: item.product_id, site_id: order.site_id, site_name: order.site_name ?? '', stock: item.quantity });
+      refreshProductStock(item.product_id);
+      item.received_at = new Date().toISOString();
+    }
+    if (order.items.every((item) => item.received_at)) order.received_at = new Date().toISOString();
+    persist();
   };
   const api: Window['gestionale'] = {
     isDemo: true,
@@ -400,52 +448,19 @@ function installWebPreview(): void {
       }
       persist();
     },
-    saveSupplierOrder: async (input: SupplierOrderInput) => {
-      const supplier = state.suppliers.find((item) => item.id === input.supplier_id);
-      const site = state.sites.find((item) => item.id === input.site_id);
-      if (!supplier || !Array.isArray(input.items) || input.items.length < 1 || input.items.length > 100
-        || !site || typeof input.notes !== 'string' || input.notes.length > 1000) throw new Error('Dati dell’ordine non validi.');
-      const items: SupplierOrder['items'] = input.items.map((item) => {
-        const product = state.products.find((candidate) => candidate.id === item.product_id);
-        if (!product || !Number.isFinite(item.quantity) || item.quantity <= 0 || item.quantity > 1_000_000
-          || !Number.isFinite(item.unit_cost) || item.unit_cost < 0 || item.unit_cost > 1_000_000) {
-          throw new Error('Articolo, quantità o costo dell’ordine non validi.');
+    application: {
+      execute: async (command: ApplicationCommand) => {
+        switch (command.type) {
+          case 'supplier-order.save':
+            await saveSupplierOrder(command.input);
+            return;
+          case 'supplier-order.receive':
+            await receiveSupplierOrder(command.orderId, command.itemId, command.employeeBarcode);
+            return;
+          default:
+            throw new Error('Comando applicativo non supportato.');
         }
-        return { id: product.id, product_id: product.id, product_name: product.name, product_code: product.code, unit: product.unit ?? 'PEZZO', quantity: item.quantity, unit_cost: item.unit_cost, received_at: null };
-      });
-      const createdAt = new Date().toISOString();
-      if (input.employee_barcode.trim() !== activeEmployeeBarcode || !employeeByBarcode(input.employee_barcode)) {
-        throw new Error('Il barcode non corrisponde al dipendente autenticato.');
-      }
-      if (input.received) items.forEach((item) => { item.received_at = createdAt; });
-      const order: SupplierOrder = { id: nextId(state.supplierOrders), supplier_id: supplier.id, supplier_name: supplier.name, site_id: site.id, site_name: site.name, created_at: createdAt, expected_arrival_date: input.expected_arrival_date, received_at: input.received ? createdAt : null, notes: input.notes.trim(), items };
-      if (input.received) {
-        for (const item of items) {
-          const stock = stockAtSite(item.product_id, site.id);
-          if (stock) stock.stock += item.quantity;
-          else state.siteStocks.push({ product_id: item.product_id, site_id: site.id, site_name: site.name, stock: item.quantity });
-          refreshProductStock(item.product_id);
-        }
-      }
-      state.supplierOrders.unshift(order);
-      persist();
-    },
-    receiveSupplierOrder: async (orderId, itemId, employeeBarcode) => {
-      const employee = employeeByBarcode(employeeBarcode);
-      const order = state.supplierOrders.find((item) => item.id === orderId);
-      if (!employee || employee.barcode !== activeEmployeeBarcode || employeeBarcode.trim() !== activeEmployeeBarcode
-        || !order || !order.site_id || order.received_at) throw new Error('Verifica barcode e ordine da ricevere.');
-      const items = itemId === null ? order.items.filter((item) => !item.received_at) : order.items.filter((item) => item.id === itemId && !item.received_at);
-      if (!items.length) throw new Error('Non ci sono articoli da ricevere.');
-      for (const item of items) {
-        const stock = stockAtSite(item.product_id, order.site_id);
-        if (stock) stock.stock += item.quantity;
-        else state.siteStocks.push({ product_id: item.product_id, site_id: order.site_id, site_name: order.site_name ?? '', stock: item.quantity });
-        refreshProductStock(item.product_id);
-        item.received_at = new Date().toISOString();
-      }
-      if (order.items.every((item) => item.received_at)) order.received_at = new Date().toISOString();
-      persist();
+      },
     },
     generateLoyaltyCards: async ({ quantity, discount_percentage }) => {
       for (let index = 0; index < quantity; index += 1) {
