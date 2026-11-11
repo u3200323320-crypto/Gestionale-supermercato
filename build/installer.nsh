@@ -3,6 +3,8 @@
 
 Var TaskbarPinCheckbox
 Var TaskbarPinSelected
+Var StartupCheckbox
+Var StartupSelected
 
 !macro customPageAfterChangeDir
   Page custom TaskbarPinPageCreate TaskbarPinPageLeave
@@ -19,6 +21,9 @@ Function TaskbarPinPageCreate
   ${NSD_CreateCheckbox} 0 34u 100% 14u "Aggiungi Gestione Supermercato alla barra delle applicazioni"
   Pop $TaskbarPinCheckbox
   ${NSD_Uncheck} $TaskbarPinCheckbox
+  ${NSD_CreateCheckbox} 0 54u 100% 14u "Avvia Gestione Supermercato all'avvio di Windows"
+  Pop $StartupCheckbox
+  ${NSD_Uncheck} $StartupCheckbox
   nsDialogs::Show
 FunctionEnd
 
@@ -26,9 +31,16 @@ Function TaskbarPinPageLeave
   ${NSD_GetState} $TaskbarPinCheckbox $0
   StrCpy $TaskbarPinSelected "false"
   StrCmp $0 1 taskbar_pin_checked
-  Return
+  Goto startup_option
 taskbar_pin_checked:
   StrCpy $TaskbarPinSelected "true"
+startup_option:
+  ${NSD_GetState} $StartupCheckbox $0
+  StrCpy $StartupSelected "false"
+  StrCmp $0 1 startup_checked
+  Return
+startup_checked:
+  StrCpy $StartupSelected "true"
 FunctionEnd
 !endif
 
@@ -53,8 +65,16 @@ initial_setup_done:
   FileClose $0
   ExecWait '"$SYSDIR\wscript.exe" "$PLUGINSDIR\pin-taskbar.vbs" "$newStartMenuLink"' $1
 taskbar_pin_done:
+  StrCmp $StartupSelected "true" startup_enabled
+  Delete "$SMSTARTUP\Gestione Supermercato.lnk"
+  Goto startup_done
+startup_enabled:
+  CreateDirectory "$SMSTARTUP"
+  CreateShortCut "$SMSTARTUP\Gestione Supermercato.lnk" "$INSTDIR\Gestione Supermercato.exe"
+startup_done:
 !macroend
 
 !macro customUnInstall
   Delete "$INSTDIR\.initial-setup-done"
+  Delete "$SMSTARTUP\Gestione Supermercato.lnk"
 !macroend

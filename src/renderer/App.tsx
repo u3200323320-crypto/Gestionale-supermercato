@@ -1,4 +1,4 @@
-import { cloneElement, createContext, Fragment, isValidElement, useContext, useEffect, useRef, useState } from 'react';
+import { cloneElement, createContext, Fragment, isValidElement, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, InputHTMLAttributes, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Bell, Camera, Check, ChevronDown, CircleAlert, ClipboardList, CreditCard, Eye, FolderOpen, House, LockKeyhole, Minus, Package, Pencil, Plus, Printer, RefreshCw, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Store, Trash2, TrendingUp, Users, Video, X } from 'lucide-react';
@@ -347,6 +347,63 @@ const arabicUiTranslations: Record<string, string> = {
   'Codici buono': 'رموز القسيمة', 'di sconto': 'خصم', 'Validità:': 'الصلاحية:',
   'Rimuovi articolo': 'إزالة المنتج',
   'Ricerca o aggiungi un articolo.': 'ابحث عن منتج أو أضفه.', 'Aggiungi al ordine': 'إضافة إلى الطلب',
+  'Rimborsi registrati oggi': 'المبالغ المستردة المسجلة اليوم',
+  'Quale cassa vuoi aprire?': 'أي صندوق تريد فتحه؟', 'Seleziona la sede': 'اختر الفرع',
+  'Registra almeno una sede per iniziare a vendere.': 'سجّل فرعًا واحدًا على الأقل لبدء البيع.',
+  'Gestione Fornitori': 'إدارة الموردين', 'Lista fornitori': 'قائمة الموردين', 'Registra ordine': 'تسجيل طلب',
+  'Trasferimento merce': 'نقل البضائع', 'Scarico da dettaglio articolo': 'سحب من تفاصيل المنتج',
+  'Persona che invia': 'الشخص المُرسِل', 'Persona che riceverà la merce': 'الشخص الذي سيستلم البضائع',
+  'Seleziona persona': 'اختر الشخص', 'Disponibile nella sede di partenza:': 'المتاح في فرع الانطلاق:',
+  'Distribuzioni effettuate': 'عمليات التوزيع المنفذة', 'Ogni documento viene aperto in formato PDF.': 'يُفتح كل مستند بصيغة PDF.',
+  'Apri PDF distribuzione': 'فتح ملف توزيع PDF', 'Nessuna distribuzione registrata.': 'لا توجد عمليات توزيع مسجلة.',
+  'articoli in esaurimento': 'منتجات قاربت على النفاد',
+  'Nessun articolo in esaurimento in questa sede.': 'لا توجد منتجات قاربت على النفاد في هذا الفرع.',
+  'Nessuna sede registrata.': 'لا توجد فروع مسجلة.', 'Scarica lista articoli in esaurimento': 'تنزيل قائمة المنتجات القريبة من النفاد',
+  'Condividi lista articoli in esaurimento': 'مشاركة قائمة المنتجات القريبة من النفاد',
+  'Seleziona le sedi': 'اختر الفروع', 'Tutte le sedi': 'كل الفروع',
+  'Tipo': 'النوع', 'Codice di riconoscimento': 'رمز التعريف',
+  'Fornitore': 'المورد', 'Aggiungi fornitore': 'إضافة مورد', 'Nome fornitore': 'اسم المورد',
+  'Nome referente': 'اسم جهة الاتصال', 'Modifica fornitore': 'تعديل المورد',
+  'Nessun fornitore registrato.': 'لا يوجد موردون مسجلون.', 'Seleziona fornitore': 'اختر المورد',
+  'Sede di ricevimento': 'فرع الاستلام', 'Costo unitario (€)': 'تكلفة الوحدة (€)',
+  'Articoli nell’ordine': 'المنتجات في الطلب', 'articoli': 'منتجات', 'Totale stimato': 'الإجمالي التقديري',
+  'Stato ordine': 'حالة الطلب', 'In attesa di ricevimento': 'بانتظار الاستلام', 'Ordine già ricevuto': 'تم استلام الطلب',
+  'Data prevista di arrivo': 'تاريخ الوصول المتوقع', 'Ordini registrati': 'الطلبات المسجلة', 'ordini': 'طلبات',
+  'Ordine': 'الطلب', 'Ricevuto': 'تم الاستلام', 'Parzialmente ricevuto': 'تم الاستلام جزئيًا', 'Previsto': 'متوقع',
+  'Articoli dell’ordine': 'منتجات الطلب', 'Ricevi tutto l’ordine': 'استلام الطلب بالكامل', 'Ricevi articolo': 'استلام المنتج',
+  'Nessun ordine registrato.': 'لا توجد طلبات مسجلة.', 'Conferma ricevimento ordine': 'تأكيد استلام الطلب',
+  'Conferma ricevimento articolo': 'تأكيد استلام المنتج', 'Conferma registrazione ordine': 'تأكيد تسجيل الطلب',
+  'Scansiona il barcode della persona che conferma il ricevimento.': 'امسح الرمز الشريطي للشخص الذي يؤكد الاستلام.',
+  'Scansiona il barcode del dipendente che registra l’ordine.': 'امسح الرمز الشريطي للموظف الذي يسجل الطلب.',
+  'Registra e conferma': 'تسجيل وتأكيد', 'Conferma ricevimento': 'تأكيد الاستلام',
+  'Registra prima un fornitore': 'سجّل موردًا أولاً',
+  'Aggiungi un fornitore dalla sezione Lista fornitori.': 'أضف موردًا من قسم قائمة الموردين.',
+  'Seleziona un articolo e inserisci quantità e costo validi.': 'اختر منتجًا وأدخل كمية وتكلفة صحيحتين.',
+  'L’articolo è già presente nell’ordine.': 'المنتج موجود بالفعل في الطلب.',
+  'Seleziona fornitore e sede, aggiungi articoli e indica la data prevista di arrivo.': 'اختر المورد والفرع، وأضف المنتجات وحدد تاريخ الوصول المتوقع.',
+  'Conferma pagamenti': 'تأكيد المدفوعات', 'Responsabile sede': 'مسؤول الفرع', 'Nuovo ruolo': 'دور جديد',
+  'Data inizio contratto': 'تاريخ بدء العقد', 'Data fine contratto': 'تاريخ انتهاء العقد',
+  'Aggiungi alla lista': 'إضافة إلى القائمة', 'Modifica gruppo': 'تعديل المجموعة',
+  'fornitori registrati': 'موردون مسجلون', 'Contatto': 'جهة الاتصال', 'Azioni': 'الإجراءات',
+  'Salva fornitore': 'حفظ المورد', 'Permessi di accesso': 'صلاحيات الوصول',
+  'Scegli quali pagine possono essere aperte dai dipendenti con ciascun ruolo.': 'اختر الصفحات التي يمكن للموظفين فتحها حسب كل دور.',
+  'Ruolo dipendente': 'دور الموظف', 'Non ci sono ruoli dipendente da configurare.': 'لا توجد أدوار للموظفين لتهيئتها.',
+  'Puoi allegare fino a 20 immagini PNG, JPG o WEBP da massimo 5 MB ciascuna.': 'يمكنك إرفاق ما يصل إلى 20 صورة PNG أو JPG أو WEBP، بحجم أقصى 5 ميجابايت لكل صورة.',
+  'Allega la foto del dipendente, la foto dei documenti e il contratto PDF.': 'أرفق صورة الموظف وصور المستندات وعقد PDF.',
+  'Punto vendita': 'نقطة بيع', 'Seleziona tipo sede': 'اختر نوع الفرع', 'Email sede': 'البريد الإلكتروني للفرع',
+  'Seleziona responsabile': 'اختر المسؤول', 'responsabile sede': 'مسؤول الفرع', 'Orari di apertura': 'ساعات العمل',
+  'Inserisci i riferimenti e le informazioni operative del punto vendita.': 'أدخل بيانات الاتصال والمعلومات التشغيلية لنقطة البيع.',
+  'Registra un punto vendita prima di aggiungere articoli': 'سجّل نقطة بيع قبل إضافة المنتجات',
+  'Nessun articolo registrato.': 'لا توجد منتجات مسجلة.', 'Vendite disabilitate': 'المبيعات غير مفعّلة',
+  'Assegna una sede al dipendente per registrare vendite.': 'عيّن فرعًا للموظف لتسجيل المبيعات.',
+  'Rimborsi registrati nel periodo': 'المبالغ المستردة المسجلة خلال الفترة',
+  'Dettaglio mensile · ultimi 12 mesi': 'التفاصيل الشهرية · آخر 12 شهرًا',
+  'Ricavi, costo merce, spese operative, rimborsi, merce buttata e risultato': 'الإيرادات وتكلفة البضائع والمصروفات التشغيلية والمبالغ المستردة والبضائع التالفة والنتيجة',
+  'Classifica prodotti scorrevole': 'قائمة المنتجات القابلة للتمرير',
+  'Filtra statistiche per periodo': 'تصفية الإحصاءات حسب الفترة', 'Filtra statistiche per sede': 'تصفية الإحصاءات حسب الفرع',
+  'Nessun dipendente da pagare.': 'لا يوجد موظفون مستحقون للدفع.',
+  'Scarica lista in PDF': 'تنزيل القائمة بصيغة PDF', 'codici': 'رموز',
+  'Imposta periodo e data, poi conferma il pagamento dei dipendenti selezionati.': 'حدد الفترة والتاريخ، ثم أكد دفع رواتب الموظفين المحددين.',
 };
 const AppLanguageContext = createContext<AppLanguage>('it');
 const AppDynamicNamesContext = createContext<Set<string>>(new Set());
@@ -368,8 +425,16 @@ const localizedStockNote = (value: string, language: AppLanguage) => {
   if (language !== 'ar') return value;
   const sale = /^Vendita #(.+)$/u.exec(value);
   if (sale) return `بيع رقم ${sale[1]}`;
-  const transfer = /^Trasferimento da (.+) a (.+)$/u.exec(value);
-  if (transfer) return `نقل من ${transfer[1]} إلى ${transfer[2]}`;
+  const saleEdit = /^Modifica vendita #(.+)$/u.exec(value);
+  if (saleEdit) return `تعديل البيع رقم ${saleEdit[1]}`;
+  const supplierOrder = /^Ordine fornitore #(.+)$/u.exec(value);
+  if (supplierOrder) return `طلب المورد رقم ${supplierOrder[1]}`;
+  const transfer = /^Trasferimento da (.+?) a (.+?)(?: · Inviato da (.+?))?(?: · Ricevuto da (.+))?$/u.exec(value);
+  if (transfer) {
+    const sender = transfer[3] ? ` · أرسله ${transfer[3]}` : '';
+    const recipient = transfer[4] ? ` · استلمه ${transfer[4]}` : '';
+    return `نقل من ${transfer[1]} إلى ${transfer[2]}${sender}${recipient}`;
+  }
   return localizedText(value, language);
 };
 
@@ -1001,6 +1066,7 @@ export default function App() {
   const [employeeActionBarcode, setEmployeeActionBarcode] = useState('');
   const [trackerAccessOpen, setTrackerAccessOpen] = useState(false);
   const [trackerAccessBarcode, setTrackerAccessBarcode] = useState('');
+  const trackerAccessRequestRef = useRef(0);
   const [reportExportOpen, setReportExportOpen] = useState(false);
   const [reportExportType, setReportExportType] = useState<'sales-pdf' | 'sales-xlsx' | 'balance'>('sales-pdf');
   const [payrollMonth, setPayrollMonth] = useState(localDateKey().slice(0, 7));
@@ -1092,6 +1158,7 @@ export default function App() {
   }, [locked]);
 
   const refresh = async () => { const next = await window.gestionale.getState(); setData(next); setShopName(next.settings.shop_name); setShopNumber(next.settings.shop_number); setCurrencyCode(next.settings.currency); setArchiveFolder(next.settings.archive_folder); return next; };
+  const siteStockIndex = useMemo(() => new Map((data?.siteStocks ?? []).map((item) => [`${item.site_id}:${item.product_id}`, item.stock])), [data?.siteStocks]);
   useEffect(() => {
     if (!data) return;
     setExpenseSite((current) => data.sites.some((site) => site.name === current) ? current : '');
@@ -1104,7 +1171,7 @@ export default function App() {
     const currentLowStock = new Map<string, LowStockNotification>();
     for (const site of data.sites) {
       for (const product of data.products) {
-        const stock = data.siteStocks.find((item) => item.product_id === product.id && item.site_id === site.id)?.stock ?? 0;
+        const stock = siteStockIndex.get(`${site.id}:${product.id}`) ?? 0;
         if (stock > 0 && stock <= product.low_stock_threshold) {
           const id = `${site.id}:${product.id}`;
           currentLowStock.set(id, {
@@ -1131,7 +1198,7 @@ export default function App() {
       ? `${enteredLowStock[0].productName}: scorta in esaurimento presso ${enteredLowStock[0].siteName}.`
       : `${enteredLowStock.length} articoli sono entrati in esaurimento.`;
     notify(message);
-  }, [data]);
+  }, [data, siteStockIndex]);
   useEffect(() => {
     if (!notificationsOpen) return;
     const closeOnOutsideClick = (event: PointerEvent) => {
@@ -1153,10 +1220,20 @@ export default function App() {
       setRefreshing(false);
     }
   };
+  useEffect(() => {
+    if (locked) return;
+    const interval = window.setInterval(() => void refreshCurrentData(), 10 * 60 * 1000);
+    return () => window.clearInterval(interval);
+  }, [locked]);
   const activeRole = currentUser?.role ?? (data && data.employees.length === 0 ? 'Proprietario' : 'cassiere');
   const storeSites = data?.sites ?? [];
   const cashSites = storeSites;
   const isOwner = normalizedRole(activeRole) === 'proprietario';
+  useEffect(() => {
+    if (section !== 'cash' || !isOwner || !ownerCashSiteDraft) return;
+    setOwnerCashSiteId(ownerCashSiteDraft);
+    setScannerSearch('');
+  }, [isOwner, ownerCashSiteDraft, section]);
   const employeeSiteName = data?.employees.find((employee) => employee.id === currentUser?.id)?.operational_site ?? '';
   const activeSiteName = isOwner && section === 'cash'
     ? cashSites.find((site) => String(site.id) === ownerCashSiteId)?.name ?? ''
@@ -1183,8 +1260,7 @@ export default function App() {
   const distributionRecipients = data?.employees.filter((employee) =>
     employee.operational_site === data.sites.find((site) => String(site.id) === distributionToSiteId)?.name
       || normalizedRole(employee.role) === 'proprietario') ?? [];
-  const siteStockFor = (productId: number, siteId = activeSiteId) =>
-    data?.siteStocks.find((item) => item.product_id === productId && item.site_id === siteId)?.stock ?? 0;
+  const siteStockFor = (productId: number, siteId = activeSiteId) => siteStockIndex.get(`${siteId}:${productId}`) ?? 0;
   const lowStockProductsForSite = (siteId: number) => (data?.products ?? [])
     .map((product) => ({ ...product, siteStock: siteStockFor(product.id, siteId) }))
     .filter((product) => product.siteStock > 0 && product.siteStock <= product.low_stock_threshold);
@@ -3676,6 +3752,23 @@ export default function App() {
       notify(errorText(error));
     }
   };
+  useEffect(() => {
+    if (!trackerAccessOpen || !trackerAccessBarcode.trim()) return;
+    const barcode = trackerAccessBarcode.trim();
+    const requestId = ++trackerAccessRequestRef.current;
+    const timeout = window.setTimeout(() => {
+      void window.gestionale.authorizeTracker(barcode).then((valid) => {
+        if (!valid || requestId !== trackerAccessRequestRef.current) return;
+        setTrackerAccessOpen(false);
+        setTrackerAccessBarcode('');
+        navigateTo('employee-tracker', true);
+      }).catch((error: unknown) => notify(errorText(error)));
+    }, 500);
+    return () => {
+      window.clearTimeout(timeout);
+      trackerAccessRequestRef.current += 1;
+    };
+  }, [trackerAccessBarcode, trackerAccessOpen]);
   const printReceipt = (target: 'regular' | 'thermal' = 'regular') => {
     const printer = target === 'thermal' ? data?.settings.receipt_printer_thermal : data?.settings.receipt_printer;
     if (printer) {
