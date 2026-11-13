@@ -12,7 +12,7 @@ import supermarketBackgroundUrl from '../animazione/supermarket-bg.html?url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
 import homeBanner from './home-banner.svg';
-import type { AppState, AuthenticatedEmployee, Employee, EmployeeInput, Expense, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, RolePermissionMap, Sale, SaleItem, Section, Site, SiteInput, SiteStock, Supplier, SupplierInput, SupplierOrder, SupplierOrderInput } from '../shared/types';
+import type { AppDataBackup, AppState, AuthenticatedEmployee, Employee, EmployeeInput, Expense, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, RolePermission, RolePermissionMap, Sale, SaleItem, Section, Site, SiteInput, SiteStock, Supplier, SupplierInput, SupplierOrder, SupplierOrderInput } from '../shared/types';
 
 let money: Pick<Intl.NumberFormat, 'format'> = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
 let appCurrencySymbol = '€';
@@ -383,6 +383,10 @@ const arabicUiTranslations: Record<string, string> = {
   'L’articolo è già presente nell’ordine.': 'المنتج موجود بالفعل في الطلب.',
   'Seleziona fornitore e sede, aggiungi articoli e indica la data prevista di arrivo.': 'اختر المورد والفرع، وأضف المنتجات وحدد تاريخ الوصول المتوقع.',
   'Conferma pagamenti': 'تأكيد المدفوعات', 'Responsabile sede': 'مسؤول الفرع', 'Nuovo ruolo': 'دور جديد',
+  'Dai un’occhiata': 'عرض التفاصيل', 'DETTAGLIO FORNITORE': 'تفاصيل المورد', 'Articoli ordinati': 'المنتجات المطلوبة',
+  'Aggiungi foto': 'إضافة صورة', 'Esporta CSV': 'تصدير CSV', 'Gestione dati app': 'إدارة بيانات التطبيق',
+  'Esporta dati': 'تصدير البيانات', 'Importa dati': 'استيراد البيانات', 'Analisi e importazione…': 'جارٍ التحليل والاستيراد…',
+  'Modifica articolo ordine': 'تعديل منتج الطلب', 'Elimina articolo ordine': 'حذف منتج الطلب',
   'Data inizio contratto': 'تاريخ بدء العقد', 'Data fine contratto': 'تاريخ انتهاء العقد',
   'Aggiungi alla lista': 'إضافة إلى القائمة', 'Modifica gruppo': 'تعديل المجموعة',
   'fornitori registrati': 'موردون مسجلون', 'Contatto': 'جهة الاتصال', 'Azioni': 'الإجراءات',
@@ -522,14 +526,17 @@ const permissionPages: Array<{ section: Section; label: string }> = [
   { section: 'loyalty-generate', label: 'Sviluppa tessere' }, { section: 'loyalty-activate', label: 'Attiva tessere' },
   { section: 'loyalty-active', label: 'Tessere attive' }, { section: 'settings', label: 'Impostazioni' },
 ];
-const permissionSectionSet = new Set(permissionPages.map(({ section }) => section));
+const permissionSectionSet = new Set<RolePermission>([
+  ...permissionPages.map(({ section }) => section),
+  'sales-report', 'sales-csv', 'sales-tools-configured',
+]);
 function parseRolePermissions(value = '{}'): RolePermissionMap {
   try {
     const parsed: unknown = JSON.parse(value);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
     return Object.fromEntries(Object.entries(parsed as Record<string, unknown>).flatMap(([role, sections]) =>
       typeof role === 'string' && Array.isArray(sections)
-        ? [[role, [...new Set(sections.filter((section): section is Section => typeof section === 'string' && permissionSectionSet.has(section as Section)))]]]
+        ? [[role, [...new Set(sections.filter((section): section is RolePermission => typeof section === 'string' && permissionSectionSet.has(section as RolePermission)))]]]
         : [],
     )) as RolePermissionMap;
   } catch { return {}; }
@@ -564,7 +571,7 @@ function AccessPermissionsPanel({ roles, role, permissions, onRoleChange, onPerm
   role: string;
   permissions: RolePermissionMap;
   onRoleChange: (role: string) => void;
-  onPermissionChange: (role: string, section: Section, enabled: boolean) => void;
+  onPermissionChange: (role: string, section: RolePermission, enabled: boolean) => void;
 }) {
   const enabledSections = permissions[role] ?? permissionPages
     .filter(({ section }) => canAccessSection(role, section))
@@ -573,12 +580,19 @@ function AccessPermissionsPanel({ roles, role, permissions, onRoleChange, onPerm
     <div className="settings-title"><h2>Permessi di accesso</h2><p>Scegli quali pagine possono essere aperte dai dipendenti con ciascun ruolo.</p></div>
     {roles.length ? <>
       <label className="field access-role-picker"><span>Ruolo dipendente</span><select value={role} onChange={(event) => onRoleChange(event.target.value)}>{roles.map((item) => <option key={item}>{item}</option>)}</select></label>
-      <div className="access-permission-list">{permissionPages.map(({ section, label }) => <label className="access-permission-row" key={section}><span>{label}</span><input type="checkbox" checked={enabledSections.includes(section)} aria-label={`Consenti ${label} al ruolo ${role}`} onChange={(event) => onPermissionChange(role, section, event.target.checked)} /></label>)}</div>
+      <div className="access-permission-list">{permissionPages.map(({ section, label }) => <Fragment key={section}>
+        <label className="access-permission-row"><span>{label}</span><input type="checkbox" checked={enabledSections.includes(section)} aria-label={`Consenti ${label} al ruolo ${role}`} onChange={(event) => onPermissionChange(role, section, event.target.checked)} /></label>
+        {section === 'sales' && enabledSections.includes('sales') && <div className="access-permission-submenu">
+          <label><span>Scaricare report vendite</span><input type="checkbox" checked={!enabledSections.includes('sales-tools-configured') || enabledSections.includes('sales-report')} aria-label={`Consenti report vendite al ruolo ${role}`} onChange={(event) => onPermissionChange(role, 'sales-report', event.target.checked)} /></label>
+          <label><span>Esportare CSV</span><input type="checkbox" checked={!enabledSections.includes('sales-tools-configured') || enabledSections.includes('sales-csv')} aria-label={`Consenti esportazione CSV al ruolo ${role}`} onChange={(event) => onPermissionChange(role, 'sales-csv', event.target.checked)} /></label>
+        </div>}
+      </Fragment>)}</div>
     </> : <p className="help-copy">Non ci sono ruoli dipendente da configurare.</p>}
   </>;
 }
-function SupplierListPage({ suppliers, onSave, notify }: { suppliers: Supplier[]; onSave: (supplier: SupplierInput) => Promise<void>; notify: (message: string) => void }) {
+function SupplierListPage({ suppliers, orders, onSave, notify }: { suppliers: Supplier[]; orders: SupplierOrder[]; onSave: (supplier: SupplierInput) => Promise<void>; notify: (message: string) => void }) {
   const [draft, setDraft] = useState<SupplierInput | null>(null);
+  const [details, setDetails] = useState<Supplier | null>(null);
   const [saving, setSaving] = useState(false);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -593,13 +607,26 @@ function SupplierListPage({ suppliers, onSave, notify }: { suppliers: Supplier[]
       setSaving(false);
     }
   };
+  const supplierOrders = details ? orders.filter((order) => order.supplier_id === details.id) : [];
+  const orderedProducts = new Map<string, { name: string; code: string; unit: string; quantity: number }>();
+  supplierOrders.forEach((order) => order.items.forEach((item) => {
+    const key = item.product_code || `${item.product_name}-${item.unit}`;
+    const current = orderedProducts.get(key);
+    orderedProducts.set(key, {
+      name: item.product_name,
+      code: item.product_code,
+      unit: item.unit,
+      quantity: (current?.quantity ?? 0) + item.quantity,
+    });
+  }));
   return <div className="page-content supplier-page">
     <div className="page-toolbar"><div><p>{suppliers.length} fornitori registrati</p></div><button className="button button-primary" type="button" onClick={() => setDraft({ name: '', contact_name: '', phone: '', email: '', address: '', notes: '' })}><Plus size={16} /> Aggiungi fornitore</button></div>
-    <Table headings={['Fornitore', 'Contatto', 'Telefono', 'Email', 'Indirizzo', 'Azioni']}><>{suppliers.map((supplier) => <tr key={supplier.id}><td className="cell-primary">{supplier.name}</td><td>{supplier.contact_name || '—'}</td><td>{supplier.phone || '—'}</td><td>{supplier.email || '—'}</td><td>{supplier.address || '—'}</td><td><button className="button button-outline" type="button" onClick={() => setDraft({ id: supplier.id, name: supplier.name, contact_name: supplier.contact_name, phone: supplier.phone, email: supplier.email, address: supplier.address, notes: supplier.notes })}><Pencil size={14} /> Modifica</button></td></tr>)}{!suppliers.length && <tr><td colSpan={6} className="empty-cell">Nessun fornitore registrato.</td></tr>}</></Table>
+    <Table headings={['Fornitore', 'Contatto', 'Telefono', 'Email', 'Indirizzo', 'Azioni']}><>{suppliers.map((supplier) => <tr key={supplier.id}><td className="cell-primary">{supplier.name}</td><td>{supplier.contact_name || '—'}</td><td>{supplier.phone || '—'}</td><td>{supplier.email || '—'}</td><td>{supplier.address || '—'}</td><td><div className="supplier-actions"><button className="button button-outline" type="button" onClick={() => setDraft({ id: supplier.id, name: supplier.name, contact_name: supplier.contact_name, phone: supplier.phone, email: supplier.email, address: supplier.address, notes: supplier.notes })}><Pencil size={14} /> Modifica</button><button className="button button-outline" type="button" onClick={() => setDetails(supplier)}><Eye size={14} /> Dai un’occhiata</button></div></td></tr>)}{!suppliers.length && <tr><td colSpan={6} className="empty-cell">Nessun fornitore registrato.</td></tr>}</></Table>
     {draft && <Modal title={draft.id ? 'Modifica fornitore' : 'Aggiungi fornitore'} close={() => setDraft(null)} wide portal><form className="form-grid supplier-form" onSubmit={(event) => void submit(event)}><Field label="Nome fornitore" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} maxLength={120} required autoFocus /><Field label="Nome referente" value={draft.contact_name} onChange={(event) => setDraft({ ...draft, contact_name: event.target.value })} maxLength={120} /><Field label="Telefono" type="tel" value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} maxLength={40} /><Field label="Email" type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} maxLength={254} /><Field label="Indirizzo" value={draft.address} onChange={(event) => setDraft({ ...draft, address: event.target.value })} maxLength={240} /><label className="field supplier-notes"><span>Note</span><textarea rows={3} maxLength={1000} value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} /></label><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => setDraft(null)}>Annulla</button><button className="button button-primary" disabled={saving}><Check size={16} /> Salva fornitore</button></div></form></Modal>}
+    {details && <div className="drawer-backdrop supplier-details-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetails(null); }}><aside className="detail-drawer supplier-details-drawer"><header className="drawer-header"><div><p className="eyebrow">DETTAGLIO FORNITORE</p><h2>{details.name}</h2></div><button className="icon-button" type="button" onClick={() => setDetails(null)} aria-label="Chiudi"><X size={18} /></button></header><div className="drawer-content"><div className="detail-list supplier-detail-list"><Detail label="Nome fornitore" value={details.name} /><Detail label="Referente" value={details.contact_name || '—'} /><Detail label="Telefono" value={details.phone || '—'} /><Detail label="Email" value={details.email || '—'} /><Detail label="Indirizzo" value={details.address || '—'} /><Detail label="Registrato il" value={dateTimeText(new Date(details.created_at))} /><Detail label="Note" value={details.notes || '—'} /></div><section className="supplier-ordered-products"><h3>Articoli ordinati</h3><p>{supplierOrders.length} ordini registrati</p>{orderedProducts.size ? <div>{[...orderedProducts.values()].map((item) => <article key={`${item.code}-${item.unit}`}><strong>{item.name}</strong><span>{item.code} · {quantityFormat.format(item.quantity)} {item.unit}</span></article>)}</div> : <p className="empty-cell">Nessun articolo ordinato da questo fornitore.</p>}</section></div></aside></div>}
   </div>;
 }
-function SupplierOrderPage({ suppliers, products, sites, orders, onSave, onReceive, notify }: { suppliers: Supplier[]; products: Product[]; sites: Site[]; orders: SupplierOrder[]; onSave: (order: SupplierOrderInput) => Promise<void>; onReceive: (orderId: number, itemId: number | null, barcode: string) => Promise<void>; notify: (message: string) => void }) {
+function SupplierOrderPage({ suppliers, products, sites, orders, onSave, onReceive, onItemUpdate, onItemDelete, notify }: { suppliers: Supplier[]; products: Product[]; sites: Site[]; orders: SupplierOrder[]; onSave: (order: SupplierOrderInput) => Promise<void>; onReceive: (orderId: number, itemId: number | null, barcode: string) => Promise<void>; onItemUpdate: (orderId: number, itemId: number, quantity: number, unitCost: number, barcode: string) => Promise<void>; onItemDelete: (orderId: number, itemId: number, barcode: string) => Promise<void>; notify: (message: string) => void }) {
   const [supplierId, setSupplierId] = useState('');
   const [siteId, setSiteId] = useState('');
   const [productId, setProductId] = useState('');
@@ -608,9 +635,11 @@ function SupplierOrderPage({ suppliers, products, sites, orders, onSave, onRecei
   const [expectedArrivalDate, setExpectedArrivalDate] = useState('');
   const [orderStatus, setOrderStatus] = useState<'pending' | 'received'>('pending');
   const [items, setItems] = useState<SupplierOrderInput['items']>([]);
-  const [barcodeAction, setBarcodeAction] = useState<{ type: 'register' } | { type: 'receive'; order: SupplierOrder; itemId: number | null; itemName?: string } | null>(null);
+  const [barcodeAction, setBarcodeAction] = useState<{ type: 'register' } | { type: 'receive'; order: SupplierOrder; itemId: number | null; itemName?: string } | { type: 'update-item' | 'delete-item'; order: SupplierOrder; item: SupplierOrder['items'][number] } | null>(null);
   const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
   const [employeeBarcode, setEmployeeBarcode] = useState('');
+  const [editQuantity, setEditQuantity] = useState('');
+  const [editUnitCost, setEditUnitCost] = useState('');
   const [saving, setSaving] = useState(false);
   const selectedProduct = products.find((product) => String(product.id) === productId);
   const addItem = () => {
@@ -651,8 +680,12 @@ function SupplierOrderPage({ suppliers, products, sites, orders, onSave, onRecei
         setQuantity('');
         setUnitCost('');
         setItems([]);
-      } else {
+      } else if (barcodeAction.type === 'receive') {
         await onReceive(barcodeAction.order.id, barcodeAction.itemId, employeeBarcode.trim());
+      } else if (barcodeAction.type === 'update-item') {
+        await onItemUpdate(barcodeAction.order.id, barcodeAction.item.id, Number(editQuantity), Number(editUnitCost), employeeBarcode.trim());
+      } else {
+        await onItemDelete(barcodeAction.order.id, barcodeAction.item.id, employeeBarcode.trim());
       }
       setExpectedArrivalDate('');
       setOrderStatus('pending');
@@ -671,9 +704,9 @@ function SupplierOrderPage({ suppliers, products, sites, orders, onSave, onRecei
     </div>}
     <section className="supplier-orders-history"><div className="panel-heading"><div><h3>Ordini registrati</h3><p>{orders.length} ordini</p></div></div><Table headings={['Ordine', 'Data', 'Fornitore', 'Sede', 'Articoli', 'Stato', 'Totale']}><>{orders.map((order) => {
       const hasReceivedItems = order.items.some((item) => item.received_at);
-      return <Fragment key={order.id}><tr><td><button className="supplier-order-folder" type="button" aria-expanded={expandedOrderId === order.id} onClick={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}><FolderOpen size={15} /> #{order.id}<ChevronDown size={13} /></button></td><td>{dateTimeText(new Date(order.created_at))}</td><td>{order.supplier_name}</td><td>{order.site_name || '—'}</td><td>{order.items.length}</td><td>{order.received_at ? 'Ricevuto' : hasReceivedItems ? 'Parzialmente ricevuto' : order.expected_arrival_date ? `Previsto ${formatLocalDate(order.expected_arrival_date)}` : '—'}</td><td>{money.format(order.items.reduce((sum, item) => sum + item.quantity * item.unit_cost, 0))}</td></tr>{expandedOrderId === order.id && <tr><td className="supplier-order-details-cell" colSpan={7}><div className="supplier-order-details"><div className="supplier-order-details-heading"><strong>Articoli dell’ordine #{order.id}</strong>{!order.received_at && <button className="button button-outline" type="button" onClick={() => { setEmployeeBarcode(''); setBarcodeAction({ type: 'receive', order, itemId: null }); }}><Check size={14} /> Ricevi tutto l’ordine</button>}</div>{order.items.map((item) => <div className="supplier-order-received-item" key={item.id}><div><strong>{item.product_name}</strong><small>{item.product_code} · {quantityFormat.format(item.quantity)} {item.unit} × {money.format(item.unit_cost)}</small></div>{item.received_at ? <span className="supplier-order-received-label">Ricevuto</span> : <button className="button button-outline" type="button" onClick={() => { setEmployeeBarcode(''); setBarcodeAction({ type: 'receive', order, itemId: item.id, itemName: item.product_name }); }}><Check size={14} /> Ricevi articolo</button>}</div>)}</div></td></tr>}</Fragment>;
+      return <Fragment key={order.id}><tr><td><button className="supplier-order-folder" type="button" aria-expanded={expandedOrderId === order.id} onClick={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}><FolderOpen size={15} /> #{order.id}<ChevronDown size={13} /></button></td><td>{dateTimeText(new Date(order.created_at))}</td><td>{order.supplier_name}</td><td>{order.site_name || '—'}</td><td>{order.items.length}</td><td>{order.received_at ? 'Ricevuto' : hasReceivedItems ? 'Parzialmente ricevuto' : order.expected_arrival_date ? `Previsto ${formatLocalDate(order.expected_arrival_date)}` : '—'}</td><td>{money.format(order.items.reduce((sum, item) => sum + item.quantity * item.unit_cost, 0))}</td></tr>{expandedOrderId === order.id && <tr><td className="supplier-order-details-cell" colSpan={7}><div className="supplier-order-details"><div className="supplier-order-details-heading"><strong>Articoli dell’ordine #{order.id}</strong>{!order.received_at && <button className="button button-outline" type="button" onClick={() => { setEmployeeBarcode(''); setBarcodeAction({ type: 'receive', order, itemId: null }); }}><Check size={14} /> Ricevi tutto l’ordine</button>}</div>{order.items.map((item) => <div className="supplier-order-received-item" key={item.id}><div><strong>{item.product_name}</strong><small>{item.product_code} · {quantityFormat.format(item.quantity)} {item.unit} × {money.format(item.unit_cost)}</small></div>{item.received_at ? <span className="supplier-order-received-label">Ricevuto · modifica non disponibile</span> : <div className="supplier-order-item-actions"><button className="button button-outline" type="button" onClick={() => { setEmployeeBarcode(''); setEditQuantity(String(item.quantity)); setEditUnitCost(String(item.unit_cost)); setBarcodeAction({ type: 'update-item', order, item }); }}><Pencil size={14} /> Modifica</button><button className="button button-danger" type="button" onClick={() => { setEmployeeBarcode(''); setBarcodeAction({ type: 'delete-item', order, item }); }}><Trash2 size={14} /> Elimina</button><button className="button button-outline" type="button" onClick={() => { setEmployeeBarcode(''); setBarcodeAction({ type: 'receive', order, itemId: item.id, itemName: item.product_name }); }}><Check size={14} /> Ricevi articolo</button></div>}</div>)}</div></td></tr>}</Fragment>;
     })}{!orders.length && <tr><td colSpan={7} className="empty-cell">Nessun ordine registrato.</td></tr>}</></Table></section>
-    {barcodeAction && <Modal title={barcodeAction.type === 'receive' ? barcodeAction.itemId === null ? 'Conferma ricevimento ordine' : 'Conferma ricevimento articolo' : 'Conferma registrazione ordine'} close={() => setBarcodeAction(null)} wide portal><form className="form-grid supplier-order-barcode-form" onSubmit={(event) => void confirmBarcodeAction(event)}><p className="supplier-order-barcode-description">{barcodeAction.type === 'receive' ? `${barcodeAction.itemName ? `Articolo: ${barcodeAction.itemName}` : `Ordine #${barcodeAction.order.id}`}. Scansiona il barcode della persona che conferma il ricevimento.` : 'Scansiona il barcode del dipendente che registra l’ordine.'}</p><Field label="Barcode dipendente" value={employeeBarcode} onChange={(event) => setEmployeeBarcode(event.target.value)} autoFocus required /><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => setBarcodeAction(null)}>Annulla</button><button className="button button-primary" disabled={saving}><Check size={16} /> {barcodeAction.type === 'register' ? 'Registra e conferma' : 'Conferma ricevimento'}</button></div></form></Modal>}
+    {barcodeAction && <Modal title={barcodeAction.type === 'receive' ? barcodeAction.itemId === null ? 'Conferma ricevimento ordine' : 'Conferma ricevimento articolo' : barcodeAction.type === 'register' ? 'Conferma registrazione ordine' : barcodeAction.type === 'update-item' ? 'Modifica articolo ordine' : 'Elimina articolo ordine'} close={() => setBarcodeAction(null)} wide portal><form className="form-grid supplier-order-barcode-form" onSubmit={(event) => void confirmBarcodeAction(event)}><p className="supplier-order-barcode-description">{barcodeAction.type === 'receive' ? `${barcodeAction.itemName ? `Articolo: ${barcodeAction.itemName}` : `Ordine #${barcodeAction.order.id}`}. Scansiona il barcode della persona che conferma il ricevimento.` : barcodeAction.type === 'register' ? 'Scansiona il barcode del dipendente che registra l’ordine.' : `Ordine #${barcodeAction.order.id} · ${barcodeAction.item.product_name}. Scansiona il barcode del dipendente per confermare.`}</p>{barcodeAction.type === 'update-item' && <div className="supplier-order-line-inputs"><Field label="Quantità" type="number" min="0.001" step="0.001" value={editQuantity} onChange={(event) => setEditQuantity(event.target.value)} required /><Field label="Costo unitario (€)" type="number" min="0" step="0.01" value={editUnitCost} onChange={(event) => setEditUnitCost(event.target.value)} required /></div>}<Field label="Barcode dipendente" value={employeeBarcode} onChange={(event) => setEmployeeBarcode(event.target.value)} autoFocus required /><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => setBarcodeAction(null)}>Annulla</button><button className={`button ${barcodeAction.type === 'delete-item' ? 'button-danger' : 'button-primary'}`} disabled={saving}><Check size={16} /> {barcodeAction.type === 'register' ? 'Registra e conferma' : barcodeAction.type === 'receive' ? 'Conferma ricevimento' : barcodeAction.type === 'update-item' ? 'Salva modifiche' : 'Conferma eliminazione'}</button></div></form></Modal>}
   </div>;
 }
 const voucherCodeSpace = 10_000_000_000;
@@ -912,6 +945,19 @@ function ProductForm({ initial, isEditing, initialSiteId, sites, save, close, ca
   const [siteId, setSiteId] = useState(String(initialSiteId));
   const [saving, setSaving] = useState(false);
   const [newCategory, setNewCategory] = useState('');
+  const attachPhoto = async (file: File | undefined) => {
+    if (!file) return;
+    if (!/^image\/(?:png|jpeg|webp)$/.test(file.type) || file.size > 5 * 1024 * 1024) {
+      notify('Scegli un’immagine PNG, JPEG o WebP fino a 5 MB.');
+      return;
+    }
+    try {
+      const photoData = await fileAsDataUrl(file);
+      setProduct((current) => ({ ...current, photo_data: photoData }));
+    } catch (error) {
+      notify(errorText(error));
+    }
+  };
   const change = (key: keyof ProductInput, value: string) => setProduct((current) => ({ ...current, [key]: ['sale_price', 'purchase_price', 'stock', 'low_stock_threshold'].includes(key) ? Number(value) : value }));
   const createCategory = () => {
     const nextCategory = newCategory.trim();
@@ -930,6 +976,7 @@ function ProductForm({ initial, isEditing, initialSiteId, sites, save, close, ca
     try { await save(product, isEditing ? undefined : Number(siteId)); close(); } finally { setSaving(false); }
   };
   return <Modal title={initial.name ? 'Modifica articolo' : 'Nuovo articolo'} close={close} rightHalf={!initial.name}><form className="form-grid product-form" onSubmit={submit}>
+    <div className="product-photo-upload"><span className="field-label">Foto articolo</span><div className="product-photo-preview"><img src={product.photo_data || productArtwork(product)} alt={product.name ? `Foto di ${product.name}` : 'Anteprima articolo'} /></div><div className="product-photo-actions"><label className="button button-outline"><Camera size={15} /> Aggiungi foto<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { void attachPhoto(event.target.files?.[0]); event.currentTarget.value = ''; }} /></label>{product.photo_data && <button className="button button-quiet" type="button" onClick={() => setProduct((current) => ({ ...current, photo_data: '' }))}>Rimuovi foto</button>}</div></div>
     <Field label="Nome articolo" value={product.name} onChange={(e) => change('name', e.target.value)} required autoFocus />
     <Field label="Codice a barre" value={product.code} onChange={(e) => change('code', e.target.value)} required />
     <fieldset className="unit-choice"><legend>Unità di vendita</legend>{(['KG', 'PEZZO', ...(product.unit === 'LITRO' ? ['LITRO'] : [])] as ProductUnit[]).map((unit) => <label key={unit}><input type="radio" name="product-unit" checked={(product.unit ?? 'PEZZO') === unit} onChange={() => setProduct({ ...product, unit })} /><span>{unit}</span></label>)}</fieldset>
@@ -980,6 +1027,8 @@ export default function App() {
   const [distributionRecipientEmployeeId, setDistributionRecipientEmployeeId] = useState('');
   const [distributionConfirmOpen, setDistributionConfirmOpen] = useState(false);
   const [distributionBarcode, setDistributionBarcode] = useState('');
+  const [distributionDeleteId, setDistributionDeleteId] = useState<number | null>(null);
+  const [distributionDeleteBarcode, setDistributionDeleteBarcode] = useState('');
   const [stockMovementType, setStockMovementType] = useState<'Carico' | 'Scarico'>('Carico');
   const [stockMovementProduct, setStockMovementProduct] = useState('');
   const [stockMovementQuantity, setStockMovementQuantity] = useState('');
@@ -998,6 +1047,8 @@ export default function App() {
   const [unsoldSite, setUnsoldSite] = useState('Tutto');
   const [unsoldListOpen, setUnsoldListOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
+  const [dataImporting, setDataImporting] = useState(false);
+  const dataImportFileRef = useRef<HTMLInputElement>(null);
   const [permissionsRole, setPermissionsRole] = useState('');
   const [permissionsAuthorizationOpen, setPermissionsAuthorizationOpen] = useState(false);
   const [permissionsAuthorizationBarcode, setPermissionsAuthorizationBarcode] = useState('');
@@ -1266,16 +1317,38 @@ export default function App() {
     .map((product) => ({ ...product, siteStock: siteStockFor(product.id, siteId) }))
     .filter((product) => product.siteStock > 0 && product.siteStock <= product.low_stock_threshold);
   const canAccess = (target: Section) => canAccessSection(activeRole, target, rolePermissions);
+  const canAccessSalesFeature = (feature: 'sales-report' | 'sales-csv') => {
+    if (normalizedRole(activeRole) === 'proprietario') return true;
+    const permissions = rolePermissions[activeRole];
+    if (!permissions) return canAccess('sales');
+    return permissions.includes('sales') && (!permissions.includes('sales-tools-configured') || permissions.includes(feature));
+  };
   const permissionRoles = [...new Map([...defaultEmployeeRoles.filter((role) => normalizedRole(role) !== 'proprietario'), ...(data?.employees ?? []).map((employee) => employee.role)]
     .filter((role) => normalizedRole(role) !== 'proprietario')
     .map((role) => [normalizedRole(role), role])).values()];
-  const updateRolePermission = async (role: string, page: Section, enabled: boolean) => {
+  const updateRolePermission = async (role: string, page: RolePermission, enabled: boolean) => {
     if (!isOwner) return;
     const current = rolePermissions[role] ?? permissionPages
       .filter(({ section: target }) => canAccessSection(role, target))
       .map(({ section: target }) => target);
     const nextRoleSections = new Set(current);
-    if (enabled) nextRoleSections.add(page);
+    if (page === 'sales') {
+      if (enabled) {
+        nextRoleSections.add('sales');
+        nextRoleSections.add('sales-report');
+        nextRoleSections.add('sales-csv');
+        nextRoleSections.add('sales-tools-configured');
+      } else {
+        nextRoleSections.delete('sales');
+        nextRoleSections.delete('sales-report');
+        nextRoleSections.delete('sales-csv');
+        nextRoleSections.delete('sales-tools-configured');
+      }
+    } else if (page === 'sales-report' || page === 'sales-csv') {
+      nextRoleSections.add('sales-tools-configured');
+      if (enabled) nextRoleSections.add(page);
+      else nextRoleSections.delete(page);
+    } else if (enabled) nextRoleSections.add(page);
     else nextRoleSections.delete(page);
     const nextPermissions = { ...rolePermissions, [role]: [...nextRoleSections] };
     const serialized = JSON.stringify(nextPermissions);
@@ -2489,6 +2562,19 @@ export default function App() {
       notify(errorText(error));
     }
   };
+  const deleteDistribution = async (event: FormEvent) => {
+    event.preventDefault();
+    if (distributionDeleteId === null || !distributionDeleteBarcode.trim()) return;
+    try {
+      await window.gestionale.deleteDistribution(distributionDeleteId, distributionDeleteBarcode.trim());
+      await refresh();
+      setDistributionDeleteId(null);
+      setDistributionDeleteBarcode('');
+      notify('Documento di distribuzione eliminato.');
+    } catch (error) {
+      notify(errorText(error));
+    }
+  };
   const addDistributionItem = () => {
     const productId = Number(distributionProductId);
     const quantity = Number(distributionQuantity);
@@ -2688,6 +2774,62 @@ export default function App() {
   };
   const cancelHomepageMedia = () => setHomepageMediaDraft(null);
   const chooseFolder = async () => { const chosen = await window.gestionale.chooseArchiveFolder(); if (chosen) { setArchiveFolder(chosen); await refresh(); notify('Cartella archivio aggiornata'); } };
+  const exportApplicationData = async () => {
+    try {
+      const backup = await window.gestionale.exportAppData();
+      for (const key of ['app-language', 'app-theme', 'product-categories', 'employee-roles', 'site-roles']) {
+        const preference = window.localStorage.getItem(key);
+        if (preference !== null) (backup.rendererPreferences ??= {})[key] = preference;
+      }
+      const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `gestionale-supermercato-dati-${todayKey}.json`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      notify('Esportazione completata. Il file contiene dati personali: conservalo in modo sicuro.');
+    } catch (error) {
+      notify(`Impossibile esportare i dati: ${errorText(error)}`);
+    }
+  };
+  const importApplicationData = async (file: File | undefined) => {
+    if (!file) return;
+    setDataImporting(true);
+    try {
+      if (file.size > 100 * 1024 * 1024) throw new Error('Il file supera il limite di 100 MB.');
+      const parsed: unknown = JSON.parse(await file.text());
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
+        || (parsed as Record<string, unknown>).format !== 'gestionale-supermercato-data'
+        || (parsed as Record<string, unknown>).version !== 1
+        || typeof (parsed as Record<string, unknown>).tables !== 'object') {
+        throw new Error('Seleziona un file dati Gestione Supermercato valido.');
+      }
+      const backup = parsed as AppDataBackup;
+      const result = await window.gestionale.importAppData(backup);
+      for (const [key, preference] of Object.entries(backup.rendererPreferences ?? {})) {
+        if (['app-language', 'app-theme', 'product-categories', 'employee-roles', 'site-roles'].includes(key)) {
+          window.localStorage.setItem(key, preference);
+        }
+      }
+      if (backup.rendererPreferences?.['app-language'] === 'ar' || backup.rendererPreferences?.['app-language'] === 'it') {
+        setLanguage(backup.rendererPreferences['app-language']);
+      }
+      try {
+        const categories: unknown = JSON.parse(window.localStorage.getItem('product-categories') ?? 'null');
+        if (Array.isArray(categories) && categories.every((item) => typeof item === 'string')) setSavedCategories(categories);
+      } catch {
+        notify('Le categorie locali importate non sono valide e non sono state applicate.');
+      }
+      setSiteRoleOptions(savedSiteRoles());
+      await refresh();
+      notify(`Importazione completata: ${result.added} record aggiunti, ${result.skipped} già presenti.`);
+    } catch (error) {
+      notify(`Impossibile importare il file: ${errorText(error)}`);
+    } finally {
+      setDataImporting(false);
+      if (dataImportFileRef.current) dataImportFileRef.current.value = '';
+    }
+  };
   const savePromotion = async (event: FormEvent) => {
     event.preventDefault();
     const selectedMinimum = promotionMinimum === 'spend' ? promotion.minimum_spend : promotionMinimum === 'kilograms' ? promotion.minimum_kilograms : promotionMinimum === 'pieces' ? promotion.minimum_pieces : 0;
@@ -2892,12 +3034,9 @@ export default function App() {
   const exportInventoryReport = async (share = false) => {
     if (!data) return;
     try {
-      const reportProducts = data.products
-        .map((item) => ({ ...item, stock: inventoryStockFor(item.id) }))
-        .filter((item) => item.stock > 0);
-      const selectedSite = availableStockSites.find((site) => String(site.id) === inventorySiteId);
+      const selectedSite = inventorySiteId === 'all' ? undefined : availableStockSites.find((site) => String(site.id) === inventorySiteId);
+      const sitesToExport = selectedSite ? [selectedSite] : availableStockSites;
       const reportName = selectedSite ? `Merce nella sede ${selectedSite.name}` : 'Merce nelle sedi';
-      const filePrefix = selectedSite ? `Merce nella sede ${safeFilePart(selectedSite.name)}` : 'Merce nelle sedi';
       const rtl = language === 'ar';
       const font = rtl ? 'DejaVuSans' : 'helvetica';
       const doc = new jsPDF({ orientation: 'portrait' });
@@ -2906,8 +3045,6 @@ export default function App() {
       const reportText = (value: string) => rtl ? doc.processArabic(value) : value;
       const reportMoney = (amount: number) => money.format(amount);
       const latinShopName = rtl && /^[\x20-\x7E]*$/.test(data.settings.shop_name);
-      const stockValue = reportProducts.reduce((sum, item) => sum + item.stock * item.purchase_price, 0);
-      const stockSaleValue = reportProducts.reduce((sum, item) => sum + item.stock * item.sale_price, 0);
       doc.setFillColor(22, 133, 220);
       doc.rect(0, 0, 210, 36, 'F');
       if (data.settings.shop_logo) doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', rtl ? 174 : 12, 5, 24, 24);
@@ -2920,86 +3057,58 @@ export default function App() {
       doc.setFont(font, 'normal');
       doc.setFontSize(9);
       doc.text(reportText(rtl ? `تقرير المخزون · تاريخ التصدير ${receiptDate.format(new Date())}` : `${reportName} · Esportato il ${receiptDate.format(new Date())}`), rtl ? data.settings.shop_logo ? 168 : 198 : data.settings.shop_logo ? 43 : 14, 26, rtl ? { align: 'right' } : undefined);
-      autoTable(doc, {
-        startY: 43,
-        head: [(rtl
-          ? ['المنتج', 'الرمز', 'الفئة', 'سعر البيع', 'سعر الشراء', 'الربح', 'المخزون', 'حد التنبيه', 'تاريخ الصلاحية'].reverse()
-          : ['Articolo', 'Codice', 'Categoria', 'Vendita', 'Acquisto', 'Profitto', 'Giacenza', 'Soglia', 'Scadenza']).map(reportText)],
-        body: reportProducts.map((item) => {
-          const row = [item.name, item.code, localizedText(item.category, language), reportMoney(item.sale_price), reportMoney(item.purchase_price), reportMoney(item.sale_price - item.purchase_price), `${item.stock} ${rtl ? item.unit === 'KG' ? 'كغ' : item.unit === 'LITRO' ? 'لتر' : 'قطعة' : item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'}`, String(item.low_stock_threshold), item.expiry_enabled && item.expiry_date ? new Intl.DateTimeFormat(rtl ? 'ar-EG' : 'it-IT', { dateStyle: 'short' }).format(new Date(`${item.expiry_date}T00:00:00`)) : '—'];
-          return (rtl ? row.reverse() : row).map(reportText);
-        }),
-        theme: 'striped',
-        styles: { font: rtl ? font : 'helvetica', fontSize: rtl ? 5 : 6, cellPadding: 1.5, overflow: 'linebreak', textColor: [49, 60, 53], lineColor: [224, 230, 224], halign: rtl ? 'right' : 'left' },
-        headStyles: { fillColor: [22, 133, 220], textColor: [255, 255, 255], font, fontStyle: 'bold', halign: rtl ? 'right' : 'left' },
-        alternateRowStyles: { fillColor: [244, 247, 244] },
-        margin: { left: 8, right: 8, bottom: 22 },
-        willDrawCell: ({ section, cell }) => {
-          if (rtl && section === 'body' && typeof cell.raw === 'string' && cell.raw.includes(currencySymbol)) doc.setR2L(false);
-        },
-        didDrawCell: ({ section, cell }) => {
-          if (rtl && section === 'body' && typeof cell.raw === 'string' && cell.raw.includes(currencySymbol)) doc.setR2L(true);
-        },
-        didDrawPage: () => {
-          doc.setFontSize(8);
-          doc.setTextColor(120, 130, 122);
-          doc.setFont(font, 'normal');
-          if (latinShopName) {
-            doc.setR2L(false);
-            doc.text(data.settings.shop_name, 8, 287);
-            doc.setR2L(true);
-            doc.text(reportText(`الصفحة ${doc.getNumberOfPages()}`), 202, 287, { align: 'right' });
-          } else {
-            doc.text(reportText(rtl ? `${data.settings.shop_name} · الصفحة ${doc.getNumberOfPages()}` : `${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`), rtl ? 202 : 8, 287, rtl ? { align: 'right' } : undefined);
-          }
-        },
-      });
-      const tableLayout = (doc as jsPDF & { lastAutoTable?: AutoTableTable }).lastAutoTable;
-      if (tableLayout?.finalY === undefined) throw new Error('Impossibile determinare la fine della tabella del report.');
-      let summaryY = tableLayout.finalY + 4;
-      if (summaryY + 30 > 279) {
-        doc.addPage();
-        summaryY = 20;
-        doc.setFontSize(8);
-        doc.setTextColor(120, 130, 122);
-        doc.setFont(font, 'normal');
-        if (latinShopName) {
-          doc.setR2L(false);
-          doc.text(data.settings.shop_name, 8, 287);
-          doc.setR2L(true);
-          doc.text(reportText(`الصفحة ${doc.getNumberOfPages()}`), 202, 287, { align: 'right' });
-        } else {
-          doc.text(reportText(rtl ? `${data.settings.shop_name} · الصفحة ${doc.getNumberOfPages()}` : `${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`), rtl ? 202 : 8, 287, rtl ? { align: 'right' } : undefined);
+      const headings = rtl
+        ? ['المنتج', 'الرمز', 'الفئة', 'سعر البيع', 'سعر الشراء', 'الربح', 'المخزون', 'حد التنبيه', 'تاريخ الصلاحية'].reverse()
+        : ['Articolo', 'Codice', 'Categoria', 'Vendita', 'Acquisto', 'Profitto', 'Giacenza', 'Soglia', 'Scadenza'];
+      let cursorY = 43;
+      for (const site of sitesToExport) {
+        if (cursorY > 255) {
+          doc.addPage();
+          cursorY = 18;
         }
+        const reportProducts = data.products
+          .map((item) => ({ ...item, stock: siteStockFor(item.id, site.id) }))
+          .filter((item) => item.stock > 0);
+        const siteTitle = rtl ? `الفرع: ${site.name}` : `Sede: ${site.name}`;
+        doc.setFont(font, 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(22, 133, 220);
+        doc.text(reportText(siteTitle), rtl ? 202 : 8, cursorY, rtl ? { align: 'right' } : undefined);
+        autoTable(doc, {
+          startY: cursorY + 3,
+          head: [headings.map(reportText)],
+          body: reportProducts.map((item) => {
+            const row = [item.name, item.code, localizedText(item.category, language), reportMoney(item.sale_price), reportMoney(item.purchase_price), reportMoney(item.sale_price - item.purchase_price), `${item.stock} ${rtl ? item.unit === 'KG' ? 'كغ' : item.unit === 'LITRO' ? 'لتر' : 'قطعة' : item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'}`, String(item.low_stock_threshold), item.expiry_enabled && item.expiry_date ? new Intl.DateTimeFormat(rtl ? 'ar-EG' : 'it-IT', { dateStyle: 'short' }).format(new Date(`${item.expiry_date}T00:00:00`)) : '—'];
+            return (rtl ? row.reverse() : row).map(reportText);
+          }),
+          theme: 'striped',
+          styles: { font: rtl ? font : 'helvetica', fontSize: rtl ? 5 : 6, cellPadding: 1.5, overflow: 'linebreak', textColor: [49, 60, 53], lineColor: [224, 230, 224], halign: rtl ? 'right' : 'left' },
+          headStyles: { fillColor: [22, 133, 220], textColor: [255, 255, 255], font, fontStyle: 'bold', halign: rtl ? 'right' : 'left' },
+          alternateRowStyles: { fillColor: [244, 247, 244] },
+          margin: { left: 8, right: 8, bottom: 22 },
+          didDrawPage: () => {
+            doc.setFontSize(8);
+            doc.setTextColor(120, 130, 122);
+            doc.setFont(font, 'normal');
+            if (latinShopName) {
+              doc.setR2L(false);
+              doc.text(data.settings.shop_name, 8, 287);
+              doc.setR2L(true);
+              doc.text(reportText(`الصفحة ${doc.getNumberOfPages()}`), 202, 287, { align: 'right' });
+            } else {
+              doc.text(reportText(rtl ? `${data.settings.shop_name} · الصفحة ${doc.getNumberOfPages()}` : `${data.settings.shop_name} · Pagina ${doc.getNumberOfPages()}`), rtl ? 202 : 8, 287, rtl ? { align: 'right' } : undefined);
+            }
+          },
+        });
+        const tableLayout = (doc as jsPDF & { lastAutoTable?: AutoTableTable }).lastAutoTable;
+        if (tableLayout?.finalY === undefined) throw new Error(`Impossibile completare il report della sede ${site.name}.`);
+        cursorY = tableLayout.finalY + 12;
       }
-      doc.setFillColor(22, 133, 220);
-      doc.roundedRect(8, summaryY, 194, 30, 2, 2, 'F');
-      doc.setFont(font, 'bold');
-      doc.setFontSize(rtl ? 7.5 : 8);
-      doc.setTextColor(255, 255, 255);
-      const summary = rtl ? [
-        ['المنتجات', String(data.products.length)],
-        ['التكلفه', reportMoney(stockValue)],
-        ['قيمة البيع', reportMoney(stockSaleValue)],
-        ['الصافي', reportMoney(stockSaleValue - stockValue)],
-      ] : [
-        ['Articoli', String(reportProducts.length)],
-        ['Acq.', reportMoney(stockValue)],
-        ['Vend.', reportMoney(stockSaleValue)],
-        ['Netto', reportMoney(stockSaleValue - stockValue)],
-      ];
-      summary.forEach(([label, value], index) => {
-        const column = index % 2;
-        const row = Math.floor(index / 2);
-        const x = rtl ? 198 - column * 96 : 11 + column * 96;
-        const text = reportText(rtl ? `${value} ${label}` : `${label}: ${value}`);
-        if (rtl) {
-          doc.text(text, x, summaryY + 10 + row * 9, { maxWidth: 90, align: 'right' });
-        } else {
-          doc.text(text, x, summaryY + 10 + row * 9, { maxWidth: 90 });
-        }
-      });
-      const fileName = rtl ? `تقرير-المخزون-${todayKey}.pdf` : `${filePrefix} ${todayKey}.pdf`;
+      if (!sitesToExport.length) doc.text(reportText('Nessuna sede disponibile.'), 10, 50);
+      const reportFileName = section === 'inventory'
+        ? `Report magazzino: ${selectedSite?.name ?? 'Tutti i magazzini'} ${todayKey}.pdf`
+        : `${selectedSite ? `Merce nella sede ${safeFilePart(selectedSite.name)}` : 'Merce nelle sedi'} ${todayKey}.pdf`;
+      const fileName = rtl ? `تقرير-المخزون-${todayKey}.pdf` : reportFileName;
       if (share) {
         const file = new File([doc.output('blob')], fileName, { type: 'application/pdf' });
         if (typeof navigator.share === 'function') {
@@ -3149,6 +3258,31 @@ export default function App() {
     } catch (error) {
       notify(errorText(error));
     }
+  };
+  const exportSalesCsv = () => {
+    const rtl = language === 'ar';
+    const headers = rtl
+      ? ['رقم الإيصال', 'التاريخ والوقت', 'الشخص', 'الفرع', 'طريقة الدفع', 'المنتجات', 'الإجمالي قبل الخصم', 'الخصم', 'الإجمالي']
+      : ['N° scontrino', 'Data e ora', 'Persona', 'Sede', 'Pagamento', 'Articoli', 'Totale lordo', 'Sconto', 'Totale'];
+    const escapeCell = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
+    const rows = salesList.map((sale) => [
+      sale.receipt_no,
+      dateTimeText(new Date(sale.created_at)),
+      sale.person || '—',
+      sale.site,
+      localizedText(sale.payment_method, language),
+      sale.items.map((item) => `${item.name} (${quantityFormat.format(item.quantity)} ${item.unit ?? 'PEZZO'})`).join(', '),
+      sale.gross_total,
+      sale.discount,
+      sale.total,
+    ]);
+    const csv = `\uFEFF${[headers, ...rows].map((row) => row.map(escapeCell).join(';')).join('\r\n')}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = rtl ? `المبيعات-${todayKey}.csv` : `vendite-${todayKey}.csv`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const exportEmployeeActivityPdf = async () => {
     if (!data) return;
@@ -4115,7 +4249,7 @@ export default function App() {
         <section className="panel site-inventory-panel"><div className="panel-heading"><div><h3>Giacenze per sede</h3><p>Quantità attualmente disponibili per ogni articolo.</p></div></div>
           <div className="table-wrap"><table><thead><tr><th>Articolo</th>{data.sites.map((site) => <th key={site.id} className="align-right">{site.name}</th>)}</tr></thead><tbody>{data.products.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td>{data.sites.map((site) => <td key={site.id} className="align-right">{quantityFormat.format(siteStockFor(product.id, site.id))}</td>)}</tr>)}{!data.products.length && <tr><td colSpan={data.sites.length + 1} className="empty-cell">Nessun articolo registrato.</td></tr>}</tbody></table></div>
         </section>
-        <section className="panel distribution-history-panel"><div className="panel-heading"><div><h3>Distribuzioni effettuate</h3><p>Ogni documento viene aperto in formato PDF.</p></div></div><div className="distribution-history">{data.stockDistributions.length ? data.stockDistributions.map((record) => <button className="distribution-history-row" type="button" key={record.id} onClick={() => void window.gestionale.openDistributionRecord(record.id).catch((error: unknown) => notify(errorText(error)))}><span><strong>{record.from_site} → {record.to_site}</strong><small>{dateTimeText(new Date(record.created_at))} · {record.sender} → {record.recipient}</small></span><ArrowDownToLine size={15} aria-label="Apri PDF distribuzione" /></button>) : <p>Nessuna distribuzione registrata.</p>}</div></section>
+        <section className="panel distribution-history-panel"><div className="panel-heading"><div><h3>Distribuzioni effettuate</h3><p>Ogni documento viene aperto in formato PDF.</p></div></div><div className="distribution-history">{data.stockDistributions.length ? data.stockDistributions.map((record) => <div className="distribution-history-row" key={record.id}><span><strong>{record.from_site} → {record.to_site}</strong><small>{dateTimeText(new Date(record.created_at))} · {record.sender} → {record.recipient}</small></span><div className="distribution-history-actions"><button className="button button-outline" type="button" onClick={() => void window.gestionale.openDistributionRecord(record.id).catch((error: unknown) => notify(errorText(error)))}><ArrowDownToLine size={15} /> Scarica</button><button className="button button-danger" type="button" onClick={() => { setDistributionDeleteId(record.id); setDistributionDeleteBarcode(''); }}><Trash2 size={15} /> Elimina</button></div></div>) : <p>Nessuna distribuzione registrata.</p>}</div></section>
       </div>}
 
       {section === 'cash' && <div className="page-content cash-content">{salesDisabled && <div className="security-status"><div className="security-icon"><ShieldCheck size={18} /></div><div><strong>Vendite disabilitate</strong><span>Assegna una sede al dipendente per registrare vendite.</span></div></div>}<div className="cash-layout">
@@ -4126,7 +4260,7 @@ export default function App() {
         <aside className="cart-panel"><div className="cart-heading"><div className="cart-heading-title"><h2>CARRELLO <span>{quantityFormat.format(cart.reduce((sum, item) => sum + item.quantity, 0))}</span></h2></div><button className="icon-button cart-clear-button" title="Svuota carrello" aria-label="Svuota carrello" disabled={!cart.length || salesDisabled} onClick={() => { setCart([]); setManualPromotionId(undefined); setAutomaticPromotionId(undefined); }}><Trash2 size={17} /></button></div><div className="cart-lines">{cart.map((item) => <div className="cart-line" key={item.product_id}><div className="cart-line-name"><strong>{item.name}</strong><small>{quantityFormat.format(item.quantity)} {item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}</small></div><div className="quantity-control"><button disabled={salesDisabled} onClick={() => changeQuantity(item.product_id, -1)} aria-label="Rimuovi uno"><Minus size={13} /></button><span>{quantityFormat.format(item.quantity)}</span><button disabled={salesDisabled} onClick={() => changeQuantity(item.product_id, 1)} aria-label="Aggiungi uno"><Plus size={13} /></button></div><strong className="line-total">{money.format(item.quantity * item.unit_price)}</strong></div>)}{!cart.length && <div className="cart-empty"><ShoppingBasket size={25} /><span>Seleziona gli articoli<br />per iniziare una vendita</span></div>}</div><div className="receipt-summary"><div><span>Subtotale</span><span>{money.format(subtotal)}</span></div><div className="total-row"><strong>TOTALE</strong><strong>{money.format(subtotal)}</strong></div></div><button className="button button-primary checkout-button" disabled={!cart.length || salesDisabled} onClick={() => setCheckoutOpen(true)}>Procedi al pagamento <span>→</span></button></aside>
       </div></div>}
 
-      {section === 'sales' && <div className="page-content"><div className="sale-tools"><button className="button button-outline sale-camera-button" onClick={() => setCamera(true)}><Camera size={16} /> Cerca con fotocamera</button><SearchInput value={saleSearch} onChange={setSaleSearch} placeholder="Cerca numero scontrino…" numericOnly /><button className="button button-outline sale-report-button" onClick={() => { setReportExportType('sales-pdf'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Scarica report</button></div><div className="sale-filters"><details className="statistics-period-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Categoria: {salesCategory}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra vendite per categoria">{['Tutte', ...categories].map((categoryOption) => <button key={categoryOption} className={`status-filter${salesCategory === categoryOption ? ' active' : ''}`} aria-pressed={salesCategory === categoryOption} onClick={(event) => { setSalesCategory(categoryOption); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{categoryOption}</button>)}</div></details><details className="statistics-period-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Periodo: {salesPeriod}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra vendite per periodo">{['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A'].map((period) => <button key={period} className={`status-filter${salesPeriod === period ? ' active' : ''}`} aria-pressed={salesPeriod === period} onClick={(event) => { setSalesPeriod(period); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{period}</button>)}</div></details><details className="statistics-period-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Sede: {salesSite}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra vendite per sede">{['Tutte', ...storeSites.map((site) => site.name)].map((site) => <button key={site} className={`status-filter${salesSite === site ? ' active' : ''}`} aria-pressed={salesSite === site} onClick={(event) => { setSalesSite(site); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{site}</button>)}</div></details>{salesPeriod === 'Da - A' && <><Field label="Da" type="date" value={salesFrom} onChange={(event) => setSalesFrom(event.target.value)} /><Field label="A" type="date" value={salesTo} onChange={(event) => setSalesTo(event.target.value)} /></>}</div><SalesTable sales={salesList} onSelect={setReceipt} /></div>}
+      {section === 'sales' && <div className="page-content"><div className="sale-tools"><button className="button button-outline sale-camera-button" onClick={() => setCamera(true)}><Camera size={16} /> Cerca con fotocamera</button><SearchInput value={saleSearch} onChange={setSaleSearch} placeholder="Cerca numero scontrino…" numericOnly />{canAccessSalesFeature('sales-report') && <button className="button button-outline sale-report-button" onClick={() => { setReportExportType('sales-pdf'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Scarica report</button>}{canAccessSalesFeature('sales-csv') && <button className="button button-outline" onClick={exportSalesCsv}><ArrowDownToLine size={16} /> Esporta CSV</button>}</div><div className="sale-filters"><details className="statistics-period-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Categoria: {salesCategory}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra vendite per categoria">{['Tutte', ...categories].map((categoryOption) => <button key={categoryOption} className={`status-filter${salesCategory === categoryOption ? ' active' : ''}`} aria-pressed={salesCategory === categoryOption} onClick={(event) => { setSalesCategory(categoryOption); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{categoryOption}</button>)}</div></details><details className="statistics-period-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Periodo: {salesPeriod}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra vendite per periodo">{['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A'].map((period) => <button key={period} className={`status-filter${salesPeriod === period ? ' active' : ''}`} aria-pressed={salesPeriod === period} onClick={(event) => { setSalesPeriod(period); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{period}</button>)}</div></details><details className="statistics-period-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Sede: {salesSite}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra vendite per sede">{['Tutte', ...storeSites.map((site) => site.name)].map((site) => <button key={site} className={`status-filter${salesSite === site ? ' active' : ''}`} aria-pressed={salesSite === site} onClick={(event) => { setSalesSite(site); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{site}</button>)}</div></details>{salesPeriod === 'Da - A' && <><Field label="Da" type="date" value={salesFrom} onChange={(event) => setSalesFrom(event.target.value)} /><Field label="A" type="date" value={salesTo} onChange={(event) => setSalesTo(event.target.value)} /></>}</div><SalesTable sales={salesList} onSelect={setReceipt} /></div>}
       {section === 'sale-management' && <div className="page-content sale-management-page">
         <div className="sale-management-search"><SearchInput value={saleManagementSearch} onChange={setSaleManagementSearch} placeholder="Inserisci o scansiona il numero dello scontrino…" numericOnly /></div>
         {saleMatch ? <section className="panel sale-found">
@@ -4198,12 +4332,13 @@ export default function App() {
       {section === 'employee-create' && employeeDraft && <div className="page-content settings-page"><section className="settings-panel employee-create-panel"><EmployeeForm initial={employeeDraft} save={saveEmployee} cancel={() => { setEmployeeDraft(null); navigateTo('employees'); }} notify={notify} canDelete={['proprietario', 'direttore'].includes(normalizedRole(activeRole))} sites={data.sites.map((site) => site.name)} onDelete={async () => { const employee = data.employees.find((item) => item.id === employeeDraft.id); if (employee) startEmployeeAction(employee, 'delete'); }} /></section></div>}
       {section === 'payroll' && <div className="page-content payroll-page">
         <section className="panel payroll-employee-list">
-          <Table headings={['', 'Dipendente', 'Stipendio', 'Stato', 'Ricevuta']}><>{data.employees.filter((employee) => normalizedRole(employee.role) !== 'proprietario').map((employee) => { const payment = data.payrollPayments.find((item) => item.employee_id === employee.id && item.pay_month === payrollMonth); const selected = payrollSelectedEmployees.includes(employee.id); return <tr key={employee.id}><td><input type="checkbox" aria-label={`Seleziona ${employee.first_name} ${employee.last_name}`} checked={selected} disabled={Boolean(payment)} onChange={() => setPayrollSelectedEmployees((current) => selected ? current.filter((id) => id !== employee.id) : [...current, employee.id])} /></td><td className="cell-primary">{employee.first_name} {employee.last_name}<small className="payroll-employee-role">{employee.role} · {employee.payment_method}</small></td><td>{money.format(employee.salary)}</td><td><span className={`stock-badge${payment ? '' : ' low'}`}>{payment ? `Pagato il ${formatLocalDate(payment.payment_date)}` : 'Da pagare'}</span></td><td>{payment ? <button className="button button-outline" onClick={() => savePdf(createSalaryPdf(employee, payment.payment_date, payment.pay_month, payment.amount), `Stipendio-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}-${payment.payment_date}.pdf`)}><ArrowDownToLine size={14} /> Ricevuta</button> : '—'}</td></tr>; })}</>{!data.employees.some((employee) => normalizedRole(employee.role) !== 'proprietario') && <tr><td colSpan={5} className="empty-cell">Nessun dipendente da pagare.</td></tr>}</Table>
+          <Table headings={['', 'Dipendente', 'Stipendio', 'Stato', 'Ricevuta']}><>{data.employees.filter((employee) => normalizedRole(employee.role) !== 'proprietario').map((employee) => { const payment = data.payrollPayments.find((item) => item.employee_id === employee.id && item.pay_month === payrollMonth); const selected = payrollSelectedEmployees.includes(employee.id); return <tr key={employee.id}><td><input type="checkbox" aria-label={`Seleziona ${employee.first_name} ${employee.last_name}`} checked={selected} disabled={Boolean(payment)} onChange={() => setPayrollSelectedEmployees((current) => selected ? current.filter((id) => id !== employee.id) : [...current, employee.id])} /></td><td className="cell-primary">{employee.first_name} {employee.last_name}<small className="payroll-employee-role">{localizedText(employee.role, language)} · {localizedText(employee.payment_method, language)}</small></td><td>{money.format(employee.salary)}</td><td><span className={`stock-badge${payment ? '' : ' low'}`}>{payment ? `Pagato il ${formatLocalDate(payment.payment_date)}` : 'Da pagare'}</span></td><td>{payment ? <button className="button button-outline" onClick={() => savePdf(createSalaryPdf(employee, payment.payment_date, payment.pay_month, payment.amount), `Stipendio-${safeFilePart(employee.first_name)}-${safeFilePart(employee.last_name)}-${payment.payment_date}.pdf`)}><ArrowDownToLine size={14} /> Ricevuta</button> : '—'}</td></tr>; })}</>{!data.employees.some((employee) => normalizedRole(employee.role) !== 'proprietario') && <tr><td colSpan={5} className="empty-cell">Nessun dipendente da pagare.</td></tr>}</Table>
         </section>
         <section className="panel payroll-confirmation">
           <div className="panel-heading payroll-confirmation-heading"><div><h3>Conferma pagamenti</h3><p>Imposta periodo e data, poi conferma il pagamento dei dipendenti selezionati.</p></div></div>
           <div className="payroll-confirmation-controls">
             <Field label="Mese di competenza" type="month" value={payrollMonth} onChange={(event) => { setPayrollMonth(event.target.value); setPayrollSelectedEmployees([]); }} />
+            {language === 'ar' && <span className="payroll-month-name">{new Intl.DateTimeFormat('ar-EG', { month: 'long', year: 'numeric' }).format(new Date(`${payrollMonth}-01T00:00:00`))}</span>}
             <Field label="Data di pagamento" type="date" value={payrollDate} onChange={(event) => setPayrollDate(event.target.value)} />
             <button className="button button-outline" onClick={() => setPayrollSelectedEmployees((current) => { const due = data.employees.filter((employee) => normalizedRole(employee.role) !== 'proprietario' && !data.payrollPayments.some((payment) => payment.employee_id === employee.id && payment.pay_month === payrollMonth)).map((employee) => employee.id); return due.every((id) => current.includes(id)) ? current.filter((id) => !due.includes(id)) : [...new Set([...current, ...due])]; })}>Seleziona tutti da pagare</button>
             <button className="button button-primary" disabled={!payrollSelectedEmployees.length} onClick={() => void paySelectedEmployees()}><Banknote size={15} /> {localizedText('Paga selezionati', language)} ({payrollSelectedEmployees.length})</button>
@@ -4290,17 +4425,18 @@ export default function App() {
         <section className="panel category-panel"><div className="panel-heading"><div><h3>Vendite per categoria</h3><p>Valore degli articoli venduti nel periodo selezionato</p></div></div><div className="category-chart"><ResponsiveContainer width="100%" height={230}><PieChart><Pie data={Object.entries(categoriesSales).map(([name, value]) => ({ name, value }))} dataKey="value" nameKey="name" innerRadius={57} outerRadius={88} paddingAngle={3}>{Object.keys(categoriesSales).map((name, i) => <Cell key={name} fill={colors[i % colors.length]} />)}</Pie><Tooltip formatter={(value) => money.format(Number(value))} /></PieChart></ResponsiveContainer><div className="chart-legend">{Object.entries(categoriesSales).length ? Object.entries(categoriesSales).map(([name, value], i) => <div key={name}><span style={{ backgroundColor: colors[i % colors.length] }} /><span>{name}</span><strong>{money.format(value)}</strong></div>) : <span className="muted">Le categorie appariranno dopo la prima vendita.</span>}</div></div></section>
       </div>}
 
-      {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">{settingsTab === null ? <nav className="settings-nav">{[{ name: 'Info Negozio', icon: Store }, { name: 'Sede principale', icon: Package }, { name: 'Homepage', icon: House }, { name: 'Dispositivi', icon: Barcode }, { name: 'Archivio dati', icon: Archive }, { name: 'Permessi di accesso', icon: ShieldCheck }, { name: 'Operativo', icon: Check }].filter(({ name }) => normalizedRole(activeRole) === 'proprietario' || !['Info Negozio', 'Sede principale', 'Archivio dati', 'Homepage', 'Permessi di accesso'].includes(name)).map(({ name, icon: Icon }) => <button key={name} onClick={() => { setDeviceTab(null); if (name === 'Permessi di accesso') { setPermissionsAuthorizationBarcode(''); setPermissionsAuthorizationOpen(true); return; } setSettingsTab(name); if (name === 'Sede principale') setMainSiteDraft(mainStockSiteId); }}><Icon size={17} />{name === 'Homepage' ? 'Immagine Homepage' : name}</button>)}</nav> : <section className="settings-panel"><button className="settings-back" onClick={() => { if (settingsTab === 'Dispositivi' && deviceTab) setDeviceTab(null); else { setSettingsTab(null); setDeviceTab(null); } }}><ArrowLeft size={15} />{settingsTab === 'Dispositivi' && deviceTab ? 'Dispositivi' : 'Impostazioni'}</button>
+      {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">{settingsTab === null ? <nav className="settings-nav">{[{ name: 'Info Negozio', icon: Store }, { name: 'Sede principale', icon: Package }, { name: 'Homepage', icon: House }, { name: 'Dispositivi', icon: Barcode }, { name: 'Archivio dati', icon: Archive }, { name: 'Permessi di accesso', icon: ShieldCheck }, { name: 'Gestione dati app', icon: Archive }, { name: 'Operativo', icon: Check }].filter(({ name }) => (name !== 'Gestione dati app' || normalizedRole(activeRole) === 'proprietario') && (normalizedRole(activeRole) === 'proprietario' || !['Info Negozio', 'Sede principale', 'Archivio dati', 'Homepage', 'Permessi di accesso'].includes(name))).map(({ name, icon: Icon }) => <button key={name} onClick={() => { setDeviceTab(null); if (name === 'Permessi di accesso') { setPermissionsAuthorizationBarcode(''); setPermissionsAuthorizationOpen(true); return; } setSettingsTab(name); if (name === 'Sede principale') setMainSiteDraft(mainStockSiteId); }}><Icon size={17} />{name === 'Homepage' ? 'Immagine Homepage' : name}</button>)}</nav> : <section className="settings-panel"><button className="settings-back" onClick={() => { if (settingsTab === 'Dispositivi' && deviceTab) setDeviceTab(null); else { setSettingsTab(null); setDeviceTab(null); } }}><ArrowLeft size={15} />{settingsTab === 'Dispositivi' && deviceTab ? 'Dispositivi' : 'Impostazioni'}</button>
         {settingsTab === 'Info Negozio' && <><div className="settings-title"><h2>Info Negozio</h2><p>Nome, logo e moneta utilizzata dal negozio.</p></div><form className="settings-form store-info-form" onSubmit={saveStoreName}><Field label="Nome attività" value={shopName} onChange={(e) => setShopName(e.target.value)} required /><Field label="Numero negozio" value={shopNumber} onChange={(e) => setShopNumber(e.target.value)} /><label className="field"><span>{language === 'ar' ? 'العملة المستخدمة' : 'Moneta utilizzata'}</span><select value={currencyCode} onChange={(event) => void changeCurrency(event.target.value)}>{currencyChoices.map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select></label><div className="receipt-preview"><Store size={17} /><span>{shopName || 'Nome negozio'}</span><small>Anteprima intestazione scontrino</small></div><div className="shop-logo-setting store-info-logo"><span className="field-label">Logo del negozio</span>{data.settings.shop_logo && <img src={data.settings.shop_logo} alt="Logo attuale" />}<button className="button button-outline" type="button" onClick={() => void chooseShopLogo()}><Store size={15} /> {data.settings.shop_logo ? 'Sostituisci logo' : 'Scegli logo'}</button></div><button className="button button-primary"><Check size={16} /> {language === 'ar' ? 'حفظ الإعدادات' : 'Salva impostazioni'}</button></form></>}
         {settingsTab === 'Sede principale' && <><div className="settings-title"><h2>Sede principale</h2><p>Scegli dove registrare inizialmente le nuove giacenze. Potrai poi distribuire la merce alle altre sedi.</p></div><form className="settings-form" onSubmit={(event) => void applyMainSite(event)}><SelectField label="Sede principale" value={mainSiteDraft} onChange={setMainSiteDraft} options={storeSites.map((site) => String(site.id))} labels={storeSites.map((site) => site.name)} /><button className="button button-primary" type="submit" disabled={!mainSiteDraft || mainSiteDraft === data.settings.main_site_id}><Check size={16} /> Applica sede principale</button></form></>}
         {settingsTab === 'Archivio dati' && <><div className="settings-title"><h2>Archivio locale</h2><p>Database SQLite e copie giornaliere dei dati.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Archivio locale attivo</div><div className="database-card"><div className="security-icon"><Archive size={20} /></div><div><strong>Database SQLite</strong><span className="database-path">{data.settings.database_file}</span></div><span className="stock-badge">Attivo</span></div><div className="settings-form"><label className="field"><span>Cartella esportazioni giornaliere</span><div className="folder-input"><input value={archiveFolder} readOnly /><button className="button button-outline" type="button" onClick={() => void chooseFolder()}>Scegli cartella</button></div></label><p className="help-copy">Ogni giorno a mezzanotte vengono aggiornati file TXT e PDF nelle cartelle Magazzino, Cassa, Vendite e Statistiche.</p></div></>}
         {settingsTab === 'Dispositivi' && (deviceTab === null ? <><div className="settings-title"><h2>Dispositivi</h2><p>Seleziona un dispositivo per configurarlo.</p></div><nav className="settings-nav device-menu"><button onClick={() => setDeviceTab('Lettore barcode')}><Barcode size={17} />Lettore di codici a barre</button><button onClick={() => setDeviceTab('Stampante documenti')}><Printer size={17} />Stampante Wi-Fi</button><button onClick={() => setDeviceTab('Stampante scontrini')}><Printer size={17} />Stampante scontrini</button></nav></> : deviceTab === 'Lettore barcode' ? <><div className="settings-title"><h2>Lettore di codici a barre</h2><p>Configura il lettore collegato al computer.</p></div><div className="device-setting"><div className="device-heading"><div className="security-icon"><Barcode size={20} /></div><div><strong>Lettore di codici a barre</strong><span>{data.settings.barcode_scanner_detected ? 'Rilevato: è stata acquisita almeno una scansione su questo computer.' : 'In attesa della prima lettura del lettore USB/HID.'}</span></div><button className={`toggle-button${data.settings.barcode_scanner_enabled ? ' enabled' : ''}`} type="button" role="switch" aria-checked={data.settings.barcode_scanner_enabled} onClick={() => void toggleBarcodeScanner()}>{data.settings.barcode_scanner_enabled ? 'Attivo' : 'Disattivo'}</button></div><p className="help-copy">I lettori USB che si comportano come tastiera vengono riconosciuti automaticamente quando inviano un codice. La preferenza resta salvata tra gli avvii.</p></div></> : deviceTab === 'Stampante documenti' ? <><div className="settings-title"><h2>Stampante documenti</h2><p>Seleziona una stampante rilevata dal sistema e collegala per stampare i documenti.</p></div><div className="device-setting"><div className="device-printer-row"><SelectField label="Stampante collegata" value={documentPrinterDraft} onChange={setDocumentPrinterDraft} options={['', ...printers.map((printer) => printer.name)]} labels={['Seleziona stampante', ...printers.map((printer) => printer.displayName || printer.name)]} /><button className="button button-outline" type="button" onClick={() => void window.gestionale.getPrinters().then(setPrinters).catch((error: unknown) => notify(errorText(error)))}><Printer size={15} /> Rileva stampanti</button></div><div className="printer-connected-status">{data.settings.receipt_printer ? `Collegata: ${printers.find((printer) => printer.name === data.settings.receipt_printer)?.displayName || data.settings.receipt_printer}` : 'Nessuna stampante collegata.'}</div>{!printers.length && <p className="help-copy">Nessuna stampante rilevata. Verifica che sia collegata e installata nel sistema.</p>}{data.settings.receipt_printer && !printers.some((printer) => printer.name === data.settings.receipt_printer) && <p className="help-copy">La stampante salvata non è attualmente disponibile: seleziona una nuova stampante.</p>}</div><div className="printer-connection-actions"><button className="button button-outline" type="button" disabled={!data.settings.receipt_printer} onClick={() => void saveReceiptPrinter('')}>Scollega</button><button className="button button-primary" type="button" disabled={!documentPrinterDraft} onClick={() => void saveReceiptPrinter(documentPrinterDraft)}>Collega</button></div></> : <><div className="settings-title"><h2>Stampante scontrini</h2><p>Configura la stampante dedicata alla stampa degli scontrini.</p></div><div className="device-setting"><div className="device-printer-row"><SelectField label="Stampante scontrini collegata" value={receiptPrinterDraft} onChange={setReceiptPrinterDraft} options={['', ...printers.map((printer) => printer.name)]} labels={['Seleziona stampante', ...printers.map((printer) => printer.displayName || printer.name)]} /><button className="button button-outline" type="button" onClick={() => void window.gestionale.getPrinters().then(setPrinters).catch((error: unknown) => notify(errorText(error)))}><Printer size={15} /> Rileva stampanti</button></div><div className="printer-connection-actions"><span>{data.settings.receipt_printer_thermal ? `Collegata: ${printers.find((printer) => printer.name === data.settings.receipt_printer_thermal)?.displayName || data.settings.receipt_printer_thermal}` : 'Nessuna stampante scontrini collegata.'}</span><div><button className="button button-primary" type="button" disabled={!receiptPrinterDraft} onClick={() => void saveThermalReceiptPrinter(receiptPrinterDraft)}>Collega</button><button className="button button-outline" type="button" disabled={!data.settings.receipt_printer_thermal} onClick={() => void saveThermalReceiptPrinter('')}>Scollega</button></div></div>{!printers.length && <p className="help-copy">Nessuna stampante rilevata. Verifica che sia collegata e installata nel sistema.</p>}</div></>)}
         {settingsTab === 'Homepage' && <><div className="settings-title"><h2>Homepage</h2><p>Personalizza l’immagine o il video mostrato nella pagina iniziale.</p></div><div className="homepage-media-frame" ref={homeMediaFrameRef}>{(homepageMediaDraft?.home_video ?? data.settings.home_video) ? <video src={homepageMediaDraft?.home_video ?? data.settings.home_video} autoPlay muted loop playsInline /> : <img src={homepageMediaDraft?.home_image || data.settings.home_image || homeBanner} alt="Anteprima homepage" />}</div><small className="homepage-media-size">Dimensioni: {homeMediaWidthCm} × 5 cm</small><div className="homepage-media-actions"><button className="button button-outline" type="button" onClick={() => void chooseHomepageImage()}><House size={15} /> Sostituisci immagine</button><button className="button button-outline" type="button" onClick={() => void chooseHomepageVideo()}><Video size={15} /> Sostituisci video</button></div><div className="homepage-media-confirmation"><button className="button button-primary" type="button" disabled={!homepageMediaDraft} onClick={() => void applyHomepageMedia()}><Check size={16} /> Applica</button><button className="button button-outline" type="button" disabled={!homepageMediaDraft} onClick={cancelHomepageMedia}><X size={16} /> Annulla</button></div></>}
         {settingsTab === 'Permessi di accesso' && isOwner && <AccessPermissionsPanel roles={permissionRoles} role={permissionsRole} permissions={rolePermissions} onRoleChange={setPermissionsRole} onPermissionChange={(role, page, enabled) => void updateRolePermission(role, page, enabled)} />}
+        {settingsTab === 'Gestione dati app' && isOwner && <><div className="settings-title"><h2>Gestione dati app</h2><p>Esporta o importa l’archivio completo del gestionale. In importazione i dati già presenti vengono riconosciuti per evitare duplicati.</p></div><div className="data-management-warning"><ShieldCheck size={18} /><span>Il file contiene dati personali e informazioni operative. Conservalo in un luogo sicuro.</span></div><div className="data-management-actions"><button className="button button-outline" type="button" disabled={window.gestionale.isDemo} onClick={() => void exportApplicationData()}><ArrowDownToLine size={16} /> Esporta dati</button><button className="button button-primary" type="button" disabled={dataImporting || window.gestionale.isDemo} onClick={() => dataImportFileRef.current?.click()}><FolderOpen size={16} /> {window.gestionale.isDemo ? 'Disponibile nella versione desktop' : dataImporting ? 'Analisi e importazione…' : 'Importa dati'}</button><input ref={dataImportFileRef} type="file" accept=".json,application/json" hidden onChange={(event) => { void importApplicationData(event.currentTarget.files?.[0]); }} /></div></>}
         {settingsTab === 'Operativo' && <><div className="settings-title"><h2>Stato operativo</h2><p>Stato corrente del gestionale.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Operativo</div></>}
       </section>}</div></div>}
-      {section === 'supplier-list' && canAccess('supplier-list') && <SupplierListPage suppliers={data.suppliers} notify={notify} onSave={async (supplier) => { await window.gestionale.saveSupplier(supplier); await refresh(); notify('Fornitore salvato.'); }} />}
-      {section === 'supplier-order' && canAccess('supplier-order') && <SupplierOrderPage suppliers={data.suppliers} products={data.products} sites={data.sites} orders={data.supplierOrders} notify={notify} onSave={async (order) => { await window.gestionale.application.execute({ type: 'supplier-order.save', input: order }); await refresh(); notify('Ordine registrato.'); }} onReceive={async (orderId, itemId, barcode) => { await window.gestionale.application.execute({ type: 'supplier-order.receive', orderId, itemId, employeeBarcode: barcode }); await refresh(); notify(itemId === null ? 'Ricevimento dell’ordine confermato.' : 'Ricevimento dell’articolo confermato.'); }} />}
+      {section === 'supplier-list' && canAccess('supplier-list') && <SupplierListPage suppliers={data.suppliers} orders={data.supplierOrders} notify={notify} onSave={async (supplier) => { await window.gestionale.saveSupplier(supplier); await refresh(); notify('Fornitore salvato.'); }} />}
+      {section === 'supplier-order' && canAccess('supplier-order') && <SupplierOrderPage suppliers={data.suppliers} products={data.products} sites={data.sites} orders={data.supplierOrders} notify={notify} onSave={async (order) => { await window.gestionale.application.execute({ type: 'supplier-order.save', input: order }); await refresh(); notify('Ordine registrato.'); }} onReceive={async (orderId, itemId, barcode) => { await window.gestionale.application.execute({ type: 'supplier-order.receive', orderId, itemId, employeeBarcode: barcode }); await refresh(); notify(itemId === null ? 'Ricevimento dell’ordine confermato.' : 'Ricevimento dell’articolo confermato.'); }} onItemUpdate={async (orderId, itemId, quantity, unitCost, barcode) => { await window.gestionale.application.execute({ type: 'supplier-order.update-item', orderId, itemId, quantity, unitCost, employeeBarcode: barcode }); await refresh(); notify('Articolo dell’ordine modificato.'); }} onItemDelete={async (orderId, itemId, barcode) => { await window.gestionale.application.execute({ type: 'supplier-order.delete-item', orderId, itemId, employeeBarcode: barcode }); await refresh(); notify('Articolo dell’ordine eliminato.'); }} />}
     </main>
     {permissionsAuthorizationOpen && isOwner && <Modal title="Verifica barcode Proprietario" close={() => { setPermissionsAuthorizationOpen(false); setPermissionsAuthorizationBarcode(''); }}><form className="site-authorization" onSubmit={(event) => void confirmPermissionsAuthorization(event)}><p>Scansiona o inserisci il barcode del Proprietario per aprire i permessi di accesso.</p><Field label="Barcode del Proprietario" value={permissionsAuthorizationBarcode} onChange={(event) => setPermissionsAuthorizationBarcode(event.target.value.trim())} autoFocus required /><div className="form-actions"><button className="button button-outline" type="button" onClick={() => { setPermissionsAuthorizationOpen(false); setPermissionsAuthorizationBarcode(''); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Verifica barcode</button></div></form></Modal>}
 
@@ -4321,6 +4457,7 @@ export default function App() {
     {voucherViewBatch && <Modal title={`Codici buono · Gruppo ${voucherViewBatch.id}`} close={() => setVoucherViewBatch(null)} wide><div className="voucher-preview-heading"><strong>{voucherViewBatch.discount_percentage}% di sconto</strong><span>{formatLocalDate(voucherViewBatch.starts_at)} — {formatLocalDate(voucherViewBatch.ends_at)}</span></div><Table headings={['Codice', 'Barcode', 'Sconto', 'Inizio', 'Scadenza']}><>{voucherViewBatch.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td><BarcodeImage value={code} /></td><td>{voucherViewBatch.discount_percentage}%</td><td>{formatLocalDate(voucherViewBatch.starts_at)}</td><td>{formatLocalDate(voucherViewBatch.ends_at)}</td></tr>)}</></Table></Modal>}
     {pendingUnknownCode && <Modal title="Articolo non presente" wide close={() => { setPendingUnknownCode(''); setScannerSearch(''); }}><div className="unknown-code-message"><CircleAlert size={26} /><p>Il codice a barre <strong>{pendingUnknownCode}</strong> non è presente tra gli articoli.</p><span>Puoi aggiungerlo come nuovo articolo: il codice acquisito sarà già inserito nel modulo.</span><div className="form-actions"><button className="button button-quiet" onClick={() => { setPendingUnknownCode(''); setScannerSearch(''); }}>Annulla</button><button className="button button-primary" onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct, code: pendingUnknownCode }); setPendingUnknownCode(''); }}><Plus size={16} /> Aggiungi articolo</button></div></div></Modal>}
     {distributionConfirmOpen && <Modal title="Conferma prelievo" close={() => { setDistributionConfirmOpen(false); setDistributionBarcode(''); }}><form className="distribution-authorization" onSubmit={(event) => void distributeStock(event)}><p className="distribution-confirm-prompt">Per confermare il prelievo, scansiona o inserisci il barcode del dipendente autorizzato.</p><p>Mittente: <strong>{currentUser ? `${currentUser.first_name} ${currentUser.last_name}`.trim() : '—'}</strong></p><p>Destinatario: <strong>{distributionRecipients.find((employee) => String(employee.id) === distributionRecipientEmployeeId)?.first_name} {distributionRecipients.find((employee) => String(employee.id) === distributionRecipientEmployeeId)?.last_name}</strong></p><Field label="Barcode di conferma" value={distributionBarcode} onChange={(event) => setDistributionBarcode(event.target.value.trim())} required autoFocus /><div className="distribution-authorization-actions"><button className="button button-outline" type="button" onClick={() => { setDistributionConfirmOpen(false); setDistributionBarcode(''); }}>Annulla</button><button className="button button-primary" disabled={!currentUser?.barcode || !distributionRecipientEmployeeId || !distributionBarcode.trim()}><Check size={16} /> Conferma distribuzione</button></div></form></Modal>}
+    {distributionDeleteId !== null && <Modal title="Elimina distribuzione" close={() => { setDistributionDeleteId(null); setDistributionDeleteBarcode(''); }}><form className="distribution-delete-authorization" onSubmit={(event) => void deleteDistribution(event)}><p>Scansiona o inserisci il barcode del dipendente connesso per eliminare il documento e la registrazione della distribuzione. Le giacenze e i movimenti di magazzino non verranno modificati.</p><Field label="Barcode dipendente" value={distributionDeleteBarcode} onChange={(event) => setDistributionDeleteBarcode(event.target.value.trim())} required autoFocus /><div className="distribution-authorization-actions"><button className="button button-outline" type="button" onClick={() => { setDistributionDeleteId(null); setDistributionDeleteBarcode(''); }}>Annulla</button><button className="button button-danger" disabled={!distributionDeleteBarcode.trim()}><Trash2 size={16} /> Elimina</button></div></form></Modal>}
     {measuredProduct && <Modal title={measuredProduct.unit === 'KG' ? `Inserisci il peso · ${measuredProduct.name}` : `Inserisci il volume · ${measuredProduct.name}`} close={() => setMeasuredProduct(null)}><form className="form-grid measured-quantity-form" onSubmit={confirmMeasuredQuantity}><p className="measured-price">{money.format(measuredProduct.sale_price)} / {measuredProduct.unit === 'KG' ? 'kg' : 'lit.'}</p><Field label={measuredProduct.unit === 'KG' ? 'Peso in kg' : 'Volume in litri'} type="number" min="0.001" step="0.001" value={measuredQuantity} onChange={(event) => setMeasuredQuantity(event.target.value)} required autoFocus placeholder={measuredProduct.unit === 'KG' ? 'Es. 0,750' : 'Es. 1,500'} /><div className="measured-quantity-options">{(measuredProduct.unit === 'KG' ? [{ label: '50 g', quantity: 0.05 }, { label: '100 g', quantity: 0.1 }, { label: '250 g', quantity: 0.25 }, { label: '500 g', quantity: 0.5 }, { label: '1 kg', quantity: 1 }, { label: '2 kg', quantity: 2 }] : [{ label: '50 ml', quantity: 0.05 }, { label: '100 ml', quantity: 0.1 }, { label: '250 ml', quantity: 0.25 }, { label: '500 ml', quantity: 0.5 }, { label: '1 L', quantity: 1 }, { label: '2 L', quantity: 2 }]).map(({ label, quantity }) => <button className="button button-outline" key={label} type="button" onClick={() => addMeasuredQuantity(quantity)}>{label}</button>)}</div><div className="form-actions"><button className="button button-quiet full-width" type="button" onClick={() => setMeasuredProduct(null)}>Annulla</button><button className="button button-primary full-width"><Check size={16} /> Aggiungi al carrello</button></div></form></Modal>}
     {productAuthorization && <Modal title={productAuthorization.action === 'edit' ? 'Autorizza modifica articolo' : 'Autorizza nuova quantità'} close={() => { setProductAuthorization(null); setProductAuthorizationBarcode(''); }}><form className="form-grid product-authorization-form" onSubmit={(event) => { event.preventDefault(); void authorizeProductAction(productAuthorizationBarcode); }}><p>Scansiona il barcode di un dipendente per continuare.</p><Field label="Barcode del dipendente" value={productAuthorizationBarcode} onChange={(event) => setProductAuthorizationBarcode(event.target.value)} autoFocus required /><div className="form-actions"><button className="button button-outline" type="button" onClick={() => { setProductAuthorization(null); setProductAuthorizationBarcode(''); }}>Annulla</button><button className="button button-primary"><Barcode size={16} /> Verifica barcode</button></div></form></Modal>}
     {productForm && <ProductForm initial={productForm} isEditing={productEditingId !== null} initialSiteId={Number(mainStockSiteId)} sites={storeSites} save={saveProduct} close={() => { setProductForm(null); setProductEditingId(null); }} categories={categories} addCategory={addProductCategory} deleteCategory={deleteProductCategory} notify={notify} onDelete={productEditingId !== null ? async () => { const product = data.products.find((item) => item.id === productEditingId); if (product) await deleteProduct(product); } : undefined} />}

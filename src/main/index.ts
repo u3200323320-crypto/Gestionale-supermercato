@@ -7,10 +7,11 @@ import { basename, dirname, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
-import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, Employee, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, RolePermissionMap, Sale, SaleItem, Section, Site, SiteInput, SiteStock, StockDistributionRecord, Supplier, SupplierInput, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
+import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, Employee, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, RolePermission, RolePermissionMap, Sale, SaleItem, Section, Site, SiteInput, SiteStock, StockDistributionRecord, Supplier, SupplierInput, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
 import { ApplicationController } from './application-controller';
 import { ApplicationEventBus } from './application-events';
 import { SupplierOrderRepository, type SupplierOrderMovementWriter } from './data/supplier-order-repository';
+import { exportAppData, mergeAppData } from './data/app-data-transfer';
 import { SupplierOrderService } from './supplier-order-service';
 import { deleteSite, migrateSites, saveSite } from './site-service';
 
@@ -23,12 +24,12 @@ const authenticatedSessions = new Map<number, AuthenticatedEmployee>();
 const trialSessions = new Set<number>();
 const saleActionAuthorizations = new Map<number, { barcode: string; expiresAt: number }>();
 const loginFailures = new Map<number, { attempts: number; windowStartedAt: number; lockedUntil: number }>();
-const validPermissionSections = new Set<Section>([
+const validPermissionSections = new Set<RolePermission>([
   'home', 'inventory', 'available-stock', 'expired-products', 'inventory-history', 'stock-movement', 'stock-distribution',
   'cash', 'sales', 'statistics', 'sale-management', 'promotions', 'vouchers-create', 'vouchers-list', 'expenses',
   'financial-balance', 'employees', 'employee-create', 'payroll', 'employee-tracker', 'site-statistics',
   'site-management', 'site-create', 'site-list', 'low-stock', 'supplier-list', 'supplier-order', 'customer-list', 'loyalty-generate', 'loyalty-activate',
-  'loyalty-active', 'settings',
+  'loyalty-active', 'settings', 'sales-report', 'sales-csv', 'sales-tools-configured',
 ]);
 
 function localDate(date: Date): string {
@@ -716,26 +717,74 @@ type DistributionPdfData = {
 
 function distributionPdf(data: DistributionPdfData): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const document = new PDFDocument({ size: 'A4', margin: 48 });
+    const document = new PDFDocument({ size: 'A4', margin: 42 });
     const chunks: Buffer[] = [];
     document.on('data', (chunk: Buffer | string) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
     document.once('error', reject);
     document.once('end', () => resolve(Buffer.concat(chunks)));
-    document.fontSize(18).text('Documento di distribuzione', { align: 'center' });
-    document.moveDown();
-    document.fontSize(10).text(`Data: ${new Date(data.created_at).toLocaleString('it-IT')}`);
-    document.text(`Sede di partenza: ${data.from_site}`);
-    document.text(`Sede di destinazione: ${data.to_site}`);
-    document.text(`Mittente: ${data.sender}`);
-    document.text(`Destinatario: ${data.recipient}`);
-    document.moveDown();
-    document.fontSize(11).text('Articoli', { underline: true });
-    document.moveDown(0.5);
+    const width = document.page.width - 84;
+    const left = 42;
+    const drawHeader = () => {
+      document.save();
+      document.rect(0, 0, document.page.width, 138).fill('#1685dc');
+      document.fillColor('#ffffff').fontSize(10).font('Helvetica-Bold')
+        .text('GESTIONE SUPERMERCATO', left, 25, { characterSpacing: 1.4 });
+      document.fontSize(23).text('Documento di trasferimento', left, 48, { width });
+      document.font('Helvetica').fontSize(10).fillColor('#eaf5ff')
+        .text(new Date(data.created_at).toLocaleString('it-IT'), left, 83, { width });
+      document.restore();
+      document.save();
+      document.roundedRect(left, 118, width, 68, 8).fill('#f1f7fc');
+      document.fillColor('#1685dc').font('Helvetica-Bold').fontSize(8)
+        .text('SEDE DI PARTENZA', left + 15, 132, { width: width / 2 - 25 });
+      document.fillColor('#18251d').fontSize(12).text(data.from_site, left + 15, 147, { width: width / 2 - 25 });
+      document.fillColor('#1685dc').fontSize(8).text('SEDE DI DESTINAZIONE', left + width / 2, 132, { width: width / 2 - 15 });
+      document.fillColor('#18251d').fontSize(12).text(data.to_site, left + width / 2, 147, { width: width / 2 - 15 });
+      document.restore();
+    };
+    const tableTop = 218;
+    const columns = { number: left + 10, product: left + 44, code: left + 265, quantity: left + 397 };
+    const drawTableHeader = (y: number) => {
+      document.roundedRect(left, y, width, 28, 4).fill('#e8f2fb');
+      document.fillColor('#405368').font('Helvetica-Bold').fontSize(8)
+        .text('N.', columns.number, y + 9, { width: 24 })
+        .text('ARTICOLO', columns.product, y + 9, { width: 210 })
+        .text('BARCODE', columns.code, y + 9, { width: 120 })
+        .text('QUANTITÀ', columns.quantity, y + 9, { width: 58, align: 'right' });
+    };
+    drawHeader();
+    document.fillColor('#768496').font('Helvetica-Bold').fontSize(8)
+      .text('RIEPILOGO ARTICOLI', left, 201, { characterSpacing: 1 });
+    drawTableHeader(tableTop);
+    let cursor = tableTop + 29;
     data.items.forEach((item, index) => {
-      document.fontSize(10).text(`${index + 1}. ${item.name} (${item.code})`);
-      document.text(`Quantita: ${item.quantity} ${item.unit}`);
-      document.moveDown(0.4);
+      const rowHeight = 37;
+      if (cursor + rowHeight > document.page.height - 70) {
+        document.addPage();
+        drawTableHeader(48);
+        cursor = 77;
+      }
+      if (index % 2 === 0) document.rect(left, cursor, width, rowHeight).fill('#f8fafc');
+      document.fillColor('#758395').font('Helvetica').fontSize(9).text(String(index + 1).padStart(2, '0'), columns.number, cursor + 12, { width: 24 });
+      document.fillColor('#18251d').font('Helvetica-Bold').fontSize(9).text(item.name, columns.product, cursor + 7, { width: 210, height: 24, ellipsis: true });
+      document.fillColor('#68798a').font('Helvetica').fontSize(8).text(item.code, columns.code, cursor + 12, { width: 120, ellipsis: true });
+      document.fillColor('#18251d').font('Helvetica-Bold').fontSize(9).text(`${item.quantity} ${item.unit}`, columns.quantity, cursor + 12, { width: 58, align: 'right' });
+      document.moveTo(left, cursor + rowHeight).lineTo(left + width, cursor + rowHeight).lineWidth(0.4).strokeColor('#e3eaf0').stroke();
+      cursor += rowHeight;
     });
+    const total = data.items.reduce((sum, item) => sum + item.quantity, 0);
+    if (cursor + 74 > document.page.height - 55) {
+      document.addPage();
+      cursor = 50;
+    }
+    document.roundedRect(left, cursor + 12, width, 54, 7).fill('#1685dc');
+    document.fillColor('#eaf5ff').font('Helvetica').fontSize(8).text('PERSONE RESPONSABILI', left + 14, cursor + 23);
+    document.fillColor('#ffffff').font('Helvetica-Bold').fontSize(9).text(`Mittente: ${data.sender}`, left + 14, cursor + 40, { width: width / 2 - 22, ellipsis: true });
+    document.font('Helvetica').text(`Destinatario: ${data.recipient}`, left + width / 2, cursor + 40, { width: width / 2 - 14, ellipsis: true });
+    document.fillColor('#eaf5ff').font('Helvetica').fontSize(8).text('TOTALE ARTICOLI', left + width - 122, cursor + 23, { width: 108, align: 'right' });
+    document.fillColor('#ffffff').font('Helvetica-Bold').fontSize(12).text(`${data.items.length} · ${total}`, left + width - 122, cursor + 39, { width: 108, align: 'right' });
+    document.font('Helvetica').fontSize(8).fillColor('#8a97a4')
+      .text('Documento generato dal gestionale. Conservare insieme alla registrazione di magazzino.', left, document.page.height - 35, { width, align: 'center' });
     document.end();
   });
 }
@@ -1034,6 +1083,12 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   applicationEvents.on('supplier-order.received', ({ barcode, orderId, itemCount }) => {
     recordEmployeeActivity(barcode, 'supplier-order', 'Ricevimento ordine confermato',
       `Ordine fornitore #${orderId}, ${itemCount} ${itemCount === 1 ? 'articolo ricevuto' : 'articoli ricevuti'}`);
+  });
+  applicationEvents.on('supplier-order.item-updated', ({ barcode, orderId, itemId }) => {
+    recordEmployeeActivity(barcode, 'supplier-order', 'Articolo ordine modificato', `Ordine #${orderId}, articolo #${itemId}`);
+  });
+  applicationEvents.on('supplier-order.item-deleted', ({ barcode, orderId, itemId }) => {
+    recordEmployeeActivity(barcode, 'supplier-order', 'Articolo ordine eliminato', `Ordine #${orderId}, articolo #${itemId}`);
   });
   const recordSupplierOrderMovement: SupplierOrderMovementWriter = (productId, productName, quantity, note, person, site) => {
     recordStockMovement(productId, productName, 'Carico', quantity, note, person, '', site);
@@ -1349,6 +1404,43 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     }
     const error = await shell.openPath(filePath);
     if (error) throw new Error(`Impossibile aprire il file: ${error}`);
+  });
+  ipcMain.handle('distribution:delete', (event, id: number, employeeBarcode: string) => {
+    const session = requireSession(event.sender.id, ['proprietario', 'direttore']);
+    if (!Number.isSafeInteger(id) || id < 1 || typeof employeeBarcode !== 'string'
+      || employeeBarcode.trim() !== session.barcode) {
+      throw new Error('Verifica il barcode del dipendente per eliminare la distribuzione.');
+    }
+    const employee = employeeForLogin(employeeBarcode);
+    if (!employee || employee.id !== session.id) throw new Error('Il barcode non corrisponde al dipendente connesso.');
+    const record = database.prepare('SELECT file_path FROM stock_distributions WHERE id = ?').get(id) as { file_path: string } | undefined;
+    if (!record) throw new Error('Distribuzione non trovata.');
+    const distributionDirectory = join(app.getPath('userData'), 'Distribuzioni');
+    if (dirname(record.file_path) !== distributionDirectory) throw new Error('Il file della distribuzione non è valido.');
+    database.transaction(() => {
+      const deleted = database.prepare('DELETE FROM stock_distributions WHERE id = ?').run(id);
+      if (deleted.changes !== 1) throw new Error('Distribuzione non più disponibile.');
+      if (existsSync(record.file_path)) unlinkSync(record.file_path);
+      recordEmployeeActivity(employeeBarcode, 'stock-distribution', 'Distribuzione eliminata', `Distribuzione #${id}`);
+    })();
+  });
+  ipcMain.handle('app-data:export', (event) => {
+    requireSession(event.sender.id, ['proprietario']);
+    return exportAppData(database);
+  });
+  ipcMain.handle('app-data:import', (event, backup: unknown) => {
+    requireSession(event.sender.id, ['proprietario']);
+    const result = mergeAppData(database, backup);
+    const primarySite = database.prepare('SELECT id FROM sites ORDER BY id LIMIT 1').get() as { id: number } | undefined;
+    if (primarySite) {
+      database.prepare(`INSERT OR IGNORE INTO site_inventory (product_id, site_id, stock)
+        SELECT products.id, ?, products.stock FROM products
+        WHERE NOT EXISTS (SELECT 1 FROM site_inventory WHERE site_inventory.product_id = products.id)`)
+        .run(primarySite.id);
+    }
+    database.prepare(`UPDATE products SET stock = (SELECT COALESCE(SUM(stock), 0)
+      FROM site_inventory WHERE product_id = products.id)`).run();
+    return result;
   });
   ipcMain.handle('sale:checkout', (event, sale: CheckoutInput) => {
     const session = requireSession(event.sender.id);

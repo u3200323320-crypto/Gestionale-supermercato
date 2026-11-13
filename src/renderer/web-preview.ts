@@ -246,6 +246,27 @@ function installWebPreview(): void {
     if (order.items.every((item) => item.received_at)) order.received_at = new Date().toISOString();
     persist();
   };
+  const updateSupplierOrderItem = async (orderId: number, itemId: number, quantity: number, unitCost: number, employeeBarcode: string): Promise<void> => {
+    const employee = employeeByBarcode(employeeBarcode);
+    const order = state.supplierOrders.find((item) => item.id === orderId);
+    const item = order?.items.find((candidate) => candidate.id === itemId);
+    if (!employee || employee.barcode !== activeEmployeeBarcode || employeeBarcode.trim() !== activeEmployeeBarcode
+      || !order || order.received_at || !item || item.received_at) throw new Error('Verifica barcode e articolo ancora da ricevere.');
+    if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitCost) || unitCost < 0) throw new Error('Quantità o costo non validi.');
+    item.quantity = quantity;
+    item.unit_cost = unitCost;
+    persist();
+  };
+  const deleteSupplierOrderItem = async (orderId: number, itemId: number, employeeBarcode: string): Promise<void> => {
+    const employee = employeeByBarcode(employeeBarcode);
+    const order = state.supplierOrders.find((item) => item.id === orderId);
+    const item = order?.items.find((candidate) => candidate.id === itemId);
+    if (!employee || employee.barcode !== activeEmployeeBarcode || employeeBarcode.trim() !== activeEmployeeBarcode
+      || !order || order.received_at || !item || item.received_at) throw new Error('Verifica barcode e articolo ancora da ricevere.');
+    order.items = order.items.filter((candidate) => candidate.id !== itemId);
+    if (!order.items.length) state.supplierOrders = state.supplierOrders.filter((candidate) => candidate.id !== orderId);
+    persist();
+  };
   const api: Window['gestionale'] = {
     isDemo: true,
     getState: async () => structuredClone(state),
@@ -321,6 +342,13 @@ function installWebPreview(): void {
       persist();
     },
     openDistributionRecord: async () => undefined,
+    deleteDistribution: async (id, employeeBarcode) => {
+      if (employeeBarcode.trim() !== activeEmployeeBarcode || !employeeByBarcode(employeeBarcode)) throw new Error('Il barcode non corrisponde al dipendente autenticato.');
+      state.stockDistributions = state.stockDistributions.filter((record) => record.id !== id);
+      persist();
+    },
+    exportAppData: async () => { throw new Error('L’esportazione completa è disponibile nella versione desktop.'); },
+    importAppData: async () => { throw new Error('L’importazione completa è disponibile nella versione desktop.'); },
     checkout: async (checkout: CheckoutInput) => {
       const owner = employeeByBarcode(checkout.employee_barcode ?? demoOwnerBarcode);
       const site = state.sites.find((item) => item.id === checkout.site_id)
@@ -456,6 +484,12 @@ function installWebPreview(): void {
             return;
           case 'supplier-order.receive':
             await receiveSupplierOrder(command.orderId, command.itemId, command.employeeBarcode);
+            return;
+          case 'supplier-order.update-item':
+            await updateSupplierOrderItem(command.orderId, command.itemId, command.quantity, command.unitCost, command.employeeBarcode);
+            return;
+          case 'supplier-order.delete-item':
+            await deleteSupplierOrderItem(command.orderId, command.itemId, command.employeeBarcode);
             return;
           default:
             throw new Error('Comando applicativo non supportato.');

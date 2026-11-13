@@ -85,4 +85,36 @@ export class SupplierOrderService {
     this.repository.receive(receivingOrder, items, employee, new Date().toISOString(), this.recordMovement);
     this.events.publish('supplier-order.received', { barcode: session.barcode, orderId, itemCount: items.length });
   }
+
+  updateItem(senderId: number, orderId: number, itemId: number, quantity: number, unitCost: number, employeeBarcode: string): void {
+    const session = this.authorize(senderId);
+    this.authorizeEmployeeBarcode(session, employeeBarcode);
+    this.validateOrderItemIds(orderId, itemId);
+    if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 1_000_000
+      || !Number.isFinite(unitCost) || unitCost < 0 || unitCost > 1_000_000) {
+      throw new Error('Inserisci una quantità e un costo validi.');
+    }
+    this.repository.updatePendingItem(orderId, itemId, quantity, unitCost);
+    this.events.publish('supplier-order.item-updated', { barcode: session.barcode, orderId, itemId });
+  }
+
+  deleteItem(senderId: number, orderId: number, itemId: number, employeeBarcode: string): void {
+    const session = this.authorize(senderId);
+    this.authorizeEmployeeBarcode(session, employeeBarcode);
+    this.validateOrderItemIds(orderId, itemId);
+    this.repository.deletePendingItem(orderId, itemId);
+    this.events.publish('supplier-order.item-deleted', { barcode: session.barcode, orderId, itemId });
+  }
+
+  private authorizeEmployeeBarcode(session: AuthenticatedEmployee, employeeBarcode: string): void {
+    const employee = this.employeeForLogin(employeeBarcode);
+    if (!employee || employee.barcode !== session.barcode || employeeBarcode.trim() !== session.barcode) {
+      throw new Error('Il barcode non corrisponde al dipendente autenticato.');
+    }
+  }
+
+  private validateOrderItemIds(orderId: number, itemId: number): void {
+    if (!Number.isSafeInteger(orderId) || orderId < 1) throw new Error('Ordine non valido.');
+    if (!Number.isSafeInteger(itemId) || itemId < 1) throw new Error('Articolo dell’ordine non valido.');
+  }
 }

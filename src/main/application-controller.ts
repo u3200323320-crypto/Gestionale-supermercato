@@ -13,6 +13,10 @@ export class ApplicationController {
           return this.supplierOrders.save(event.sender.id, command.input);
         case 'supplier-order.receive':
           return this.supplierOrders.receive(event.sender.id, command.orderId, command.itemId, command.employeeBarcode);
+        case 'supplier-order.update-item':
+          return this.supplierOrders.updateItem(event.sender.id, command.orderId, command.itemId, command.quantity, command.unitCost, command.employeeBarcode);
+        case 'supplier-order.delete-item':
+          return this.supplierOrders.deleteItem(event.sender.id, command.orderId, command.itemId, command.employeeBarcode);
         default:
           throw new Error('Comando applicativo non supportato.');
       }

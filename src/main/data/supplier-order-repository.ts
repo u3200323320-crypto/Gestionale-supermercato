@@ -141,4 +141,26 @@ export class SupplierOrderRepository {
         .run(receivedAt, order.id, order.id);
     })();
   }
+
+  updatePendingItem(orderId: number, itemId: number, quantity: number, unitCost: number): void {
+    const changed = this.database.prepare(`UPDATE supplier_order_items SET quantity = ?, unit_cost = ?
+      WHERE id = ? AND order_id = ? AND received_at IS NULL
+        AND EXISTS (SELECT 1 FROM supplier_orders WHERE id = ? AND received_at IS NULL)`)
+      .run(quantity, unitCost, itemId, orderId, orderId);
+    if (changed.changes !== 1) throw new Error('Ordine ricevuto o articolo non più modificabile.');
+  }
+
+  deletePendingItem(orderId: number, itemId: number): void {
+    this.database.transaction(() => {
+      const order = this.database.prepare('SELECT received_at FROM supplier_orders WHERE id = ?').get(orderId) as { received_at: string | null } | undefined;
+      if (!order || order.received_at) throw new Error('Ordine ricevuto o non più disponibile.');
+      const item = this.database.prepare(`SELECT id FROM supplier_order_items
+        WHERE id = ? AND order_id = ? AND received_at IS NULL`).get(itemId, orderId);
+      if (!item) throw new Error('Articolo ricevuto o non appartenente a questo ordine.');
+      this.database.prepare('DELETE FROM supplier_order_items WHERE id = ?').run(itemId);
+      const remaining = this.database.prepare('SELECT COUNT(*) AS count FROM supplier_order_items WHERE order_id = ?')
+        .get(orderId) as { count: number };
+      if (remaining.count === 0) this.database.prepare('DELETE FROM supplier_orders WHERE id = ?').run(orderId);
+    })();
+  }
 }

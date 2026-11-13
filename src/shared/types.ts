@@ -1,5 +1,6 @@
 export type Section = 'home' | 'inventory' | 'available-stock' | 'expired-products' | 'inventory-history' | 'stock-movement' | 'stock-distribution' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'expenses' | 'financial-balance' | 'employees' | 'employee-create' | 'payroll' | 'employee-tracker' | 'site-statistics' | 'site-management' | 'site-create' | 'site-list' | 'low-stock' | 'supplier-list' | 'supplier-order' | 'customer-list' | 'loyalty-generate' | 'loyalty-activate' | 'loyalty-active' | 'settings';
-export type RolePermissionMap = Partial<Record<string, Section[]>>;
+export type RolePermission = Section | 'sales-report' | 'sales-csv' | 'sales-tools-configured';
+export type RolePermissionMap = Partial<Record<string, RolePermission[]>>;
 export type ProductUnit = 'KG' | 'LITRO' | 'PEZZO';
 export type Printer = { name: string; displayName: string };
 export interface Site { id: number; name: string; site_role: string; address: string; phone: string; email: string; tax_id: string; manager_name: string; opening_hours: string; notes: string; site_type: 'store' | 'warehouse'; recognition_code: string; created_at: string }
@@ -82,7 +83,17 @@ export type SupplierOrderInput = {
 };
 export type ApplicationCommand =
   | { type: 'supplier-order.save'; input: SupplierOrderInput }
-  | { type: 'supplier-order.receive'; orderId: number; itemId: number | null; employeeBarcode: string };
+  | { type: 'supplier-order.receive'; orderId: number; itemId: number | null; employeeBarcode: string }
+  | { type: 'supplier-order.update-item'; orderId: number; itemId: number; quantity: number; unitCost: number; employeeBarcode: string }
+  | { type: 'supplier-order.delete-item'; orderId: number; itemId: number; employeeBarcode: string };
+
+export interface AppDataBackup {
+  format: 'gestionale-supermercato-data';
+  version: 1;
+  exportedAt: string;
+  tables: Record<string, Array<Record<string, string | number | null>>>;
+  rendererPreferences?: Record<string, string>;
+}
 
 export interface LoyaltyCard {
   id: number;
@@ -295,6 +306,7 @@ declare global {
     moveStock: (movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; employee_barcode: string; destination?: string; note: string }) => Promise<void>;
     transferStock: (movement: { fromSiteId: number; toSiteId: number; recipientEmployeeId: number; items: Array<{ productId: number; quantity: number }>; employee_barcode: string }) => Promise<void>;
     openDistributionRecord: (id: number) => Promise<void>;
+    deleteDistribution: (id: number, employeeBarcode: string) => Promise<void>;
     checkout: (sale: CheckoutInput) => Promise<Sale>;
     validateVoucher: (code: string) => Promise<VoucherValidation>;
     savePromotion: (promotion: PromotionInput) => Promise<void>;
@@ -331,6 +343,8 @@ declare global {
     setupSite: (site: SiteInput) => Promise<void>;
     deleteSite: (siteId: number, requesterBarcode: string) => Promise<void>;
     authorizeSiteAction: (requesterBarcode: string) => Promise<boolean>;
+    exportAppData: () => Promise<AppDataBackup>;
+    importAppData: (backup: AppDataBackup) => Promise<{ added: number; skipped: number }>;
     chooseArchiveFolder: () => Promise<string | null>;
     savePdfForSharing: (input: { fileName: string; pdfBase64: string }) => Promise<string | null>;
     chooseShopLogo: () => Promise<string | null>;

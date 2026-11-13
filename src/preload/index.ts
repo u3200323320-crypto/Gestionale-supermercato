@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ApplicationCommand, AuthenticatedEmployee, CheckoutInput, CustomerInput, EmployeeInput, Expense, PayrollPaymentInput, Printer, ProductInput, PromotionInput, SaleItem, SiteInput, SupplierInput, VoucherBatchInput } from '../shared/types';
+import type { AppDataBackup, ApplicationCommand, AuthenticatedEmployee, CheckoutInput, CustomerInput, EmployeeInput, Expense, PayrollPaymentInput, Printer, ProductInput, PromotionInput, SaleItem, SiteInput, SupplierInput, VoucherBatchInput } from '../shared/types';
 
 contextBridge.exposeInMainWorld('gestionale', {
   isDemo: false,
@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('gestionale', {
   moveStock: (movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; employee_barcode: string; destination?: string; note: string }) => ipcRenderer.invoke('product:move-stock', movement),
   transferStock: (movement: { fromSiteId: number; toSiteId: number; recipientEmployeeId: number; items: Array<{ productId: number; quantity: number }>; employee_barcode: string }) => ipcRenderer.invoke('product:transfer-stock', movement),
   openDistributionRecord: (id: number) => ipcRenderer.invoke('distribution:open-record', id),
+  deleteDistribution: (id: number, employeeBarcode: string) => ipcRenderer.invoke('distribution:delete', id, employeeBarcode),
   checkout: (sale: CheckoutInput) => ipcRenderer.invoke('sale:checkout', sale),
   validateVoucher: (code: string) => ipcRenderer.invoke('voucher:validate', code),
   savePromotion: (promotion: PromotionInput) => ipcRenderer.invoke('promotion:save', promotion),
@@ -54,6 +55,8 @@ contextBridge.exposeInMainWorld('gestionale', {
   setupSite: (site: SiteInput) => ipcRenderer.invoke('site:setup', site),
   deleteSite: (siteId: number, requesterBarcode: string) => ipcRenderer.invoke('site:delete', siteId, requesterBarcode),
   authorizeSiteAction: (requesterBarcode: string): Promise<boolean> => ipcRenderer.invoke('site:authorize', requesterBarcode),
+  exportAppData: (): Promise<AppDataBackup> => ipcRenderer.invoke('app-data:export'),
+  importAppData: (backup: AppDataBackup): Promise<{ added: number; skipped: number }> => ipcRenderer.invoke('app-data:import', backup),
   chooseArchiveFolder: () => ipcRenderer.invoke('archive:choose-folder'),
   savePdfForSharing: (input: { fileName: string; pdfBase64: string }): Promise<string | null> => ipcRenderer.invoke('share:save-pdf', input),
   chooseShopLogo: () => ipcRenderer.invoke('settings:choose-shop-logo'),

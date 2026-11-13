@@ -1,6 +1,8 @@
 export interface ApplicationEvents {
   'supplier-order.created': { barcode: string; orderId: number; received: boolean };
   'supplier-order.received': { barcode: string; orderId: number; itemCount: number };
+  'supplier-order.item-updated': { barcode: string; orderId: number; itemId: number };
+  'supplier-order.item-deleted': { barcode: string; orderId: number; itemId: number };
 }
 
 type EventHandler<T> = (payload: T) => void | Promise<void>;
