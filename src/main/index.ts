@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import PDFDocument from 'pdfkit';
 import { randomInt, randomBytes, randomUUID, scryptSync } from 'node:crypto';
 import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { basename, dirname, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
@@ -254,7 +255,7 @@ function findValidVoucher(code: string, today = localDate(new Date())): { id: nu
     { id: number; batch_id: number; discount_percentage: number; starts_at: string; ends_at: string } | undefined;
 }
 
-function allSales(): unknown[] {
+function allSales(): Sale[] {
   const sales = database.prepare(`SELECT s.*,
       COALESCE(NULLIF(s.employee_name, ''), (
         SELECT movement.person FROM stock_movements movement
@@ -263,7 +264,15 @@ function allSales(): unknown[] {
       ), '') AS person,
       COALESCE(SUM(i.quantity), 0) AS item_count
     FROM sales s LEFT JOIN sale_items i ON i.sale_id = s.id GROUP BY s.id ORDER BY s.created_at DESC`).all() as Array<Record<string, unknown>>;
-  return sales.map((sale) => ({ ...sale, items: saleItems(sale.id as number) }));
+  const itemsBySale = new Map<number, SaleItem[]>();
+  const items = database.prepare(`SELECT sale_id, product_id, name, code, unit, quantity, unit_price, purchase_price
+    FROM sale_items ORDER BY id`).all() as Array<SaleItem & { sale_id: number }>;
+  for (const { sale_id: saleId, ...item } of items) {
+    const saleItemsForSale = itemsBySale.get(saleId) ?? [];
+    saleItemsForSale.push(item);
+    itemsBySale.set(saleId, saleItemsForSale);
+  }
+  return sales.map((sale) => ({ ...sale, items: itemsBySale.get(sale.id as number) ?? [] }) as Sale);
 }
 
 function state() {
@@ -312,12 +321,7 @@ function state() {
       auth_trial_expires_at: setting('auth_trial_expires_at'),
       shop_logo: setting('shop_logo'),
       home_image: setting('home_image'),
-      home_video: (() => {
-        const path = setting('home_video');
-        if (!path || !existsSync(path)) return '';
-        const extension = path.toLowerCase().endsWith('.webm') ? 'webm' : 'mp4';
-        return `data:video/${extension};base64,${readFileSync(path).toString('base64')}`;
-      })(),
+      home_video: '',
       archive_folder: setting('archive_folder', join(app.getPath('documents'), 'Gestionale-Archivio')),
       database_file: databaseFile,
       receipt_printer: setting('receipt_printer'),
@@ -1192,6 +1196,14 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   ipcMain.handle('state:get', (event) => {
     requireMainWindowSender(event.sender.id);
     return stateForSession(sessionForSender(event.sender.id));
+  });
+  ipcMain.handle('settings:homepage-video', async (event) => {
+    const session = requireSession(event.sender.id);
+    if (!['proprietario', 'direttore'].includes(normalizedEmployeeRole(session.role))) return '';
+    const path = setting('home_video');
+    if (!path || !existsSync(path)) return '';
+    const extension = path.toLowerCase().endsWith('.webm') ? 'webm' : 'mp4';
+    return `data:video/${extension};base64,${(await readFile(path)).toString('base64')}`;
   });
   ipcMain.handle('employee:authorize', (event, barcode: string) => {
     requireSession(event.sender.id, ['proprietario', 'direttore']);

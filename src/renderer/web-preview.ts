@@ -460,6 +460,7 @@ function installWebPreview(): void {
   const api: Window['gestionale'] = {
     isDemo: true,
     getState: async () => structuredClone(state),
+    getHomepageVideo: async () => state.settings.home_video ?? '',
     onSalesExpired: () => () => undefined,
     verifyEmployeeBarcode: async (barcode) => Boolean(employeeByBarcode(barcode)),
     authorizeTracker: async (barcode) => ['proprietario', 'direttore'].includes((employeeByBarcode(barcode)?.role ?? '').toLocaleLowerCase('it')),

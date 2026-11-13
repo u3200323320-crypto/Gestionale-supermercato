@@ -297,6 +297,7 @@ declare global {
   gestionale: {
     isDemo: boolean;
     getState: () => Promise<AppState>;
+    getHomepageVideo: () => Promise<string>;
     onSalesExpired: (callback: () => void) => () => void;
     verifyEmployeeBarcode: (barcode: string) => Promise<boolean>;
     authorizeTracker: (barcode: string) => Promise<boolean>;

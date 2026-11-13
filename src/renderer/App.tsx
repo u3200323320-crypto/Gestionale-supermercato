@@ -1326,6 +1326,20 @@ export default function App() {
   const warehouseSites = storeSites.filter((site) => site.site_type === 'warehouse');
   const cashSites = storeSites;
   const isOwner = normalizedRole(activeRole) === 'proprietario';
+  const canViewHomepageMedia = ['proprietario', 'direttore'].includes(normalizedRole(activeRole));
+  useEffect(() => {
+    const shouldLoadVideo = section === 'home' || (section === 'settings' && settingsTab === 'Homepage');
+    if (!data?.settings.setup_complete || locked || !canViewHomepageMedia || !shouldLoadVideo || data.settings.home_video) return;
+    let active = true;
+    void window.gestionale.getHomepageVideo().then((video) => {
+      if (active && video) {
+        setData((current) => current
+          ? { ...current, settings: { ...current.settings, home_video: video } }
+          : current);
+      }
+    }).catch((error: unknown) => notify(`Impossibile caricare il video della homepage: ${errorText(error)}`));
+    return () => { active = false; };
+  }, [canViewHomepageMedia, data?.settings.home_video, data?.settings.setup_complete, locked, section, settingsTab]);
   useEffect(() => {
     if (section !== 'cash' || !isOwner || !ownerCashSiteDraft) return;
     setOwnerCashSiteId(ownerCashSiteDraft);
@@ -2807,6 +2821,11 @@ export default function App() {
       if (homepageMediaDraft.home_video) await window.gestionale.saveSetting('home_video', homepageMediaDraft.home_video);
       else await window.gestionale.saveSetting('home_image', homepageMediaDraft.home_image);
       await refresh();
+      if (homepageMediaDraft.home_video) {
+        setData((current) => current
+          ? { ...current, settings: { ...current.settings, home_video: homepageMediaDraft.home_video } }
+          : current);
+      }
       setHomepageMediaDraft(null);
       notify('Immagine homepage aggiornata.');
     } catch (error) { notify(errorText(error)); }
