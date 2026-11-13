@@ -71,6 +71,9 @@ function validateBackup(database: Database.Database, value: unknown): asserts va
     || typeof value.exportedAt !== 'string' || !isRecord(value.tables)) {
     throw new Error('Il file non è un archivio dati Gestione Supermercato valido.');
   }
+  if (value.previewState !== undefined) {
+    throw new Error('Questo archivio contiene solo dati dimostrativi dell’anteprima web e non può essere importato nell’app desktop.');
+  }
   if (value.rendererPreferences !== undefined && (!isRecord(value.rendererPreferences)
     || Object.entries(value.rendererPreferences).some(([key, preference]) =>
       !rendererPreferenceKeys.has(key) || typeof preference !== 'string' || preference.length > 1_000_000))) {

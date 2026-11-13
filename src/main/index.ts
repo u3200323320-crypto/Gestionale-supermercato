@@ -717,74 +717,111 @@ type DistributionPdfData = {
 
 function distributionPdf(data: DistributionPdfData): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const document = new PDFDocument({ size: 'A4', margin: 42 });
+    const document = new PDFDocument({ size: 'A4', margin: 42, bufferPages: true });
     const chunks: Buffer[] = [];
     document.on('data', (chunk: Buffer | string) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
     document.once('error', reject);
     document.once('end', () => resolve(Buffer.concat(chunks)));
-    const width = document.page.width - 84;
     const left = 42;
-    const drawHeader = () => {
+    const width = document.page.width - left * 2;
+    const colors = { ink: '#18332a', green: '#176847', pale: '#edf5ef', line: '#dce7df', muted: '#66766c', white: '#ffffff' };
+    const drawPageHeader = () => {
       document.save();
-      document.rect(0, 0, document.page.width, 138).fill('#1685dc');
-      document.fillColor('#ffffff').fontSize(10).font('Helvetica-Bold')
-        .text('GESTIONE SUPERMERCATO', left, 25, { characterSpacing: 1.4 });
-      document.fontSize(23).text('Documento di trasferimento', left, 48, { width });
-      document.font('Helvetica').fontSize(10).fillColor('#eaf5ff')
-        .text(new Date(data.created_at).toLocaleString('it-IT'), left, 83, { width });
-      document.restore();
-      document.save();
-      document.roundedRect(left, 118, width, 68, 8).fill('#f1f7fc');
-      document.fillColor('#1685dc').font('Helvetica-Bold').fontSize(8)
-        .text('SEDE DI PARTENZA', left + 15, 132, { width: width / 2 - 25 });
-      document.fillColor('#18251d').fontSize(12).text(data.from_site, left + 15, 147, { width: width / 2 - 25 });
-      document.fillColor('#1685dc').fontSize(8).text('SEDE DI DESTINAZIONE', left + width / 2, 132, { width: width / 2 - 15 });
-      document.fillColor('#18251d').fontSize(12).text(data.to_site, left + width / 2, 147, { width: width / 2 - 15 });
+      document.rect(0, 0, document.page.width, 108).fill(colors.ink);
+      document.rect(0, 0, document.page.width, 5).fill('#93c54b');
+      document.fillColor('#b9d8c6').fontSize(8).font('Helvetica-Bold')
+        .text('GESTIONE SUPERMERCATO  /  LOGISTICA', left, 23, { characterSpacing: 1.15 });
+      document.fillColor(colors.white).fontSize(21).text('Documento di trasferimento', left, 43, { width });
+      document.fillColor('#dce9e0').font('Helvetica').fontSize(9)
+        .text(new Date(data.created_at).toLocaleString('it-IT'), left, 76, { width });
       document.restore();
     };
-    const tableTop = 218;
-    const columns = { number: left + 10, product: left + 44, code: left + 265, quantity: left + 397 };
+    const drawInfoCard = (label: string, value: string, x: number, y: number, cardWidth: number, cardHeight: number) => {
+      document.save();
+      document.roundedRect(x, y, cardWidth, cardHeight, 5).fill(colors.pale);
+      document.roundedRect(x, y, 3, cardHeight, 1).fill(colors.green);
+      document.fillColor(colors.muted).font('Helvetica-Bold').fontSize(7)
+        .text(label, x + 12, y + 9, { width: cardWidth - 24, characterSpacing: 0.6 });
+      document.fillColor(colors.ink).font('Helvetica-Bold').fontSize(10)
+        .text(value || '—', x + 12, y + 23, { width: cardWidth - 24, height: cardHeight - 28, ellipsis: true });
+      document.restore();
+    };
+    const drawDocumentInfo = () => {
+      const gap = 12;
+      const cardWidth = (width - gap) / 2;
+      drawInfoCard('SEDE DI PARTENZA', data.from_site, left, 124, cardWidth, 54);
+      drawInfoCard('SEDE DI DESTINAZIONE', data.to_site, left + cardWidth + gap, 124, cardWidth, 54);
+      drawInfoCard('PREPARATO DA', data.sender, left, 188, cardWidth, 44);
+      drawInfoCard('RICEVUTO DA', data.recipient, left + cardWidth + gap, 188, cardWidth, 44);
+    };
+    const numberX = left + 10;
+    const productX = left + 48;
+    const codeX = left + 304;
+    const quantityX = left + width - 122;
     const drawTableHeader = (y: number) => {
-      document.roundedRect(left, y, width, 28, 4).fill('#e8f2fb');
-      document.fillColor('#405368').font('Helvetica-Bold').fontSize(8)
-        .text('N.', columns.number, y + 9, { width: 24 })
-        .text('ARTICOLO', columns.product, y + 9, { width: 210 })
-        .text('BARCODE', columns.code, y + 9, { width: 120 })
-        .text('QUANTITÀ', columns.quantity, y + 9, { width: 58, align: 'right' });
+      document.roundedRect(left, y, width, 27, 4).fill(colors.green);
+      document.fillColor(colors.white).font('Helvetica-Bold').fontSize(7.5)
+        .text('N.', numberX, y + 9, { width: 26 })
+        .text('ARTICOLO', productX, y + 9, { width: codeX - productX - 12 })
+        .text('BARCODE', codeX, y + 9, { width: quantityX - codeX - 12 })
+        .text('QUANTITÀ', quantityX, y + 9, { width: 108, align: 'right' });
     };
-    drawHeader();
-    document.fillColor('#768496').font('Helvetica-Bold').fontSize(8)
-      .text('RIEPILOGO ARTICOLI', left, 201, { characterSpacing: 1 });
-    drawTableHeader(tableTop);
-    let cursor = tableTop + 29;
-    data.items.forEach((item, index) => {
-      const rowHeight = 37;
-      if (cursor + rowHeight > document.page.height - 70) {
+    drawPageHeader();
+    drawDocumentInfo();
+    document.fillColor(colors.muted).font('Helvetica-Bold').fontSize(8)
+      .text('DETTAGLIO MERCE', left, 251, { characterSpacing: 0.9 });
+    drawTableHeader(267);
+    let cursor = 294;
+    const rows = data.items.length
+      ? data.items
+      : [{ name: 'Nessun articolo nel documento', code: '—', unit: '', quantity: 0 }];
+    rows.forEach((item, index) => {
+      const rowHeight = 38;
+      if (cursor + rowHeight > document.page.height - 58) {
         document.addPage();
-        drawTableHeader(48);
-        cursor = 77;
+        drawPageHeader();
+        drawTableHeader(130);
+        cursor = 157;
       }
-      if (index % 2 === 0) document.rect(left, cursor, width, rowHeight).fill('#f8fafc');
-      document.fillColor('#758395').font('Helvetica').fontSize(9).text(String(index + 1).padStart(2, '0'), columns.number, cursor + 12, { width: 24 });
-      document.fillColor('#18251d').font('Helvetica-Bold').fontSize(9).text(item.name, columns.product, cursor + 7, { width: 210, height: 24, ellipsis: true });
-      document.fillColor('#68798a').font('Helvetica').fontSize(8).text(item.code, columns.code, cursor + 12, { width: 120, ellipsis: true });
-      document.fillColor('#18251d').font('Helvetica-Bold').fontSize(9).text(`${item.quantity} ${item.unit}`, columns.quantity, cursor + 12, { width: 58, align: 'right' });
-      document.moveTo(left, cursor + rowHeight).lineTo(left + width, cursor + rowHeight).lineWidth(0.4).strokeColor('#e3eaf0').stroke();
+      if (index % 2 === 0) document.rect(left, cursor, width, rowHeight).fill('#f4f8f5');
+      document.rect(left, cursor, width, rowHeight).lineWidth(0.45).strokeColor(colors.line).stroke();
+      document.fillColor(colors.muted).font('Helvetica').fontSize(9).text(String(index + 1).padStart(2, '0'), numberX, cursor + 12, { width: 24 });
+      document.fillColor(colors.ink).font('Helvetica-Bold').fontSize(9)
+        .text(item.name, productX, cursor + 12, { width: codeX - productX - 12, height: 16, ellipsis: true });
+      document.fillColor(colors.muted).font('Helvetica').fontSize(8)
+        .text(item.code, codeX, cursor + 12, { width: quantityX - codeX - 12, height: 16, ellipsis: true });
+      const quantity = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 3 }).format(item.quantity);
+      document.fillColor(colors.ink).font('Helvetica-Bold').fontSize(9)
+        .text(`${quantity}${item.unit ? ` ${item.unit}` : ''}`, quantityX, cursor + 12, { width: 108, align: 'right', ellipsis: true });
       cursor += rowHeight;
     });
-    const total = data.items.reduce((sum, item) => sum + item.quantity, 0);
-    if (cursor + 74 > document.page.height - 55) {
+    const quantitiesByUnit = new Map<string, number>();
+    data.items.forEach((item) => quantitiesByUnit.set(item.unit, (quantitiesByUnit.get(item.unit) ?? 0) + item.quantity));
+    const quantitySummary = [...quantitiesByUnit].map(([unit, quantity]) =>
+      `${new Intl.NumberFormat('it-IT', { maximumFractionDigits: 3 }).format(quantity)} ${unit}`).join('  ·  ') || '—';
+    if (cursor + 70 > document.page.height - 50) {
       document.addPage();
-      cursor = 50;
+      drawPageHeader();
+      cursor = 132;
     }
-    document.roundedRect(left, cursor + 12, width, 54, 7).fill('#1685dc');
-    document.fillColor('#eaf5ff').font('Helvetica').fontSize(8).text('PERSONE RESPONSABILI', left + 14, cursor + 23);
-    document.fillColor('#ffffff').font('Helvetica-Bold').fontSize(9).text(`Mittente: ${data.sender}`, left + 14, cursor + 40, { width: width / 2 - 22, ellipsis: true });
-    document.font('Helvetica').text(`Destinatario: ${data.recipient}`, left + width / 2, cursor + 40, { width: width / 2 - 14, ellipsis: true });
-    document.fillColor('#eaf5ff').font('Helvetica').fontSize(8).text('TOTALE ARTICOLI', left + width - 122, cursor + 23, { width: 108, align: 'right' });
-    document.fillColor('#ffffff').font('Helvetica-Bold').fontSize(12).text(`${data.items.length} · ${total}`, left + width - 122, cursor + 39, { width: 108, align: 'right' });
-    document.font('Helvetica').fontSize(8).fillColor('#8a97a4')
-      .text('Documento generato dal gestionale. Conservare insieme alla registrazione di magazzino.', left, document.page.height - 35, { width, align: 'center' });
+    document.roundedRect(left, cursor + 12, width, 54, 6).fill(colors.pale);
+    document.fillColor(colors.green).font('Helvetica-Bold').fontSize(7)
+      .text('ARTICOLI', left + 14, cursor + 23, { characterSpacing: 0.6 });
+    document.fillColor(colors.ink).fontSize(12).text(String(data.items.length), left + 14, cursor + 37);
+    document.fillColor(colors.green).fontSize(7)
+      .text('QUANTITÀ PER UNITÀ', left + 100, cursor + 23, { characterSpacing: 0.6 });
+    document.fillColor(colors.ink).font('Helvetica-Bold').fontSize(10)
+      .text(quantitySummary, left + 100, cursor + 38, { width: width - 115, height: 18, ellipsis: true });
+    const pages = document.bufferedPageRange();
+    for (let index = 0; index < pages.count; index += 1) {
+      document.switchToPage(pages.start + index);
+      document.moveTo(left, document.page.height - 43).lineTo(left + width, document.page.height - 43)
+        .lineWidth(0.5).strokeColor(colors.line).stroke();
+      document.fillColor(colors.muted).font('Helvetica').fontSize(7.5)
+        .text('Documento di trasferimento · Conservare insieme alla registrazione di magazzino.', left, document.page.height - 31, { width: width - 90 });
+      document.fillColor(colors.green).font('Helvetica-Bold')
+        .text(`${index + 1} / ${pages.count}`, left + width - 80, document.page.height - 31, { width: 80, align: 'right' });
+    }
     document.end();
   });
 }

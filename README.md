@@ -19,7 +19,7 @@ Per provare l’interfaccia nel browser senza installare l’app desktop:
 npm run preview:web
 ```
 
-Apri l’indirizzo locale mostrato nel terminale (normalmente `http://127.0.0.1:5173`). La demo usa dati fittizi salvati solo nel browser e non accede al database desktop. Il barcode Proprietario dimostrativo è `0000000001`; dalla fascia in alto puoi ripristinare i dati iniziali. Le funzioni che dipendono da dispositivi o file locali sono limitate nella demo.
+Apri l’indirizzo locale mostrato nel terminale (normalmente `http://127.0.0.1:5173`). La demo usa dati fittizi salvati solo nel browser e non accede al database desktop. Il barcode Proprietario dimostrativo è `0000000001`; dalla fascia in alto puoi ripristinare i dati iniziali. Le funzioni che dipendono da dispositivi o file locali sono limitate nella demo. La pagina **Gestione dati app** consente di esportare e reimportare i dati dimostrativi del browser; questi backup non sono compatibili con l’app desktop.
 
 Su una nuova installazione desktop viene creato automaticamente un account Proprietario con un barcode casuale. Il barcode iniziale è salvato in `Accesso iniziale/Credenziali proprietario.txt` nella cartella di archivio (Documenti/Gestionale-Archivio per impostazione predefinita); conserva il file in modo sicuro e usalo per accedere dopo la scadenza dell’accesso temporaneo iniziale. Il codice di riconoscimento delle sedi è composto da 15 lettere e numeri.
 

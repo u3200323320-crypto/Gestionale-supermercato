@@ -1,5 +1,6 @@
 import type {
   ApplicationCommand,
+  AppDataBackup,
   AppState,
   AuthenticatedEmployee,
   CheckoutInput,
@@ -154,6 +155,195 @@ function createDemoState(): AppState {
     suppliers: [],
     supplierOrders: [],
   };
+}
+
+const previewStateCollections = [
+  'products', 'sales', 'promotions', 'voucherBatches', 'employees', 'employeeActivities',
+  'payrollPayments', 'refunds', 'stockMovements', 'stockDistributions',
+  'expenses', 'sites', 'customers', 'loyaltyCards', 'suppliers', 'supplierOrders',
+] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function isPreviewState(value: unknown): value is AppState {
+  if (!isRecord(value) || !isRecord(value.settings) || !Array.isArray(value.siteStocks)
+    || value.siteStocks.length > 250_000 || !value.siteStocks.every((item) => isRecord(item)
+      && Number.isInteger(item.product_id) && Number.isInteger(item.site_id)
+      && typeof item.site_name === 'string' && Number.isFinite(item.stock))) return false;
+  const settings = value.settings;
+  const stringSettings = [
+    'shop_name', 'shop_number', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id',
+    'currency', 'main_site_id', 'role_permissions', 'auth_trial_expires_at', 'archive_folder',
+    'database_file', 'receipt_printer', 'receipt_printer_thermal',
+  ];
+  if (stringSettings.some((key) => typeof settings[key] !== 'string')
+    || typeof settings.setup_complete !== 'boolean'
+    || typeof settings.barcode_scanner_enabled !== 'boolean'
+    || typeof settings.barcode_scanner_detected !== 'boolean'
+    || ['shop_logo', 'home_image', 'home_video'].some((key) => settings[key] !== undefined && typeof settings[key] !== 'string')) return false;
+  if (!previewStateCollections.every((key) => Array.isArray(value[key])
+    && (value[key] as unknown[]).length <= 250_000
+    && (value[key] as unknown[]).every((item) => isRecord(item) && Number.isInteger(item.id) && Number(item.id) > 0))) return false;
+  const rows = (key: typeof previewStateCollections[number]) => value[key] as Array<Record<string, unknown>>;
+  return rows('products').every((item) => typeof item.code === 'string')
+    && rows('sites').every((item) => typeof item.name === 'string')
+    && rows('employees').every((item) => ['barcode', 'recognition_code', 'email'].every((key) => typeof item[key] === 'string'))
+    && rows('suppliers').every((item) => typeof item.name === 'string')
+    && rows('customers').every((item) => ['email', 'phone', 'first_name', 'last_name', 'address'].every((key) => typeof item[key] === 'string'))
+    && rows('sales').every((item) => typeof item.receipt_no === 'string' && Array.isArray(item.items)
+      && item.items.every((saleItem) => isRecord(saleItem) && Number.isInteger(saleItem.product_id)))
+    && rows('stockMovements').every((item) => Number.isInteger(item.product_id))
+    && rows('employeeActivities').every((item) => Number.isInteger(item.employee_id))
+    && rows('refunds').every((item) => Number.isInteger(item.sale_id))
+    && rows('payrollPayments').every((item) => Number.isInteger(item.employee_id) && typeof item.pay_month === 'string')
+    && rows('loyaltyCards').every((item) => typeof item.code === 'string')
+    && rows('supplierOrders').every((item) => Number.isInteger(item.supplier_id) && Array.isArray(item.items)
+      && item.items.every((orderItem) => isRecord(orderItem) && Number.isInteger(orderItem.product_id)));
+}
+
+function stableRecord(value: object): string {
+  const entries = Object.entries(value)
+    .filter(([key]) => key !== 'id')
+    .sort(([left], [right]) => left.localeCompare(right));
+  return JSON.stringify(entries.map(([key, item]) => [
+    key,
+    isRecord(item) ? stableRecord(item) : Array.isArray(item) ? item.map((nested) => isRecord(nested) ? stableRecord(nested) : nested) : item,
+  ]));
+}
+
+function mergePreviewRows<T extends { id: number }>(
+  current: T[],
+  imported: T[],
+  identity: (item: T) => string = (item) => stableRecord(item),
+): { idMap: Map<number, number>; added: number; skipped: number } {
+  const idMap = new Map<number, number>();
+  let added = 0;
+  let skipped = 0;
+  for (const source of imported) {
+    const key = identity(source);
+    const duplicate = current.find((item) => identity(item) === key);
+    if (duplicate) {
+      idMap.set(source.id, duplicate.id);
+      skipped += 1;
+      continue;
+    }
+    let id = source.id;
+    if (current.some((item) => item.id === id)) id = current.reduce((max, item) => Math.max(max, item.id), 0) + 1;
+    current.push({ ...structuredClone(source), id });
+    idMap.set(source.id, id);
+    added += 1;
+  }
+  return { idMap, added, skipped };
+}
+
+function mergePreviewState(target: AppState, source: AppState): { added: number; skipped: number } {
+  let added = 0;
+  let skipped = 0;
+  const merge = <T extends { id: number }>(
+    targetRows: T[],
+    rows: T[],
+    identity?: (item: T) => string,
+  ): Map<number, number> => {
+    const result = mergePreviewRows(targetRows, rows, identity);
+    added += result.added;
+    skipped += result.skipped;
+    return result.idMap;
+  };
+  const siteIds = merge(target.sites, source.sites, (site) => `name:${site.name.trim().toLocaleLowerCase('it')}`);
+  const productIds = merge(target.products, source.products, (product) => `code:${product.code.trim()}`);
+  const employeeIds = merge(target.employees, source.employees, (employee) => {
+    const key = employee.barcode || employee.recognition_code || employee.email;
+    return key ? `employee:${key}` : stableRecord(employee);
+  });
+  const supplierIds = merge(target.suppliers, source.suppliers, (supplier) => `supplier:${supplier.name.trim().toLocaleLowerCase('it')}`);
+  const customerIds = merge(target.customers, source.customers, (customer) => {
+    const key = customer.email.trim().toLocaleLowerCase('it') || customer.phone.trim();
+    return key ? `customer:${key}` : stableRecord(customer);
+  });
+  const sales = source.sales.map((sale) => ({
+    ...sale,
+    items: sale.items.map((item) => ({ ...item, product_id: productIds.get(item.product_id) ?? item.product_id })),
+  }));
+  const saleIds = merge(target.sales, sales, (sale) => `receipt:${sale.receipt_no}`);
+  merge(target.promotions, source.promotions);
+  merge(target.voucherBatches, source.voucherBatches, (batch) =>
+    `vouchers:${batch.discount_percentage}:${batch.starts_at}:${batch.ends_at}:${[...batch.codes].sort().join(',')}`);
+  merge(target.stockMovements, source.stockMovements.map((movement) => ({
+    ...movement, product_id: productIds.get(movement.product_id) ?? movement.product_id,
+  })));
+  merge(target.stockDistributions, source.stockDistributions);
+  merge(target.employeeActivities, source.employeeActivities.map((activity) => ({
+    ...activity, employee_id: employeeIds.get(activity.employee_id) ?? activity.employee_id,
+  })));
+  merge(target.expenses, source.expenses);
+  merge(target.refunds, source.refunds.map((refund) => ({
+    ...refund, sale_id: saleIds.get(refund.sale_id) ?? refund.sale_id,
+  })));
+  merge(target.payrollPayments, source.payrollPayments.map((payment) => ({
+    ...payment, employee_id: employeeIds.get(payment.employee_id) ?? payment.employee_id,
+  })), (payment) => `payroll:${payment.employee_id}:${payment.pay_month}`);
+  merge(target.loyaltyCards, source.loyaltyCards.map((card) => ({
+    ...card, customer_id: card.customer_id === null ? null : customerIds.get(card.customer_id) ?? card.customer_id,
+  })), (card) => `loyalty:${card.code}`);
+  const inventoryKeys = new Set(target.siteStocks.map((stock) => `${stock.product_id}:${stock.site_id}`));
+  for (const stock of source.siteStocks) {
+    const productId = productIds.get(stock.product_id) ?? stock.product_id;
+    const siteId = siteIds.get(stock.site_id) ?? stock.site_id;
+    const key = `${productId}:${siteId}`;
+    if (inventoryKeys.has(key)) {
+      skipped += 1;
+      continue;
+    }
+    const site = target.sites.find((item) => item.id === siteId);
+    target.siteStocks.push({ ...stock, product_id: productId, site_id: siteId, site_name: site?.name ?? stock.site_name });
+    inventoryKeys.add(key);
+    added += 1;
+  }
+  const importedOrders = source.supplierOrders.map((order) => {
+    const supplierId = supplierIds.get(order.supplier_id) ?? order.supplier_id;
+    const siteId = order.site_id === null ? null : siteIds.get(order.site_id) ?? order.site_id;
+    return {
+      ...order,
+      supplier_id: supplierId,
+      site_id: siteId,
+      supplier_name: target.suppliers.find((supplier) => supplier.id === supplierId)?.name ?? order.supplier_name,
+      site_name: siteId === null ? null : target.sites.find((site) => site.id === siteId)?.name ?? order.site_name,
+      items: order.items.map((item) => ({
+        ...item,
+        product_id: productIds.get(item.product_id) ?? item.product_id,
+      })),
+    };
+  });
+  const orderResult = mergePreviewRows(
+    target.supplierOrders,
+    importedOrders,
+    (order) => `order:${order.supplier_id}:${order.site_id}:${order.created_at}:${order.items.map((item) => `${item.product_id}:${item.quantity}:${item.unit_cost}`).join('|')}`,
+  );
+  added += orderResult.added;
+  skipped += orderResult.skipped;
+  if (source.settings.shop_name) target.settings.shop_name = source.settings.shop_name;
+  target.settings.shop_number = source.settings.shop_number;
+  target.settings.shop_logo = source.settings.shop_logo;
+  target.settings.home_image = source.settings.home_image;
+  target.settings.home_video = source.settings.home_video;
+  target.settings.shop_address = source.settings.shop_address;
+  target.settings.shop_phone = source.settings.shop_phone;
+  target.settings.shop_email = source.settings.shop_email;
+  target.settings.shop_tax_id = source.settings.shop_tax_id;
+  target.settings.currency = source.settings.currency;
+  target.settings.role_permissions = source.settings.role_permissions;
+  const importedMainSiteId = Number(source.settings.main_site_id);
+  if (Number.isInteger(importedMainSiteId)) {
+    const mainSiteId = siteIds.get(importedMainSiteId) ?? importedMainSiteId;
+    if (target.sites.some((site) => site.id === mainSiteId)) target.settings.main_site_id = String(mainSiteId);
+  }
+  for (const product of target.products) {
+    const stocks = target.siteStocks.filter((stock) => stock.product_id === product.id);
+    if (stocks.length) product.stock = stocks.reduce((sum, stock) => sum + stock.stock, 0);
+  }
+  return { added, skipped };
 }
 
 function installWebPreview(): void {
@@ -347,8 +537,24 @@ function installWebPreview(): void {
       state.stockDistributions = state.stockDistributions.filter((record) => record.id !== id);
       persist();
     },
-    exportAppData: async () => { throw new Error('L’esportazione completa è disponibile nella versione desktop.'); },
-    importAppData: async () => { throw new Error('L’importazione completa è disponibile nella versione desktop.'); },
+    exportAppData: async (): Promise<AppDataBackup> => ({
+      format: 'gestionale-supermercato-data',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      tables: {},
+      previewState: structuredClone(state),
+    }),
+    importAppData: async (backup): Promise<{ added: number; skipped: number }> => {
+      if (!backup || backup.format !== 'gestionale-supermercato-data' || backup.version !== 1
+        || !isPreviewState(backup.previewState)) {
+        throw new Error('Seleziona un archivio esportato dall’anteprima web. I file desktop non sono compatibili con i dati dimostrativi.');
+      }
+      const mergedState = structuredClone(state);
+      const result = mergePreviewState(mergedState, backup.previewState);
+      window.localStorage.setItem(storageKey, JSON.stringify(mergedState));
+      state = mergedState;
+      return result;
+    },
     checkout: async (checkout: CheckoutInput) => {
       const owner = employeeByBarcode(checkout.employee_barcode ?? demoOwnerBarcode);
       const site = state.sites.find((item) => item.id === checkout.site_id)

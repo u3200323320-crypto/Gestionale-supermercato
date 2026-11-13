@@ -93,6 +93,7 @@ export interface AppDataBackup {
   exportedAt: string;
   tables: Record<string, Array<Record<string, string | number | null>>>;
   rendererPreferences?: Record<string, string>;
+  previewState?: AppState;
 }
 
 export interface LoyaltyCard {
