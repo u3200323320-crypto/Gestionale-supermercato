@@ -1427,6 +1427,8 @@ body svg text, body svg tspan { fill: #000 !important; }
 #inventory-history-print .table-wrap, #employee-tracker-print .table-wrap { max-height: none; overflow: visible; }
 #inventory-history-print table, #employee-tracker-print table { width: 100%; table-layout: fixed; white-space: normal; }
 #inventory-history-print th, #inventory-history-print td, #employee-tracker-print th, #employee-tracker-print td { overflow-wrap: anywhere; }
+#inventory-history-print th:nth-child(n + 3), #inventory-history-print td:nth-child(n + 3) { padding-inline: 7px; }
+#employee-tracker-print th:nth-child(n + 2):nth-child(-n + 4), #employee-tracker-print td:nth-child(n + 2):nth-child(-n + 4) { padding-inline: 7px; }
 #inventory-history-print .table-wrap th, #employee-tracker-print .table-wrap th { position: sticky; top: 72px; z-index: 4; background: #1685dc; color: #fff !important; }
 .app-shell:has(.web-preview-banner) #inventory-history-print .table-wrap th,
 .app-shell:has(.web-preview-banner) #employee-tracker-print .table-wrap th { top: 114px; }
