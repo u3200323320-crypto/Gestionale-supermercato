@@ -481,7 +481,8 @@ function initDatabase(): void {
     );
     CREATE TABLE IF NOT EXISTS stock_distributions (
       id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, from_site TEXT NOT NULL,
-      to_site TEXT NOT NULL, sender TEXT NOT NULL, recipient TEXT NOT NULL, file_path TEXT NOT NULL
+      to_site TEXT NOT NULL, sender TEXT NOT NULL, recipient TEXT NOT NULL, file_path TEXT NOT NULL,
+      document_data TEXT NOT NULL DEFAULT ''
     );
     CREATE TABLE IF NOT EXISTS site_inventory (
       product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -593,6 +594,10 @@ function initDatabase(): void {
   }
   if (!stockMovementColumns.some((column) => column.name === 'site')) {
     database.exec("ALTER TABLE stock_movements ADD COLUMN site TEXT NOT NULL DEFAULT ''");
+  }
+  const distributionColumns = database.prepare('PRAGMA table_info(stock_distributions)').all() as Array<{ name: string }>;
+  if (!distributionColumns.some((column) => column.name === 'document_data')) {
+    database.exec("ALTER TABLE stock_distributions ADD COLUMN document_data TEXT NOT NULL DEFAULT ''");
   }
   const loyaltyCardColumns = database.prepare('PRAGMA table_info(loyalty_cards)').all() as Array<{ name: string }>;
   if (!loyaltyCardColumns.some((column) => column.name === 'barcode')) {
@@ -715,7 +720,7 @@ type DistributionPdfData = {
   items: Array<{ name: string; code: string; unit: string; quantity: number }>;
 };
 
-function distributionPdf(data: DistributionPdfData): Promise<Buffer> {
+function distributionPdf(data: DistributionPdfData, rtl = false): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const document = new PDFDocument({ size: 'A4', margin: 42, bufferPages: true });
     const chunks: Buffer[] = [];
@@ -724,35 +729,45 @@ function distributionPdf(data: DistributionPdfData): Promise<Buffer> {
     document.once('end', () => resolve(Buffer.concat(chunks)));
     const left = 42;
     const width = document.page.width - left * 2;
+    const font = rtl
+      ? app.isPackaged ? join(process.resourcesPath, 'fonts', 'DejaVuSans.ttf') : join(app.getAppPath(), 'src', 'renderer', 'DejaVuSans.ttf')
+      : 'Helvetica';
+    const boldFont = rtl ? font : 'Helvetica-Bold';
+    const textAlign = rtl ? 'right' : 'left';
+    const unitLabel = (unit: string) => rtl
+      ? unit === 'KG' ? 'كغ' : unit === 'LITRO' ? 'لتر' : unit === 'PEZZO' ? 'قطعة' : unit
+      : unit;
+    const quantityNumber = new Intl.NumberFormat(rtl ? 'ar-EG-u-nu-latn' : 'it-IT', { maximumFractionDigits: 3 });
     const colors = { ink: '#18332a', green: '#176847', pale: '#edf5ef', line: '#dce7df', muted: '#66766c', white: '#ffffff' };
     const drawPageHeader = () => {
       document.save();
       document.rect(0, 0, document.page.width, 108).fill(colors.ink);
       document.rect(0, 0, document.page.width, 5).fill('#93c54b');
-      document.fillColor('#b9d8c6').fontSize(8).font('Helvetica-Bold')
-        .text('GESTIONE SUPERMERCATO  /  LOGISTICA', left, 23, { characterSpacing: 1.15 });
-      document.fillColor(colors.white).fontSize(21).text('Documento di trasferimento', left, 43, { width });
-      document.fillColor('#dce9e0').font('Helvetica').fontSize(9)
-        .text(new Date(data.created_at).toLocaleString('it-IT'), left, 76, { width });
+      document.fillColor('#b9d8c6').fontSize(8).font(boldFont)
+        .text(rtl ? 'إدارة السوبرماركت  /  الخدمات اللوجستية' : 'GESTIONE SUPERMERCATO  /  LOGISTICA', left, 23, { characterSpacing: rtl ? 0 : 1.15, width, align: textAlign });
+      document.fillColor(colors.white).font(boldFont).fontSize(21)
+        .text(rtl ? 'وثيقة نقل البضائع' : 'Documento di trasferimento', left, 43, { width, align: textAlign });
+      document.fillColor('#dce9e0').font(font).fontSize(9)
+        .text(new Date(data.created_at).toLocaleString(rtl ? 'ar-EG-u-nu-latn' : 'it-IT'), left, 76, { width, align: textAlign });
       document.restore();
     };
     const drawInfoCard = (label: string, value: string, x: number, y: number, cardWidth: number, cardHeight: number) => {
       document.save();
       document.roundedRect(x, y, cardWidth, cardHeight, 5).fill(colors.pale);
       document.roundedRect(x, y, 3, cardHeight, 1).fill(colors.green);
-      document.fillColor(colors.muted).font('Helvetica-Bold').fontSize(7)
-        .text(label, x + 12, y + 9, { width: cardWidth - 24, characterSpacing: 0.6 });
-      document.fillColor(colors.ink).font('Helvetica-Bold').fontSize(10)
-        .text(value || '—', x + 12, y + 23, { width: cardWidth - 24, height: cardHeight - 28, ellipsis: true });
+      document.fillColor(colors.muted).font(boldFont).fontSize(7)
+        .text(label, x + 12, y + 9, { width: cardWidth - 24, characterSpacing: rtl ? 0 : 0.6, align: textAlign });
+      document.fillColor(colors.ink).font(boldFont).fontSize(10)
+        .text(value || '—', x + 12, y + 23, { width: cardWidth - 24, height: cardHeight - 28, ellipsis: true, align: textAlign });
       document.restore();
     };
     const drawDocumentInfo = () => {
       const gap = 12;
       const cardWidth = (width - gap) / 2;
-      drawInfoCard('SEDE DI PARTENZA', data.from_site, left, 124, cardWidth, 54);
-      drawInfoCard('SEDE DI DESTINAZIONE', data.to_site, left + cardWidth + gap, 124, cardWidth, 54);
-      drawInfoCard('PREPARATO DA', data.sender, left, 188, cardWidth, 44);
-      drawInfoCard('RICEVUTO DA', data.recipient, left + cardWidth + gap, 188, cardWidth, 44);
+      drawInfoCard(rtl ? 'فرع الإرسال' : 'SEDE DI PARTENZA', data.from_site, left, 124, cardWidth, 54);
+      drawInfoCard(rtl ? 'فرع الاستلام' : 'SEDE DI DESTINAZIONE', data.to_site, left + cardWidth + gap, 124, cardWidth, 54);
+      drawInfoCard(rtl ? 'أرسله' : 'PREPARATO DA', data.sender, left, 188, cardWidth, 44);
+      drawInfoCard(rtl ? 'استلمه' : 'RICEVUTO DA', data.recipient, left + cardWidth + gap, 188, cardWidth, 44);
     };
     const numberX = left + 10;
     const productX = left + 48;
@@ -760,21 +775,21 @@ function distributionPdf(data: DistributionPdfData): Promise<Buffer> {
     const quantityX = left + width - 122;
     const drawTableHeader = (y: number) => {
       document.roundedRect(left, y, width, 27, 4).fill(colors.green);
-      document.fillColor(colors.white).font('Helvetica-Bold').fontSize(7.5)
-        .text('N.', numberX, y + 9, { width: 26 })
-        .text('ARTICOLO', productX, y + 9, { width: codeX - productX - 12 })
-        .text('BARCODE', codeX, y + 9, { width: quantityX - codeX - 12 })
-        .text('QUANTITÀ', quantityX, y + 9, { width: 108, align: 'right' });
+      document.fillColor(colors.white).font(boldFont).fontSize(7.5)
+        .text(rtl ? 'رقم' : 'N.', numberX, y + 9, { width: 26, align: textAlign })
+        .text(rtl ? 'المنتج' : 'ARTICOLO', productX, y + 9, { width: codeX - productX - 12, align: textAlign })
+        .text(rtl ? 'الرمز الشريطي' : 'BARCODE', codeX, y + 9, { width: quantityX - codeX - 12, align: textAlign })
+        .text(rtl ? 'الكمية' : 'QUANTITÀ', quantityX, y + 9, { width: 108, align: textAlign });
     };
     drawPageHeader();
     drawDocumentInfo();
-    document.fillColor(colors.muted).font('Helvetica-Bold').fontSize(8)
-      .text('DETTAGLIO MERCE', left, 251, { characterSpacing: 0.9 });
+    document.fillColor(colors.muted).font(boldFont).fontSize(8)
+      .text(rtl ? 'تفاصيل البضائع' : 'DETTAGLIO MERCE', left, 251, { characterSpacing: rtl ? 0 : 0.9, width, align: textAlign });
     drawTableHeader(267);
     let cursor = 294;
     const rows = data.items.length
       ? data.items
-      : [{ name: 'Nessun articolo nel documento', code: '—', unit: '', quantity: 0 }];
+      : [{ name: rtl ? 'لا توجد منتجات في المستند' : 'Nessun articolo nel documento', code: '—', unit: '', quantity: 0 }];
     rows.forEach((item, index) => {
       const rowHeight = 38;
       if (cursor + rowHeight > document.page.height - 58) {
@@ -785,42 +800,42 @@ function distributionPdf(data: DistributionPdfData): Promise<Buffer> {
       }
       if (index % 2 === 0) document.rect(left, cursor, width, rowHeight).fill('#f4f8f5');
       document.rect(left, cursor, width, rowHeight).lineWidth(0.45).strokeColor(colors.line).stroke();
-      document.fillColor(colors.muted).font('Helvetica').fontSize(9).text(String(index + 1).padStart(2, '0'), numberX, cursor + 12, { width: 24 });
-      document.fillColor(colors.ink).font('Helvetica-Bold').fontSize(9)
-        .text(item.name, productX, cursor + 12, { width: codeX - productX - 12, height: 16, ellipsis: true });
-      document.fillColor(colors.muted).font('Helvetica').fontSize(8)
-        .text(item.code, codeX, cursor + 12, { width: quantityX - codeX - 12, height: 16, ellipsis: true });
-      const quantity = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 3 }).format(item.quantity);
-      document.fillColor(colors.ink).font('Helvetica-Bold').fontSize(9)
-        .text(`${quantity}${item.unit ? ` ${item.unit}` : ''}`, quantityX, cursor + 12, { width: 108, align: 'right', ellipsis: true });
+      document.fillColor(colors.muted).font(font).fontSize(9).text(String(index + 1).padStart(2, '0'), numberX, cursor + 12, { width: 24, align: textAlign });
+      document.fillColor(colors.ink).font(boldFont).fontSize(9)
+        .text(item.name, productX, cursor + 12, { width: codeX - productX - 12, height: 16, ellipsis: true, align: textAlign });
+      document.fillColor(colors.muted).font(font).fontSize(8)
+        .text(item.code, codeX, cursor + 12, { width: quantityX - codeX - 12, height: 16, ellipsis: true, align: textAlign });
+      const quantity = quantityNumber.format(item.quantity);
+      document.fillColor(colors.ink).font(boldFont).fontSize(9)
+        .text(`${quantity}${item.unit ? ` ${unitLabel(item.unit)}` : ''}`, quantityX, cursor + 12, { width: 108, align: textAlign, ellipsis: true });
       cursor += rowHeight;
     });
     const quantitiesByUnit = new Map<string, number>();
     data.items.forEach((item) => quantitiesByUnit.set(item.unit, (quantitiesByUnit.get(item.unit) ?? 0) + item.quantity));
     const quantitySummary = [...quantitiesByUnit].map(([unit, quantity]) =>
-      `${new Intl.NumberFormat('it-IT', { maximumFractionDigits: 3 }).format(quantity)} ${unit}`).join('  ·  ') || '—';
+      `${quantityNumber.format(quantity)} ${unitLabel(unit)}`).join('  ·  ') || '—';
     if (cursor + 70 > document.page.height - 50) {
       document.addPage();
       drawPageHeader();
       cursor = 132;
     }
     document.roundedRect(left, cursor + 12, width, 54, 6).fill(colors.pale);
-    document.fillColor(colors.green).font('Helvetica-Bold').fontSize(7)
-      .text('ARTICOLI', left + 14, cursor + 23, { characterSpacing: 0.6 });
-    document.fillColor(colors.ink).fontSize(12).text(String(data.items.length), left + 14, cursor + 37);
-    document.fillColor(colors.green).fontSize(7)
-      .text('QUANTITÀ PER UNITÀ', left + 100, cursor + 23, { characterSpacing: 0.6 });
-    document.fillColor(colors.ink).font('Helvetica-Bold').fontSize(10)
-      .text(quantitySummary, left + 100, cursor + 38, { width: width - 115, height: 18, ellipsis: true });
+    document.fillColor(colors.green).font(boldFont).fontSize(7)
+      .text(rtl ? 'عدد المنتجات' : 'ARTICOLI', left + 14, cursor + 23, { characterSpacing: rtl ? 0 : 0.6, width: width - 28, align: textAlign });
+    document.fillColor(colors.ink).font(boldFont).fontSize(12).text(String(data.items.length), left + 14, cursor + 37, { width: width - 28, align: textAlign });
+    document.fillColor(colors.green).font(boldFont).fontSize(7)
+      .text(rtl ? 'الكمية حسب الوحدة' : 'QUANTITÀ PER UNITÀ', left + 100, cursor + 23, { characterSpacing: rtl ? 0 : 0.6, width: width - 115, align: textAlign });
+    document.fillColor(colors.ink).font(boldFont).fontSize(10)
+      .text(quantitySummary, left + 100, cursor + 38, { width: width - 115, height: 18, ellipsis: true, align: textAlign });
     const pages = document.bufferedPageRange();
     for (let index = 0; index < pages.count; index += 1) {
       document.switchToPage(pages.start + index);
       document.moveTo(left, document.page.height - 43).lineTo(left + width, document.page.height - 43)
         .lineWidth(0.5).strokeColor(colors.line).stroke();
-      document.fillColor(colors.muted).font('Helvetica').fontSize(7.5)
-        .text('Documento di trasferimento · Conservare insieme alla registrazione di magazzino.', left, document.page.height - 31, { width: width - 90 });
-      document.fillColor(colors.green).font('Helvetica-Bold')
-        .text(`${index + 1} / ${pages.count}`, left + width - 80, document.page.height - 31, { width: 80, align: 'right' });
+      document.fillColor(colors.muted).font(font).fontSize(7.5)
+        .text(rtl ? 'وثيقة نقل · تُحفظ مع سجل المخزون.' : 'Documento di trasferimento · Conservare insieme alla registrazione di magazzino.', left, document.page.height - 31, { width: width - 90, align: textAlign });
+      document.fillColor(colors.green).font(boldFont)
+        .text(`${index + 1} / ${pages.count}`, left + width - 80, document.page.height - 31, { width: 80, align: textAlign });
     }
     document.end();
   });
@@ -959,6 +974,7 @@ function archiveDay(day: string): Promise<void> {
         ['Vendite registrate', String(statistics.transactions)],
         ['Incasso netto', archiveMoney.format(statistics.net)],
         ['Quantità venduta', archiveNumber.format(statistics.quantity)],
+        ['Media per scontrino', archiveMoney.format(statistics.transactions ? statistics.net / statistics.transactions : 0)],
       ],
     },
   ];
@@ -970,10 +986,12 @@ function archiveDay(day: string): Promise<void> {
     const pageWidth = doc.page.width;
     const pageHeight = doc.page.height;
     const tableWidth = pageWidth - 80;
+    const isStatistics = name === 'Statistiche';
     const drawHeader = () => {
       doc.save();
-      doc.rect(0, 0, pageWidth, 105).fill('#2b523d');
-      doc.fillColor('#dce9de').font('Helvetica').fontSize(8).text('GESTIONALE  /  ARCHIVIO GIORNALIERO', 40, 27);
+      doc.rect(0, 0, pageWidth, 105).fill(isStatistics ? '#173b5b' : '#2b523d');
+      doc.rect(40, 18, 30, 3).fill(isStatistics ? '#52a5d9' : '#86bd75');
+      doc.fillColor('#dce9de').font('Helvetica').fontSize(8).text(isStatistics ? 'GESTIONALE  /  RIEPILOGO GIORNALIERO' : 'GESTIONALE  /  ARCHIVIO GIORNALIERO', 40, 27);
       doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(22).text(name, 40, 43);
       doc.fillColor('#e4eee5').font('Helvetica').fontSize(9).text(`${shopName}  ·  ${day}`, 40, 76);
       doc.restore();
@@ -988,6 +1006,38 @@ function archiveDay(day: string): Promise<void> {
       });
     };
     drawHeader();
+    if (isStatistics) {
+      const metrics = rows.slice(1);
+      const gap = 12;
+      const cardWidth = (tableWidth - gap) / 2;
+      metrics.forEach(([label, value], index) => {
+        const x = 40 + (index % 2) * (cardWidth + gap);
+        const y = 124 + Math.floor(index / 2) * 76;
+        doc.save();
+        doc.roundedRect(x, y, cardWidth, 62, 5).fill(index === 1 ? '#edf5fb' : '#f1f5f1');
+        doc.roundedRect(x, y, 4, 62, 2).fill(index === 1 ? '#1685dc' : '#38684e');
+        doc.fillColor('#66766c').font('Helvetica-Bold').fontSize(8)
+          .text(label.toLocaleUpperCase('it-IT'), x + 14, y + 13, { width: cardWidth - 28, lineBreak: false, ellipsis: true });
+        doc.fillColor(index === 1 ? '#173b5b' : '#263c30').font('Helvetica-Bold').fontSize(17)
+          .text(value, x + 14, y + 31, { width: cardWidth - 28, lineBreak: false, ellipsis: true });
+        doc.restore();
+      });
+      doc.roundedRect(40, 284, tableWidth, 38, 4).fill('#f8faf8');
+      doc.fillColor('#66766c').font('Helvetica-Bold').fontSize(8)
+        .text('DATA DEL REPORT', 54, 298);
+      doc.fillColor('#263c30').font('Helvetica-Bold').fontSize(10)
+        .text(rows[0]?.[1] ?? day, 54, 309);
+      const pages = doc.bufferedPageRange();
+      for (let index = 0; index < pages.count; index += 1) {
+        doc.switchToPage(pages.start + index);
+        doc.fillColor('#839087').font('Helvetica').fontSize(8)
+          .text(`${shopName}  ·  ${name}  ·  Pagina ${index + 1} di ${pages.count}`, 40, pageHeight - 25, { width: tableWidth, align: 'right' });
+      }
+      stream.on('finish', resolve);
+      stream.on('error', reject);
+      doc.end();
+      return;
+    }
     let y = 124;
     drawColumnHeader(y);
     y += 24;
@@ -1325,7 +1375,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   });
   ipcMain.handle('product:transfer-stock', async (event, movement: {
     fromSiteId: number; toSiteId: number; recipientEmployeeId: number; items: Array<{ productId: number; quantity: number }>; employee_barcode: string;
-  } | null) => {
+  } | null, language: 'it' | 'ar' = 'it') => {
     const session = requireSession(event.sender.id, ['proprietario', 'direttore']);
     if (!movement || !Number.isInteger(movement.fromSiteId) || !Number.isInteger(movement.toSiteId)
       || movement.fromSiteId === movement.toSiteId || !Number.isInteger(movement.recipientEmployeeId) || movement.recipientEmployeeId < 1
@@ -1363,17 +1413,18 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       }
       return { product_id: item.productId, ...product, quantity: item.quantity };
     });
-    const fileContents = await distributionPdf({
+    const distributionData: DistributionPdfData = {
       created_at: createdAt,
       from_site: fromSite.name,
       to_site: toSite.name,
       sender: senderName,
       recipient: recipientName,
       items: distributionItems,
-    });
+    };
+    const fileContents = await distributionPdf(distributionData, language === 'ar');
     const distributionDirectory = join(app.getPath('userData'), 'Distribuzioni');
     mkdirSync(distributionDirectory, { recursive: true });
-    const filePath = join(distributionDirectory, `distribuzione-${Date.now()}-${randomUUID()}.pdf`);
+    const filePath = join(distributionDirectory, `${language === 'ar' ? 'توزيع' : 'distribuzione'}-${Date.now()}-${randomUUID()}.pdf`);
     let writtenDistributionFile = '';
     try {
       database.transaction(() => {
@@ -1403,30 +1454,39 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         }
         writeFileSync(filePath, fileContents, { flag: 'wx' });
         writtenDistributionFile = filePath;
-        database.prepare('INSERT INTO stock_distributions (created_at, from_site, to_site, sender, recipient, file_path) VALUES (?, ?, ?, ?, ?, ?)')
-          .run(createdAt, fromSite.name, toSite.name, senderName, recipientName, filePath);
+        database.prepare('INSERT INTO stock_distributions (created_at, from_site, to_site, sender, recipient, file_path, document_data) VALUES (?, ?, ?, ?, ?, ?, ?)')
+          .run(createdAt, fromSite.name, toSite.name, senderName, recipientName, filePath, JSON.stringify(distributionData));
       })();
     } catch (error) {
       if (writtenDistributionFile && existsSync(writtenDistributionFile)) unlinkSync(writtenDistributionFile);
       throw error;
     }
   });
-  ipcMain.handle('distribution:open-record', async (event, id: number) => {
+  ipcMain.handle('distribution:open-record', async (event, id: number, language: 'it' | 'ar' = 'it') => {
     requireSession(event.sender.id, ['proprietario', 'direttore']);
     if (!Number.isInteger(id) || id < 1) throw new Error('Distribuzione non valida.');
-    const record = database.prepare('SELECT file_path FROM stock_distributions WHERE id = ?').get(id) as { file_path: string } | undefined;
+    const record = database.prepare('SELECT file_path, document_data FROM stock_distributions WHERE id = ?').get(id) as { file_path: string; document_data: string } | undefined;
     const distributionDirectory = join(app.getPath('userData'), 'Distribuzioni');
-    if (!record || dirname(record.file_path) !== distributionDirectory || !existsSync(record.file_path)) throw new Error('File della distribuzione non trovato.');
+    if (!record || dirname(record.file_path) !== distributionDirectory || (!existsSync(record.file_path) && !record.document_data)) throw new Error('File della distribuzione non trovato.');
     let filePath = record.file_path;
-    if (extname(filePath).toLowerCase() !== '.pdf') {
-      const legacy = JSON.parse(readFileSync(filePath, 'utf8')) as DistributionPdfData;
-      if (typeof legacy.created_at !== 'string' || typeof legacy.from_site !== 'string'
-        || typeof legacy.to_site !== 'string' || typeof legacy.sender !== 'string'
-        || typeof legacy.recipient !== 'string' || !Array.isArray(legacy.items)
-        || legacy.items.some((item) => !item || typeof item.name !== 'string' || typeof item.code !== 'string'
-          || typeof item.unit !== 'string' || !Number.isFinite(item.quantity))) {
-        throw new Error('Il file della distribuzione non contiene dati validi.');
-      }
+    let data: DistributionPdfData | undefined;
+    if (record.document_data) {
+      data = JSON.parse(record.document_data) as DistributionPdfData;
+    } else if (extname(filePath).toLowerCase() !== '.pdf') {
+      data = JSON.parse(readFileSync(filePath, 'utf8')) as DistributionPdfData;
+    }
+    if (data && (typeof data.created_at !== 'string' || typeof data.from_site !== 'string'
+      || typeof data.to_site !== 'string' || typeof data.sender !== 'string'
+      || typeof data.recipient !== 'string' || !Array.isArray(data.items)
+      || data.items.some((item) => !item || typeof item.name !== 'string' || typeof item.code !== 'string'
+        || typeof item.unit !== 'string' || !Number.isFinite(item.quantity)))) {
+      throw new Error('Il file della distribuzione non contiene dati validi.');
+    }
+    if (language === 'ar' && data) {
+      filePath = join(distributionDirectory, `توزيع-${id}.pdf`);
+      writeFileSync(filePath, await distributionPdf(data, true));
+    } else if (data && extname(filePath).toLowerCase() !== '.pdf') {
+      const legacy = data;
       const fileContents = await distributionPdf(legacy);
       const pdfPath = join(distributionDirectory, `distribuzione-${Date.now()}-${randomUUID()}.pdf`);
       writeFileSync(pdfPath, fileContents, { flag: 'wx' });
@@ -1454,10 +1514,12 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     if (!record) throw new Error('Distribuzione non trovata.');
     const distributionDirectory = join(app.getPath('userData'), 'Distribuzioni');
     if (dirname(record.file_path) !== distributionDirectory) throw new Error('Il file della distribuzione non è valido.');
+    const localizedFilePath = join(distributionDirectory, `توزيع-${id}.pdf`);
     database.transaction(() => {
       const deleted = database.prepare('DELETE FROM stock_distributions WHERE id = ?').run(id);
       if (deleted.changes !== 1) throw new Error('Distribuzione non più disponibile.');
       if (existsSync(record.file_path)) unlinkSync(record.file_path);
+      if (existsSync(localizedFilePath)) unlinkSync(localizedFilePath);
       recordEmployeeActivity(employeeBarcode, 'stock-distribution', 'Distribuzione eliminata', `Distribuzione #${id}`);
     })();
   });

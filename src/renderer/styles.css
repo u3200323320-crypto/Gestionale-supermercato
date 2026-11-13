@@ -126,7 +126,7 @@ kbd { margin-left: auto; padding: 2px 5px; border: 1px solid #e5e8e4; border-rad
 .notification-center { position: relative; }
 .notification-trigger { position: relative; }
 .notification-badge { position: absolute; top: -7px; right: -7px; display: grid; min-width: 17px; height: 17px; place-items: center; padding: 0 3px; border: 2px solid #fff; border-radius: 10px; background: #d84b3e; color: #fff; font-size: 9px; font-weight: 700; line-height: 1; }
-.notification-panel { position: absolute; top: calc(100% + 10px); right: 0; z-index: 8; display: flex; width: min(400px, calc(100vw - 30px)); height: min(500px, calc(100vh - 80px)); flex-direction: column; overflow: hidden; padding: 13px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); box-shadow: var(--shadow); }
+.notification-panel { position: absolute; top: calc(100% + 10px); right: 0; z-index: 8; display: flex; width: min(400px, calc(100vw - 30px)); height: min(500px, calc(100dvh - 90px)); flex-direction: column; overflow: hidden; padding: 13px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); box-shadow: var(--shadow); }
 .notification-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
 .notification-panel-heading strong { font-size: 12px; }
 .notification-back { display: inline-flex; align-items: center; gap: 5px; padding: 4px 0; border: 0; background: transparent; color: var(--ink); cursor: pointer; font-size: 11px; font-weight: 600; }
@@ -1421,6 +1421,17 @@ body svg text, body svg tspan { fill: #000 !important; }
 .sale-authorization-cancel:hover { background: var(--green-dark) !important; }
 .sale-authorization .form-actions { justify-content: flex-start; }
 .balance-monthly-panel .table-wrap table { min-width: 900px; }
+.expense-file-picker { display: flex; min-width: 0; align-items: center; gap: 9px; }
+.expense-file-picker small { min-width: 0; overflow-wrap: anywhere; }
+.visually-hidden-file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
+#inventory-history-print .table-wrap, #employee-tracker-print .table-wrap { max-height: min(65vh, 680px); overflow: auto; }
+#inventory-history-print .table-wrap th, #employee-tracker-print .table-wrap th { position: sticky; top: 0; z-index: 1; background: #1685dc; color: #fff !important; }
+.data-management-actions { width: 100%; max-width: none; }
+.data-management-actions .button { width: 100%; }
+.sale-tools > .sale-camera-button { min-width: 115px; flex: 0.65 1 0; padding-inline: 8px; }
+.sale-tools > .sale-report-button { flex: 0 1 170px; }
+.sale-tools > .button:not(.sale-camera-button):not(.sale-report-button) { flex: 0 1 145px; }
+html[dir='rtl'] .notification-panel { right: auto; left: 0; }
 @media (max-width: 900px) {
   .payroll-page { grid-template-columns: minmax(0, 1fr); }
 }
@@ -1435,4 +1446,7 @@ body svg text, body svg tspan { fill: #000 !important; }
   .store-info-form .store-info-logo, .store-info-form > .button { grid-column: 1; grid-row: auto; }
   .site-form { grid-template-columns: minmax(0, 1fr); }
   .site-form .site-notes-field, .site-form .form-actions { grid-column: 1; }
+}
+@media print {
+  #inventory-history-print .table-wrap, #employee-tracker-print .table-wrap { max-height: none; overflow: visible; }
 }

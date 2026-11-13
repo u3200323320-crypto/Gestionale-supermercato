@@ -57,6 +57,10 @@
         "to": "licenses/DejaVuSans.LICENSE"
       },
       {
+        "from": "src/renderer/DejaVuSans.ttf",
+        "to": "fonts/DejaVuSans.ttf"
+      },
+      {
         "from": "build/icon.svg",
         "to": "icons/app.svg"
       }

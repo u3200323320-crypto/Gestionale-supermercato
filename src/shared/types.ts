@@ -305,8 +305,8 @@ declare global {
     saveProduct: (product: ProductInput, siteId?: number) => Promise<void>;
     updateStock: (productId: number, stock: number) => Promise<void>;
     moveStock: (movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; employee_barcode: string; destination?: string; note: string }) => Promise<void>;
-    transferStock: (movement: { fromSiteId: number; toSiteId: number; recipientEmployeeId: number; items: Array<{ productId: number; quantity: number }>; employee_barcode: string }) => Promise<void>;
-    openDistributionRecord: (id: number) => Promise<void>;
+    transferStock: (movement: { fromSiteId: number; toSiteId: number; recipientEmployeeId: number; items: Array<{ productId: number; quantity: number }>; employee_barcode: string }, language?: 'it' | 'ar') => Promise<void>;
+    openDistributionRecord: (id: number, language?: 'it' | 'ar') => Promise<void>;
     deleteDistribution: (id: number, employeeBarcode: string) => Promise<void>;
     checkout: (sale: CheckoutInput) => Promise<Sale>;
     validateVoucher: (code: string) => Promise<VoucherValidation>;
