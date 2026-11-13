@@ -21,6 +21,8 @@ import type {
 } from '../shared/types';
 
 const storageKey = 'gestionale-web-preview';
+const previousHistorySeedKey = `${storageKey}:history-v1`;
+const historySeedKey = `${storageKey}:history-v2`;
 const demoOwnerBarcode = '0000000001';
 const siteRecognitionAlphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const now = new Date();
@@ -50,6 +52,10 @@ function migrateDemoSiteRecognitionCodes(state: AppState): boolean {
       site.site_role = 'Punto vendita';
       changed = true;
     }
+    if (site.site_role === 'Magazzino' && site.site_type !== 'warehouse') {
+      site.site_type = 'warehouse';
+      changed = true;
+    }
     if (/^[a-z0-9]{15}$/.test(site.recognition_code) && !reservedCodes.has(site.recognition_code)) {
       reservedCodes.add(site.recognition_code);
       continue;
@@ -60,11 +66,74 @@ function migrateDemoSiteRecognitionCodes(state: AppState): boolean {
   return changed;
 }
 
+function demoHistorySeeds(): Pick<AppState, 'stockMovements' | 'employeeActivities'> {
+  return {
+    stockMovements: [
+      { id: 3, product_id: 2, product_name: 'Olio extravergine', movement_type: 'Carico', quantity: 18, created_at: day(-3), person: 'Giulia Bianchi', site: 'Centro', destination: '', note: 'Rifornimento reparto dispensa' },
+      { id: 4, product_id: 3, product_name: 'Mele Golden', movement_type: 'Scarico', quantity: 2.5, created_at: day(-4), person: 'Marco Verdi', site: 'Nord', destination: '', note: 'Prodotto danneggiato' },
+      { id: 5, product_id: 4, product_name: 'Latte intero', movement_type: 'Carico', quantity: 24, created_at: day(-5), person: 'Giulia Bianchi', site: 'Magazzino', destination: '', note: 'Consegna fornitore' },
+      { id: 6, product_id: 1, product_name: 'Pasta di semola', movement_type: 'Scarico', quantity: 12, created_at: day(-6), person: 'Alessandro Rossi', site: 'Magazzino', destination: 'Centro', note: 'Trasferimento al punto vendita' },
+      { id: 7, product_id: 5, product_name: 'Caffè macinato', movement_type: 'Carico', quantity: 10, created_at: day(-7), person: 'Marco Verdi', site: 'Nord', destination: '', note: 'Riordino scorte' },
+      { id: 8, product_id: 2, product_name: 'Olio extravergine', movement_type: 'Scarico', quantity: 4, created_at: day(-8), person: 'Giulia Bianchi', site: 'Centro', destination: 'Nord', note: 'Trasferimento tra sedi' },
+      { id: 9, product_id: 6, product_name: 'Detersivo piatti', movement_type: 'Carico', quantity: 15, created_at: day(-9), person: 'Alessandro Rossi', site: 'Magazzino', destination: '', note: 'Consegna fornitore' },
+      { id: 10, product_id: 3, product_name: 'Mele Golden', movement_type: 'Carico', quantity: 8, created_at: day(-10), person: 'Marco Verdi', site: 'Centro', destination: '', note: 'Rifornimento reparto ortofrutta' },
+    ],
+    employeeActivities: [
+      { id: 3, employee_id: 1, employee_name: 'Alessandro Rossi', section: 'Accesso', action: 'Accesso al gestionale', detail: 'Sessione avviata', created_at: day(0) },
+      { id: 4, employee_id: 2, employee_name: 'Giulia Bianchi', section: 'Magazzino', action: 'Carico merce', detail: 'Olio extravergine · 18 · Centro', created_at: day(-2) },
+      { id: 5, employee_id: 3, employee_name: 'Marco Verdi', section: 'Magazzino', action: 'Scarico merce', detail: 'Mele Golden · 2,5 kg · Nord', created_at: day(-3) },
+      { id: 6, employee_id: 2, employee_name: 'Giulia Bianchi', section: 'Distribuzione', action: 'Merce trasferita', detail: 'Pasta di semola · Magazzino → Centro', created_at: day(-5) },
+      { id: 7, employee_id: 1, employee_name: 'Alessandro Rossi', section: 'Dipendenti', action: 'Modifica dipendente', detail: 'Aggiornamento turno di Marco Verdi', created_at: day(-6) },
+      { id: 8, employee_id: 3, employee_name: 'Marco Verdi', section: 'Cassa', action: 'Vendita completata', detail: 'Scontrino 3314895 · Nord', created_at: day(-7) },
+      { id: 9, employee_id: 2, employee_name: 'Giulia Bianchi', section: 'Magazzino', action: 'Inventario aggiornato', detail: 'Caffè macinato · controllo scorte', created_at: day(-8) },
+      { id: 10, employee_id: 1, employee_name: 'Alessandro Rossi', section: 'Sedi', action: 'Verifica scorte', detail: 'Controllo giacenze presso Magazzino', created_at: day(-10) },
+    ],
+  };
+}
+
+function additionalDemoStockMovements(): AppState['stockMovements'] {
+  const products = [
+    { id: 1, name: 'Pasta di semola', quantity: 24 },
+    { id: 2, name: 'Olio extravergine', quantity: 12 },
+    { id: 3, name: 'Mele Golden', quantity: 3.5 },
+    { id: 4, name: 'Latte intero', quantity: 18 },
+    { id: 5, name: 'Caffè macinato', quantity: 8 },
+    { id: 6, name: 'Detersivo piatti', quantity: 10 },
+  ];
+  const people = ['Giulia Bianchi', 'Marco Verdi', 'Alessandro Rossi'];
+  const sites = ['Magazzino', 'Centro', 'Nord'];
+  const notes = [
+    'Consegna fornitore',
+    'Rifornimento reparto',
+    'Trasferimento tra sedi',
+    'Verifica inventario',
+    'Prodotto danneggiato',
+  ];
+  return Array.from({ length: 40 }, (_, index) => {
+    const product = products[index % products.length];
+    const movementType = index % 2 === 0 ? 'Carico' : 'Scarico';
+    const site = sites[index % sites.length];
+    const isTransfer = movementType === 'Scarico' && index % 4 === 1;
+    return {
+      id: index + 11,
+      product_id: product.id,
+      product_name: product.name,
+      movement_type: movementType,
+      quantity: product.quantity + (index % 3),
+      created_at: day(-11 - index),
+      person: people[index % people.length],
+      site,
+      destination: isTransfer ? sites[(index + 1) % sites.length] : '',
+      note: notes[index % notes.length],
+    };
+  });
+}
+
 function createDemoState(): AppState {
   const sites: AppState['sites'] = [
     { id: 1, name: 'Centro', site_role: 'Punto vendita', address: 'Via Roma 12', phone: '02 555 0101', email: 'centro@example.test', tax_id: '', manager_name: 'Giulia Bianchi', opening_hours: 'Lun-Sab 08:00-20:00', notes: '', site_type: 'store', recognition_code: 'centro000000000', created_at: day(-120) },
     { id: 2, name: 'Nord', site_role: 'Punto vendita', address: 'Via Milano 48', phone: '02 555 0102', email: 'nord@example.test', tax_id: '', manager_name: 'Marco Verdi', opening_hours: 'Lun-Sab 08:00-20:00', notes: '', site_type: 'store', recognition_code: 'nord00000000000', created_at: day(-90) },
-    { id: 3, name: 'Magazzino', site_role: 'Magazzino', address: 'Via Industria 5', phone: '02 555 0103', email: '', tax_id: '', manager_name: '', opening_hours: '', notes: '', site_type: 'store', recognition_code: 'magaz0000000000', created_at: day(-75) },
+    { id: 3, name: 'Magazzino', site_role: 'Magazzino', address: 'Via Industria 5', phone: '02 555 0103', email: '', tax_id: '', manager_name: '', opening_hours: '', notes: '', site_type: 'warehouse', recognition_code: 'magaz0000000000', created_at: day(-75) },
   ];
   const products: AppState['products'] = [
     { id: 1, code: '800123450001', name: 'Pasta di semola', unit: 'PEZZO', category: 'Dispensa', sale_price: 1.49, purchase_price: 0.72, stock: 132, low_stock_threshold: 24 },
@@ -127,6 +196,7 @@ function createDemoState(): AppState {
     employeeActivities: [
       { id: 1, employee_id: 2, employee_name: 'Giulia Bianchi', section: 'Cassa', action: 'Vendita completata', detail: 'Scontrino 3314898', created_at: day(0) },
       { id: 2, employee_id: 3, employee_name: 'Marco Verdi', section: 'Magazzino', action: 'Carico merce', detail: 'Pasta di semola · 20', created_at: day(-1) },
+      ...demoHistorySeeds().employeeActivities,
     ],
     payrollPayments: [
       { id: 1, employee_id: 2, pay_month: localDay(-30).slice(0, 7), amount: 1850, payment_date: localDay(-20), payment_method: 'Bonifico', first_name: 'Giulia', last_name: 'Bianchi', site: 'Centro' },
@@ -144,6 +214,8 @@ function createDemoState(): AppState {
     stockMovements: [
       { id: 1, product_id: 1, product_name: 'Pasta di semola', movement_type: 'Carico', quantity: 36, created_at: day(-2), person: 'Giulia Bianchi', site: 'Centro', destination: '', note: 'Rifornimento settimanale' },
       { id: 2, product_id: 4, product_name: 'Latte intero', movement_type: 'Scarico', quantity: 4, created_at: day(-1), person: 'Marco Verdi', site: 'Nord', destination: '', note: 'Prodotto danneggiato' },
+      ...demoHistorySeeds().stockMovements,
+      ...additionalDemoStockMovements(),
     ],
     stockDistributions: [],
     expenses: [
@@ -353,6 +425,22 @@ function installWebPreview(): void {
   let state = storedState ? JSON.parse(storedState) as AppState : createDemoState();
   const persist = () => window.localStorage.setItem(storageKey, JSON.stringify(state));
   let migrationChanged = migrateDemoSiteRecognitionCodes(state);
+  if (!window.localStorage.getItem(historySeedKey)) {
+    if (storedState) {
+      const previousSeeds = window.localStorage.getItem(previousHistorySeedKey)
+        ? { stockMovements: [], employeeActivities: [] }
+        : demoHistorySeeds();
+      const stockMovementSeeds = [...previousSeeds.stockMovements, ...additionalDemoStockMovements()];
+      const nextMovementId = Math.max(0, ...state.stockMovements.map(({ id }) => id)) + 1;
+      const nextActivityId = Math.max(0, ...state.employeeActivities.map(({ id }) => id)) + 1;
+      state.stockMovements.push(...stockMovementSeeds.map((movement, index) => ({ ...movement, id: nextMovementId + index })));
+      state.employeeActivities.push(...previousSeeds.employeeActivities.map((activity, index) => ({ ...activity, id: nextActivityId + index })));
+      migrationChanged = true;
+    }
+    window.localStorage.setItem(historySeedKey, 'true');
+  }
+  state.stockMovements.sort((left, right) => right.created_at.localeCompare(left.created_at));
+  state.employeeActivities.sort((left, right) => right.created_at.localeCompare(left.created_at));
   if (!Array.isArray(state.suppliers)) {
     state.suppliers = [];
     migrationChanged = true;
