@@ -134,6 +134,114 @@ const ICONS = [
     ctx.stroke();
     ctx.globalAlpha = 1;
   },
+  // bottle
+  (x,y,s,a) => {
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1.5 * s;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x-4*s, y-12*s);
+    ctx.lineTo(x+4*s, y-12*s);
+    ctx.lineTo(x+4*s, y-7*s);
+    ctx.lineTo(x+8*s, y-2*s);
+    ctx.lineTo(x+8*s, y+11*s);
+    ctx.lineTo(x-8*s, y+11*s);
+    ctx.lineTo(x-8*s, y-2*s);
+    ctx.lineTo(x-4*s, y-7*s);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x-7*s, y+2*s);
+    ctx.lineTo(x+7*s, y+2*s);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  },
+  // fruit
+  (x,y,s,a) => {
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1.5 * s;
+    ctx.beginPath();
+    ctx.moveTo(x, y-5*s);
+    ctx.bezierCurveTo(x-12*s, y-15*s, x-16*s, y+3*s, x-8*s, y+10*s);
+    ctx.bezierCurveTo(x-3*s, y+14*s, x-1*s, y+10*s, x, y+10*s);
+    ctx.bezierCurveTo(x+2*s, y+10*s, x+7*s, y+14*s, x+11*s, y+8*s);
+    ctx.bezierCurveTo(x+18*s, y-2*s, x+10*s, y-14*s, x, y-5*s);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y-5*s);
+    ctx.quadraticCurveTo(x, y-13*s, x+6*s, y-15*s);
+    ctx.quadraticCurveTo(x+8*s, y-9*s, x, y-5*s);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  },
+  // bread
+  (x,y,s,a) => {
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1.5 * s;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x-13*s, y+8*s);
+    ctx.lineTo(x-13*s, y+2*s);
+    ctx.quadraticCurveTo(x-13*s, y-10*s, x, y-10*s);
+    ctx.quadraticCurveTo(x+13*s, y-10*s, x+13*s, y+2*s);
+    ctx.lineTo(x+13*s, y+8*s);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x-5*s, y-6*s);
+    ctx.lineTo(x-2*s, y-1*s);
+    ctx.moveTo(x+2*s, y-7*s);
+    ctx.lineTo(x+5*s, y-2*s);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  },
+  // fish
+  (x,y,s,a) => {
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1.5 * s;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x-13*s, y);
+    ctx.quadraticCurveTo(x, y-12*s, x+11*s, y);
+    ctx.quadraticCurveTo(x, y+12*s, x-13*s, y);
+    ctx.lineTo(x-19*s, y-7*s);
+    ctx.lineTo(x-19*s, y+7*s);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x+6*s, y-2*s, 1*s, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  },
+  // receipt
+  (x,y,s,a) => {
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1.5 * s;
+    ctx.beginPath();
+    ctx.moveTo(x-9*s, y-12*s);
+    ctx.lineTo(x+9*s, y-12*s);
+    ctx.lineTo(x+9*s, y+12*s);
+    ctx.lineTo(x+5*s, y+9*s);
+    ctx.lineTo(x, y+12*s);
+    ctx.lineTo(x-5*s, y+9*s);
+    ctx.lineTo(x-9*s, y+12*s);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x-5*s, y-5*s);
+    ctx.lineTo(x+5*s, y-5*s);
+    ctx.moveTo(x-5*s, y);
+    ctx.lineTo(x+5*s, y);
+    ctx.moveTo(x-5*s, y+5*s);
+    ctx.lineTo(x+2*s, y+5*s);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  },
 ];
 
 class Particle {
@@ -144,7 +252,6 @@ class Particle {
     this.vy = -(0.15 + Math.random() * 0.3);
     this.vx = (Math.random() - 0.5) * 0.2;
     this.scale = 0.5 + Math.random() * 0.9;
-    this.alpha = 0.08 + Math.random() * 0.12;
     this.icon = Math.floor(Math.random() * ICONS.length);
     this.rotation = (Math.random() - 0.5) * 0.3;
     this.angle = 0;
@@ -159,7 +266,7 @@ class Particle {
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
-    ICONS[this.icon](0, 0, this.scale, this.alpha);
+    ICONS[this.icon](0, 0, this.scale, 1);
     ctx.restore();
   }
 }
