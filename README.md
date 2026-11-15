@@ -21,6 +21,10 @@ npm run preview:web
 
 Apri l’indirizzo locale mostrato nel terminale (normalmente `http://127.0.0.1:5173`). La demo usa dati fittizi salvati solo nel browser e non accede al database desktop. Il barcode Proprietario dimostrativo è `0000000001`; dalla fascia in alto puoi ripristinare i dati iniziali. Le funzioni che dipendono da dispositivi o file locali sono limitate nella demo. La pagina **Gestione dati app** consente di esportare e reimportare i dati dimostrativi del browser; questi backup non sono compatibili con l’app desktop.
 
+## App Android
+
+Il workflow GitHub Actions compila anche un APK Android e lo pubblica insieme all’installer Windows negli asset della stessa GitHub Release. L’APK usa l’anteprima web con dati dimostrativi salvati nello spazio privato dell’app sul dispositivo; non legge né condivide il database o i file dell’app Windows. I dati Android e Windows sono separati e non sincronizzati. Per compilare localmente, esegui `npm run build:android` e poi `cd android && ./gradlew assembleDebug`; l’APK installabile viene creato in `android/app/build/outputs/apk/debug/app-debug.apk`.
+
 Su una nuova installazione desktop viene creato automaticamente un account Proprietario con un barcode casuale. Il barcode iniziale è salvato in `Accesso iniziale/Credenziali proprietario.txt` nella cartella di archivio (Documenti/Gestionale-Archivio per impostazione predefinita); conserva il file in modo sicuro e usalo per accedere dopo la scadenza dell’accesso temporaneo iniziale. Il codice di riconoscimento delle sedi è composto da 15 lettere e numeri.
 
 Per creare manualmente l'installer Windows:
@@ -54,6 +58,6 @@ In sviluppo viene caricato un catalogo dimostrativo; l'installer parte con il ma
 
 ## Release automatiche
 
-Il workflow `.github/workflows/release.yml` crea un installer Windows e una GitHub Release per ogni push su qualsiasi branch. La versione viene incrementata usando il numero progressivo della run (`0.1.<run>`). Lo stesso workflow può essere avviato manualmente dalla scheda Actions.
+Il workflow `.github/workflows/release.yml` crea un installer Windows, un APK Android e una GitHub Release per ogni push su qualsiasi branch. La versione viene incrementata usando il numero progressivo della run (`0.1.<run>`). Lo stesso workflow può essere avviato manualmente dalla scheda Actions.
 
-Nel repository GitHub, abilita i permessi di scrittura per `GITHUB_TOKEN` in **Settings > Actions > General > Workflow permissions**. L'installer scaricabile si trova negli asset della release più recente.
+Nel repository GitHub, abilita i permessi di scrittura per `GITHUB_TOKEN` in **Settings > Actions > General > Workflow permissions**. L'installer Windows e l’APK Android scaricabili si trovano negli asset della release più recente.

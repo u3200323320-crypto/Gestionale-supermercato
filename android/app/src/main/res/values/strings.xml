@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Gestione Supermercato</string>
+    <string name="title_activity_main">Gestione Supermercato</string>
+    <string name="package_name">it.gestionale.supermercato</string>
+    <string name="custom_url_scheme">it.gestionale.supermercato</string>
+</resources>
