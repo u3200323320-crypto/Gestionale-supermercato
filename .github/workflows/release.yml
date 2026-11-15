@@ -1,4 +1,4 @@
-name: Build and release apps
+name: Build and release Windows app
 
 on:
   push:
@@ -8,46 +8,7 @@ permissions:
   contents: write
 
 jobs:
-  android:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: 'platforms;android-36 build-tools;36.0.0'
-      - name: Install dependencies
-        run: npm ci
-      - name: Set release version
-        shell: bash
-        run: npm pkg set version="0.1.${GITHUB_RUN_NUMBER}"
-      - name: Build Android web assets
-        run: npm run build:android
-      - name: Build APK
-        working-directory: android
-        run: ./gradlew assembleDebug
-        env:
-          APP_VERSION: 0.1.${{ github.run_number }}
-          ANDROID_VERSION_CODE: ${{ github.run_number }}
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-
   release:
-    needs: android
     runs-on: windows-latest
     steps:
       - name: Check out source
@@ -64,20 +25,10 @@ jobs:
         run: npm pkg set version="0.1.${GITHUB_RUN_NUMBER}"
       - name: Build Windows installer
         run: npm run dist:win
-      - name: Download Android APK
-        uses: actions/download-artifact@v4
-        with:
-          name: android-apk
-          path: release
-      - name: Rename Android APK
-        shell: bash
-        run: mv release/app-debug.apk "release/Gestione-Supermercato-${{ github.run_number }}.apk"
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v0.1.${{ github.run_number }}
           name: Gestionale supermercato v0.1.${{ github.run_number }}
           generate_release_notes: true
-          files: |
-            release/*.exe
-            release/*.apk
+          files: release/*.exe

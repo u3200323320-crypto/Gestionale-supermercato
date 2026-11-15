@@ -7,16 +7,12 @@
   "scripts": {
     "dev": "electron-vite dev",
     "preview:web": "vite --config vite.web.config.ts --host 127.0.0.1",
-    "build:web": "vite build --config vite.web.config.ts",
-    "build:android": "npm run build:web && cap sync android",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit",
     "dist:win": "electron-vite build && electron-builder --win nsis --publish never"
   },
   "dependencies": {
-    "@capacitor/android": "^8.6.2",
-    "@capacitor/core": "^8.6.2",
     "@fontsource/dm-sans": "^5.2.6",
     "@fontsource/manrope": "^5.2.6",
     "@fontsource/noto-sans-arabic": "^5.3.0",
@@ -32,7 +28,6 @@
     "recharts": "^2.15.4"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.6.2",
     "@types/better-sqlite3": "^7.6.13",
     "@types/jsbarcode": "^3.11.3",
     "@types/node": "^22.18.6",
