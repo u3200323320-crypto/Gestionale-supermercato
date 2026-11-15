@@ -183,14 +183,16 @@ function removeExpiredRecords(): number {
 
 function isEmployeeBarcode(value: unknown): boolean {
   if (typeof value !== 'string' || !value.trim()) return false;
-  return Boolean(database.prepare('SELECT 1 FROM employees WHERE recognition_code = ? AND barcode = ?')
+  return Boolean(database.prepare('SELECT 1 FROM employees WHERE recognition_code = ? COLLATE NOCASE AND barcode = ? COLLATE NOCASE')
     .get(value.trim(), value.trim()));
 }
 
 function employeeForLogin(value: unknown): AuthenticatedEmployee | null {
   if (typeof value !== 'string' || !value.trim() || value.length > 128) return null;
+  const barcode = value.trim();
   return database.prepare(`SELECT id, first_name, last_name, role, barcode FROM employees
-    WHERE recognition_code = ? AND barcode = ?`).get(value.trim(), value.trim()) as AuthenticatedEmployee | undefined ?? null;
+    WHERE recognition_code = ? COLLATE NOCASE AND barcode = ? COLLATE NOCASE`)
+    .get(barcode, barcode) as AuthenticatedEmployee | undefined ?? null;
 }
 
 function requireSession(senderId: number, allowedRoles?: string[]): AuthenticatedEmployee {
@@ -877,11 +879,11 @@ function siteIdByName(name: string): number {
 function defaultStockSite(): { id: number; name: string } {
   const configuredSiteId = Number(setting('main_site_id'));
   const configuredSite = Number.isSafeInteger(configuredSiteId) && configuredSiteId > 0
-    ? database.prepare('SELECT id, name FROM sites WHERE id = ?').get(configuredSiteId) as { id: number; name: string } | undefined
+    ? database.prepare("SELECT id, name FROM sites WHERE id = ? AND site_role = 'Magazzino'").get(configuredSiteId) as { id: number; name: string } | undefined
     : undefined;
-  const site = configuredSite ?? database.prepare('SELECT id, name FROM sites ORDER BY id LIMIT 1').get() as
+  const site = configuredSite ?? database.prepare("SELECT id, name FROM sites WHERE site_role = 'Magazzino' ORDER BY id LIMIT 1").get() as
     { id: number; name: string } | undefined;
-  if (!site) throw new Error('Registra almeno una sede prima di gestire le giacenze.');
+  if (!site) throw new Error('Registra una sede di tipo Magazzino prima di gestire le giacenze.');
   return site;
 }
 
@@ -1262,8 +1264,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     }
     database.transaction(() => {
       const stockSiteId = selectedSiteId === undefined ? defaultStockSite().id : selectedSiteId;
-      if (!Number.isSafeInteger(stockSiteId) || !database.prepare('SELECT 1 FROM sites WHERE id = ?').get(stockSiteId)) {
-        throw new Error('Seleziona una sede valida per l’articolo.');
+      if (!Number.isSafeInteger(stockSiteId)
+        || !database.prepare("SELECT 1 FROM sites WHERE id = ? AND site_role = 'Magazzino'").get(stockSiteId)) {
+        throw new Error('Seleziona una sede di tipo Magazzino valida per l’articolo.');
       }
       const existing = database.prepare('SELECT id, photo_data FROM products WHERE code = ?').get(product.code.trim()) as { id: number; photo_data: string } | undefined;
       const otherSiteStock = existing
@@ -1399,9 +1402,12 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
       throw new Error('Seleziona sedi diverse e almeno un articolo con quantità valida.');
     }
     if (session.barcode !== movement.employee_barcode.trim()) throw new Error('Il barcode non corrisponde al dipendente connesso.');
-    const fromSite = database.prepare('SELECT name FROM sites WHERE id = ?').get(movement.fromSiteId) as { name: string } | undefined;
-    const toSite = database.prepare('SELECT name FROM sites WHERE id = ?').get(movement.toSiteId) as { name: string } | undefined;
+    const fromSite = database.prepare('SELECT name, site_role FROM sites WHERE id = ?').get(movement.fromSiteId) as { name: string; site_role: string } | undefined;
+    const toSite = database.prepare('SELECT name, site_role FROM sites WHERE id = ?').get(movement.toSiteId) as { name: string; site_role: string } | undefined;
     if (!fromSite || !toSite) throw new Error('Sede di partenza o di destinazione non trovata.');
+    if (fromSite.site_role !== 'Magazzino' || toSite.site_role !== 'Punto vendita') {
+      throw new Error('La distribuzione deve partire da una sede Magazzino ed essere destinata a un Punto vendita.');
+    }
     const employee = database.prepare('SELECT id, first_name, last_name, role FROM employees WHERE barcode = ?')
       .get(movement.employee_barcode.trim()) as { id: number; first_name: string; last_name: string; role: string } | undefined;
     if (!employee) throw new Error('Barcode personale non riconosciuto. Scansiona il badge di un dipendente registrato.');
@@ -1440,12 +1446,13 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     let writtenDistributionFile = '';
     try {
       database.transaction(() => {
-        const currentFromSite = database.prepare('SELECT name FROM sites WHERE id = ?').get(movement.fromSiteId) as typeof fromSite;
-        const currentToSite = database.prepare('SELECT name FROM sites WHERE id = ?').get(movement.toSiteId) as typeof toSite;
+        const currentFromSite = database.prepare('SELECT name, site_role FROM sites WHERE id = ?').get(movement.fromSiteId) as typeof fromSite;
+        const currentToSite = database.prepare('SELECT name, site_role FROM sites WHERE id = ?').get(movement.toSiteId) as typeof toSite;
         const currentRecipient = database.prepare('SELECT first_name, last_name, role, operational_site FROM employees WHERE id = ?')
           .get(recipient.id) as typeof recipient;
         if (!currentFromSite || !currentToSite || !currentRecipient
           || currentFromSite.name !== fromSite.name || currentToSite.name !== toSite.name
+          || currentFromSite.site_role !== 'Magazzino' || currentToSite.site_role !== 'Punto vendita'
           || `${currentRecipient.first_name} ${currentRecipient.last_name}`.trim() !== recipientName
           || (normalizedEmployeeRole(currentRecipient.role) !== 'proprietario' && currentRecipient.operational_site !== toSite.name)) {
           throw new Error('I dati della distribuzione sono cambiati. Riprova la conferma.');
@@ -1582,9 +1589,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         ? (database.prepare('SELECT operational_site FROM employees WHERE id = ?').get(employee.id) as { operational_site: string }).operational_site
         : '';
       const site = ownerSession
-        ? database.prepare('SELECT id, name FROM sites WHERE id = ?').get(sale.site_id) as { id: number; name: string } | undefined
-        : database.prepare("SELECT id, name FROM sites WHERE name = ? AND site_type = 'store'").get(employeeSite) as { id: number; name: string } | undefined;
-      if (!site) throw new Error(ownerSession ? 'La sede selezionata non esiste.' : employeeSite ? 'La sede assegnata al dipendente non esiste o non è un punto vendita.' : 'Crea prima una sede operativa per registrare le vendite.');
+        ? database.prepare("SELECT id, name FROM sites WHERE id = ? AND site_role = 'Punto vendita'").get(sale.site_id) as { id: number; name: string } | undefined
+        : database.prepare("SELECT id, name FROM sites WHERE name = ? AND site_role = 'Punto vendita'").get(employeeSite) as { id: number; name: string } | undefined;
+      if (!site) throw new Error(ownerSession ? 'La sede selezionata non esiste o non è un Punto vendita.' : employeeSite ? 'La sede assegnata al dipendente non esiste o non è un punto vendita.' : 'Crea prima una sede operativa per registrare le vendite.');
       const voucher = voucherCode ? findValidVoucher(voucherCode) : undefined;
       if (voucherCode && !voucher) throw new Error('Buono sconto non valido, scaduto o già utilizzato.');
       const voucherDiscount = voucher
@@ -2261,8 +2268,9 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     requireMainWindowSender(event.sender.id);
     if (!['shop_name', 'shop_number', 'shop_address', 'shop_phone', 'shop_email', 'shop_tax_id', 'currency', 'main_site_id', 'role_permissions', 'archive_folder', 'receipt_printer', 'receipt_printer_thermal', 'barcode_scanner_enabled', 'barcode_scanner_detected', 'home_image', 'home_video'].includes(key)) throw new Error('Impostazione non valida.');
     if (key === 'currency' && !['EUR', 'USD', 'EGP', 'GBP', 'CHF', 'SAR', 'AED'].includes(value)) throw new Error('Moneta non valida.');
-    if (key === 'main_site_id' && (!/^[1-9]\d*$/.test(value) || !database.prepare('SELECT 1 FROM sites WHERE id = ?').get(Number(value)))) {
-      throw new Error('Seleziona una sede principale valida.');
+    if (key === 'main_site_id' && (!/^[1-9]\d*$/.test(value)
+      || !database.prepare("SELECT 1 FROM sites WHERE id = ? AND site_role = 'Magazzino'").get(Number(value)))) {
+      throw new Error('Seleziona un magazzino valido come sede principale.');
     }
     if (key === 'role_permissions') {
       let permissions: unknown;

@@ -2,9 +2,9 @@ import type Database from 'better-sqlite3';
 import type { AuthenticatedEmployee, Product, SupplierOrder, SupplierOrderInput } from '../../shared/types';
 
 type SupplierRecord = { id: number };
-type SiteRecord = { id: number; name: string };
+type SiteRecord = { id: number; name: string; site_role: string };
 type ProductRecord = { id: number; name: string; code: string; unit: Product['unit'] };
-type OrderRecord = { id: number; site_id: number | null; received_at: string | null; site_name: string | null };
+type OrderRecord = { id: number; site_id: number | null; received_at: string | null; site_name: string | null; site_role: string | null };
 type PendingItemRecord = { id: number; product_id: number; product_name: string; quantity: number };
 type OrderItem = SupplierOrderInput['items'][number] & ProductRecord;
 
@@ -55,7 +55,7 @@ export class SupplierOrderRepository {
   }
 
   findSite(id: number): SiteRecord | undefined {
-    return this.database.prepare('SELECT id, name FROM sites WHERE id = ?').get(id) as SiteRecord | undefined;
+    return this.database.prepare('SELECT id, name, site_role FROM sites WHERE id = ?').get(id) as SiteRecord | undefined;
   }
 
   findProduct(id: number): ProductRecord | undefined {
@@ -98,7 +98,7 @@ export class SupplierOrderRepository {
   }
 
   findOrderForReceiving(orderId: number): OrderRecord | undefined {
-    return this.database.prepare(`SELECT orders.id, orders.site_id, orders.received_at, sites.name AS site_name
+    return this.database.prepare(`SELECT orders.id, orders.site_id, orders.received_at, sites.name AS site_name, sites.site_role
       FROM supplier_orders orders LEFT JOIN sites ON sites.id = orders.site_id WHERE orders.id = ?`)
       .get(orderId) as OrderRecord | undefined;
   }

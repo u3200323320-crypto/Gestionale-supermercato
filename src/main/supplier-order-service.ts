@@ -30,6 +30,7 @@ export class SupplierOrderService {
     if (!supplier) throw new Error('Seleziona un fornitore valido.');
     const site = this.repository.findSite(input.site_id);
     if (!site) throw new Error('Seleziona una sede valida per il ricevimento.');
+    if (site.site_role !== 'Magazzino') throw new Error('Gli ordini dei fornitori devono essere ricevuti in una sede Magazzino.');
     if (typeof input.employee_barcode !== 'string' || input.employee_barcode.trim() !== session.barcode
       || !this.employeeForLogin(input.employee_barcode)) {
       throw new Error('Il barcode non corrisponde al dipendente autenticato.');
@@ -73,6 +74,7 @@ export class SupplierOrderService {
     if (itemId !== null && (!Number.isSafeInteger(itemId) || itemId < 1)) throw new Error('Articolo dell’ordine non valido.');
     const order = this.repository.findOrderForReceiving(orderId);
     if (!order || order.site_id === null || !order.site_name) throw new Error('Ordine o sede di ricevimento non disponibile.');
+    if (order.site_role !== 'Magazzino') throw new Error('Questo ordine non è associato a una sede Magazzino.');
     if (order.received_at) throw new Error('Questo ordine è già stato ricevuto.');
     const items = this.repository.findPendingItems(orderId, itemId);
     if (!items.length) throw new Error(itemId === null ? 'Non ci sono articoli da ricevere.' : 'Articolo già ricevuto o non appartenente a questo ordine.');
