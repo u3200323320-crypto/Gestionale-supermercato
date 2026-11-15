@@ -23,6 +23,7 @@ import type {
 const storageKey = 'gestionale-web-preview';
 const previousHistorySeedKey = `${storageKey}:history-v1`;
 const historySeedKey = `${storageKey}:history-v2`;
+const supplierSeedKey = `${storageKey}:suppliers-v1`;
 const demoOwnerBarcode = '0000000001';
 const siteRecognitionAlphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const now = new Date();
@@ -129,6 +130,16 @@ function additionalDemoStockMovements(): AppState['stockMovements'] {
   });
 }
 
+function demoSuppliers(): Supplier[] {
+  return [
+    { id: 1, name: 'Alimentari Lombardi', contact_name: 'Paolo Lombardi', phone: '02 555 1201', email: 'ordini@lombardi.example.test', address: 'Via delle Industrie 18, Milano', notes: 'Pasta, conserve e prodotti da dispensa', created_at: day(-100) },
+    { id: 2, name: 'Ortofrutta Fresca S.r.l.', contact_name: 'Elena Conti', phone: '02 555 1202', email: 'forniture@ortofrutta.example.test', address: 'Mercato Ortofrutticolo, Milano', notes: 'Consegne di frutta e verdura dal lunedì al sabato', created_at: day(-85) },
+    { id: 3, name: 'Latteria delle Alpi', contact_name: 'Davide Riva', phone: '02 555 1203', email: 'commerciale@latteriaalpi.example.test', address: 'Via del Latte 7, Como', notes: 'Latte, yogurt e formaggi freschi', created_at: day(-70) },
+    { id: 4, name: 'Bevande Rossi & Figli', contact_name: 'Marta Rossi', phone: '02 555 1204', email: 'ordini@bevanderossi.example.test', address: 'Via dell’Acqua 42, Monza', notes: 'Acqua e bevande; ordine minimo 10 casse', created_at: day(-55) },
+    { id: 5, name: 'Casa Pulita Forniture', contact_name: 'Simone Ferri', phone: '02 555 1205', email: 'assistenza@casapulita.example.test', address: 'Via del Commercio 3, Sesto San Giovanni', notes: 'Detergenti e articoli per la pulizia', created_at: day(-40) },
+  ];
+}
+
 function createDemoState(): AppState {
   const sites: AppState['sites'] = [
     { id: 1, name: 'Centro', site_role: 'Punto vendita', address: 'Via Roma 12', phone: '02 555 0101', email: 'centro@example.test', tax_id: '', manager_name: 'Giulia Bianchi', opening_hours: 'Lun-Sab 08:00-20:00', notes: '', site_type: 'store', recognition_code: 'centro000000000', created_at: day(-120) },
@@ -224,7 +235,7 @@ function createDemoState(): AppState {
     ],
     customers: [{ id: 1, first_name: 'Sara', last_name: 'Moretti', phone: '333 000 2001', email: 'sara@example.test', address: 'Via Manzoni 9', created_at: day(-20) }],
     loyaltyCards: [{ id: 1, code: 'DEMO0001', barcode: 'DEMO0001', discount_percentage: 5, customer_id: 1, customer_name: 'Sara Moretti', status: 'Attiva', points: 120, created_at: day(-15), activated_at: day(-14) }],
-    suppliers: [],
+    suppliers: demoSuppliers(),
     supplierOrders: [],
   };
 }
@@ -443,6 +454,11 @@ function installWebPreview(): void {
   state.employeeActivities.sort((left, right) => right.created_at.localeCompare(left.created_at));
   if (!Array.isArray(state.suppliers)) {
     state.suppliers = [];
+    migrationChanged = true;
+  }
+  if (!window.localStorage.getItem(supplierSeedKey)) {
+    if (state.suppliers.length === 0) state.suppliers = demoSuppliers();
+    window.localStorage.setItem(supplierSeedKey, 'true');
     migrationChanged = true;
   }
   if (!Array.isArray(state.supplierOrders)) {
