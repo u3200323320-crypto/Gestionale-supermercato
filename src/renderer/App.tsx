@@ -1,7 +1,7 @@
 import { cloneElement, createContext, Fragment, isValidElement, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, InputHTMLAttributes, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Apple, Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Beef, Bell, Camera, Carrot, Check, ChevronDown, CircleAlert, ClipboardList, Cookie, CreditCard, CupSoda, Eye, Fish, FolderOpen, House, LockKeyhole, Menu, Milk, Minus, Package, Pencil, Plus, Printer, RefreshCw, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Snowflake, SprayCan, Store, Trash2, TrendingUp, Users, Video, X } from 'lucide-react';
+import { Apple, Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Beef, Bell, CalendarDays, Camera, Carrot, Check, ChevronDown, CircleAlert, ClipboardList, Clock, Cookie, CreditCard, CupSoda, Eye, Fish, FolderOpen, House, LockKeyhole, Mail, MapPin, Menu, Milk, Minus, Package, Pencil, Phone, Plus, Printer, RefreshCw, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Snowflake, SprayCan, Store, Trash2, TrendingUp, UserRound, Users, Video, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { jsPDF } from 'jspdf';
 import autoTable, { Table as AutoTableTable } from 'jspdf-autotable';
@@ -29,6 +29,7 @@ let dateTimeText = (date: Date) => dateTime.format(date);
 const roundQuantity = (quantity: number) => Math.round((quantity + Number.EPSILON) * 1000) / 1000;
 const colors = ['var(--green)', '#c17e4f', '#658499', '#a9aa64', '#8a7461', '#609085'];
 const localDateKey = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const workingDayOptions = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
 const authenticationTrialActive = (expiresAt: string) => Date.parse(expiresAt) > Date.now();
 const safeFilePart = (value: string) => value.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').trim() || 'Dipendente';
 const productArtPalettes = [
@@ -679,7 +680,7 @@ function SupplierListPage({ suppliers, orders, onSave, notify }: { suppliers: Su
   }));
   return <div className="page-content supplier-page">
     <div className="page-toolbar"><div><p>{suppliers.length} fornitori registrati</p></div><button className="button button-primary" type="button" onClick={() => setDraft({ name: '', contact_name: '', phone: '', email: '', address: '', notes: '' })}><Plus size={16} /> Aggiungi fornitore</button></div>
-    <div className="supplier-card-grid">{suppliers.map((supplier) => <article className="supplier-card" key={supplier.id}><div className="supplier-card-icon"><Store size={20} /></div><h3>{supplier.name}</h3><span>{supplier.phone || 'Telefono non disponibile'}</span><span>{supplier.email || 'Email non disponibile'}</span><div className="supplier-card-actions"><button className="button button-outline" type="button" onClick={() => setDraft({ id: supplier.id, name: supplier.name, contact_name: supplier.contact_name, phone: supplier.phone, email: supplier.email, address: supplier.address, notes: supplier.notes })}><Pencil size={14} /> Modifica</button><button className="button button-outline" type="button" onClick={() => setDetails(supplier)}><Eye size={14} /> Dai un’occhiata</button></div></article>)}{!suppliers.length && <div className="empty-cell supplier-empty">Nessun fornitore registrato.</div>}</div>
+    <div className="supplier-card-grid">{suppliers.map((supplier) => <article className="supplier-card" key={supplier.id}><div className="supplier-card-icon"><Store size={20} /></div><h3>{supplier.name}</h3><span className="supplier-card-contact"><Phone size={14} aria-hidden="true" /><strong>Telefono:</strong><span>{supplier.phone || 'non disponibile'}</span></span><span className="supplier-card-contact"><Mail size={14} aria-hidden="true" /><strong>Email:</strong><span>{supplier.email || 'non disponibile'}</span></span><div className="supplier-card-actions"><button className="button button-outline" type="button" onClick={() => setDraft({ id: supplier.id, name: supplier.name, contact_name: supplier.contact_name, phone: supplier.phone, email: supplier.email, address: supplier.address, notes: supplier.notes })}><Pencil size={14} /> Modifica</button><button className="button button-outline" type="button" onClick={() => setDetails(supplier)}><Eye size={14} /> Dai un’occhiata</button></div></article>)}{!suppliers.length && <div className="empty-cell supplier-empty">Nessun fornitore registrato.</div>}</div>
     {draft && <Modal title={draft.id ? 'Modifica fornitore' : 'Aggiungi fornitore'} close={() => setDraft(null)} wide portal><form className="form-grid supplier-form" onSubmit={(event) => void submit(event)}><Field label="Nome fornitore" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} maxLength={120} required autoFocus /><Field label="Nome referente" value={draft.contact_name} onChange={(event) => setDraft({ ...draft, contact_name: event.target.value })} maxLength={120} /><Field label="Telefono" type="tel" value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} maxLength={40} /><Field label="Email" type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} maxLength={254} /><Field label="Indirizzo" value={draft.address} onChange={(event) => setDraft({ ...draft, address: event.target.value })} maxLength={240} /><label className="field supplier-notes"><span>Note</span><textarea rows={3} maxLength={1000} value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} /></label><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => setDraft(null)}>Annulla</button><button className="button button-primary" disabled={saving}><Check size={16} /> Salva fornitore</button></div></form></Modal>}
     {details && createPortal(<div className="drawer-backdrop supplier-details-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetails(null); }}><aside className="detail-drawer supplier-details-drawer"><header className="drawer-header"><div><p className="eyebrow">DETTAGLIO FORNITORE</p><h2>{details.name}</h2></div><button className="icon-button" type="button" onClick={() => setDetails(null)} aria-label="Chiudi"><X size={18} /></button></header><div className="drawer-content"><div className="detail-list supplier-detail-list"><Detail label="Nome fornitore" value={details.name} /><Detail label="Referente" value={details.contact_name || '—'} /><Detail label="Telefono" value={details.phone || '—'} /><Detail label="Email" value={details.email || '—'} /><Detail label="Indirizzo" value={details.address || '—'} /><Detail label="Registrato il" value={dateTimeText(new Date(details.created_at))} /><Detail label="Note" value={details.notes || '—'} /></div><section className="supplier-ordered-products"><h3>Articoli ordinati</h3><p>{supplierOrders.length} ordini registrati</p>{orderedProducts.size ? <div>{[...orderedProducts.values()].map((item) => <article key={`${item.code}-${item.unit}`}><strong>{item.name}</strong><span>{item.code} · {quantityFormat.format(item.quantity)} {item.unit}</span></article>)}</div> : <p className="empty-cell">Nessun articolo ordinato da questo fornitore.</p>}</section></div></aside></div>, document.body)}
   </div>;
@@ -1354,7 +1355,7 @@ export default function App() {
   const storeSites = data?.sites ?? [];
   const warehouseSites = storeSites.filter((site) => site.site_role === 'Magazzino');
   const retailSites = storeSites.filter((site) => site.site_role === 'Punto vendita');
-  const cashSites = storeSites;
+  const cashSites = retailSites;
   const isOwner = normalizedRole(activeRole) === 'proprietario';
   const canViewHomepageMedia = ['proprietario', 'direttore'].includes(normalizedRole(activeRole));
   useEffect(() => {
@@ -1686,6 +1687,7 @@ export default function App() {
           email: siteAuthorization.site.email,
           tax_id: siteAuthorization.site.tax_id,
           manager_name: siteAuthorization.site.manager_name,
+          working_days: siteAuthorization.site.working_days,
           opening_hours: siteAuthorization.site.opening_hours,
           notes: siteAuthorization.site.notes,
         });
@@ -4156,15 +4158,26 @@ export default function App() {
       const headings = rtl
         ? ['الحد الأدنى', 'المخزون', 'الفئة', 'الرمز', 'المنتج']
         : ['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Soglia minima'];
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const latinShopName = rtl && /^[\x20-\x7E]*$/.test(data.settings.shop_name);
+      const textX = rtl ? pageWidth - (data.settings.shop_logo ? 42 : 12) : data.settings.shop_logo ? 43 : 12;
+      doc.setFillColor(22, 133, 220);
+      doc.rect(0, 0, pageWidth, 36, 'F');
+      if (data.settings.shop_logo) {
+        doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', rtl ? pageWidth - 36 : 12, 5, 24, 24);
+      }
+      doc.setTextColor(255, 255, 255);
       doc.setFont(font, 'bold');
       doc.setFontSize(15);
-      doc.text(rtl ? doc.processArabic(title) : title, rtl ? 198 : 12, 17, rtl ? { align: 'right' } : undefined);
+      doc.text(rtl ? doc.processArabic(title) : title, textX, 15, rtl ? { align: 'right' } : undefined);
       doc.setFont(font, 'normal');
       doc.setFontSize(9);
       const dateLabel = `${data.settings.shop_name} · ${receiptDate.format(new Date())}`;
-      doc.text(rtl ? doc.processArabic(dateLabel) : dateLabel, rtl ? 198 : 12, 25, rtl ? { align: 'right' } : undefined);
+      if (latinShopName) doc.setR2L(false);
+      doc.text(rtl ? doc.processArabic(dateLabel) : dateLabel, textX, 26, rtl ? { align: 'right' } : undefined);
+      if (latinShopName) doc.setR2L(true);
       autoTable(doc, {
-        startY: 34,
+        startY: 42,
         head: [rtl ? [...headings].reverse() : headings],
         body: reorderProducts.map((product) => {
           const row = [
@@ -4197,15 +4210,26 @@ export default function App() {
       const font = rtl ? 'DejaVuSans' : 'helvetica';
       const title = rtl ? 'المنتجات التي تقترب صلاحيتها' : 'Articoli in scadenza';
       const headings = rtl ? ['تاريخ انتهاء الصلاحية', 'المنتج'] : ['Articolo', 'Data di scadenza'];
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const latinShopName = rtl && /^[\x20-\x7E]*$/.test(data.settings.shop_name);
+      const textX = rtl ? pageWidth - (data.settings.shop_logo ? 42 : 12) : data.settings.shop_logo ? 43 : 12;
+      doc.setFillColor(22, 133, 220);
+      doc.rect(0, 0, pageWidth, 36, 'F');
+      if (data.settings.shop_logo) {
+        doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', rtl ? pageWidth - 36 : 12, 5, 24, 24);
+      }
+      doc.setTextColor(255, 255, 255);
       doc.setFont(font, 'bold');
       doc.setFontSize(15);
-      doc.text(rtl ? doc.processArabic(title) : title, rtl ? 198 : 12, 17, rtl ? { align: 'right' } : undefined);
+      doc.text(rtl ? doc.processArabic(title) : title, textX, 15, rtl ? { align: 'right' } : undefined);
       doc.setFont(font, 'normal');
       doc.setFontSize(9);
       const dateLabel = `${data.settings.shop_name} · ${receiptDate.format(new Date())}`;
-      doc.text(rtl ? doc.processArabic(dateLabel) : dateLabel, rtl ? 198 : 12, 25, rtl ? { align: 'right' } : undefined);
+      if (latinShopName) doc.setR2L(false);
+      doc.text(rtl ? doc.processArabic(dateLabel) : dateLabel, textX, 26, rtl ? { align: 'right' } : undefined);
+      if (latinShopName) doc.setR2L(true);
       autoTable(doc, {
-        startY: 34,
+        startY: 42,
         head: [rtl ? [...headings].reverse() : headings],
         body: expiringProducts.map((product) => {
           const row = [product.name, receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))];
@@ -4480,7 +4504,7 @@ export default function App() {
         <section className="panel distribution-history-panel"><div className="panel-heading"><div><h3>Distribuzioni effettuate</h3><p>Ogni documento viene aperto in formato PDF.</p></div></div><div className="distribution-history">{data.stockDistributions.length ? data.stockDistributions.map((record) => <div className="distribution-history-row" key={record.id}><span><strong>{record.from_site} → {record.to_site}</strong><small>{dateTimeText(new Date(record.created_at))} · {record.sender} → {record.recipient}</small></span><div className="distribution-history-actions"><button className="button button-outline" type="button" onClick={() => void window.gestionale.openDistributionRecord(record.id, language).catch((error: unknown) => notify(errorText(error)))}><ArrowDownToLine size={15} /> Scarica</button></div></div>) : <p>Nessuna distribuzione registrata.</p>}</div></section>
       </div>}
 
-      {section === 'cash' && <div className="page-content cash-content">{salesDisabled && <div className="security-status"><div className="security-icon"><ShieldCheck size={18} /></div><div><strong>Vendite disabilitate</strong><span>{activeSite?.site_role === 'Magazzino' ? 'La cassa è disponibile solo nei punti vendita.' : 'Assegna una sede al dipendente per registrare vendite.'}</span></div></div>}<div className="cash-layout">
+      {section === 'cash' && <div className="page-content cash-content"><div className="cash-layout">
         <section className="cash-products">
           <div className="cash-search-row"><div className="search-field"><Barcode size={17} /><input id="scanner-field" placeholder="Cerca o scansiona un codice a barre…" value={scannerSearch} onChange={(e) => setScannerSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scanCode(scannerSearch); } }} /><button type="button" className="search-clear" aria-label="Cancella ricerca" disabled={!scannerSearch} onClick={() => setScannerSearch('')}><X size={15} /></button></div><button className="icon-button camera-button" title="Scansiona con fotocamera" onClick={() => setCamera(true)}><Camera size={18} /></button></div>
           <div className="cash-product-grid">{data.products.filter((p) => (p.name.toLowerCase().includes(scannerSearch.toLowerCase()) || p.code.includes(scannerSearch)) && siteStockFor(p.id) > 0).map((product) => { const remainingStock = Math.max(0, siteStockFor(product.id) - (cart.find((item) => item.product_id === product.id)?.quantity ?? 0)); return <button className="cash-product" key={product.id} disabled={salesDisabled || remainingStock === 0} onClick={() => addProductToCart(product)}><span className="cash-product-icon"><ProductCategoryIcon product={product} /></span><strong>{product.name}</strong><span className="cash-product-bottom"><b>{money.format(product.sale_price)}{product.unit === 'KG' ? ' / kg' : product.unit === 'LITRO' ? ' / lit.' : ''}</b><small>{quantityFormat.format(remainingStock)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'lit.' : 'pz'}</small></span></button>; })}</div>
@@ -4541,8 +4565,42 @@ export default function App() {
       {section === 'site-statistics' && <div className="page-content accounting-page site-statistics-page"><div className="site-statistics-filters"><SelectField label="Periodo" value={siteStatsPeriod} onChange={setSiteStatsPeriod} options={['Oggi', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Ultimi 6 mesi', 'Tutto', 'Da - A']} /><SelectField label="Sede" value={siteStatsFilter} onChange={setSiteStatsFilter} options={['Tutte', ...data.sites.map((site) => site.name)]} /><>{siteStatsPeriod === 'Da - A' && <><Field label="Da" type="date" value={siteStatsFrom} onChange={(event) => setSiteStatsFrom(event.target.value)} /><Field label="A" type="date" value={siteStatsTo} onChange={(event) => setSiteStatsTo(event.target.value)} /></>}</></div><div className="metric-grid accounting-metrics"><Metric icon={Banknote} label="Entrate sedi" value={money.format(siteStatsIncome)} detail={siteStatsPeriod} /><Metric icon={ArrowDownToLine} label="Uscite sedi" value={money.format(siteStatsExpenses)} detail={siteStatsPeriod} /><Metric icon={TrendingUp} label="Saldo sedi" value={money.format(siteStatsIncome - siteStatsExpenses)} detail="Entrate meno uscite" /><Metric icon={Package} label="Sedi attive" value={String(selectedSiteStats.length)} detail="Sedi nel filtro selezionato" /></div><section className="panel site-summary-panel"><div className="panel-heading"><div><h3>Entrate e uscite per sede</h3><p>{siteStatsPeriod}</p></div></div><Table headings={['Sede', 'Entrate', 'Uscite', 'Saldo', 'Scontrini', 'Carico merce', 'Scarico merce']}><>{selectedSiteStats.map((site) => <tr key={site.id}><td className="cell-primary">{site.name}</td><td className="align-right">{money.format(site.income)}</td><td className="align-right">{money.format(site.expenses)}</td><td className="align-right cell-primary">{money.format(site.balance)}</td><td>{site.receipts}</td><td>{quantityFormat.format(site.stockIn)}</td><td>{quantityFormat.format(site.stockOut)}</td></tr>)}</>{!selectedSiteStats.length && <tr><td colSpan={7} className="empty-cell">Nessuna sede trovata.</td></tr>}</Table></section><SiteStockStatistics sites={data.sites.filter((site) => siteStatsFilter === 'Tutte' || site.name === siteStatsFilter)} siteStocks={data.siteStocks} employees={data.employees} products={data.products} /></div>}
       {section === 'low-stock' && <div className="page-content low-stock-page"><div className="page-toolbar low-stock-toolbar"><div className="toolbar-actions"><button className="button button-outline" onClick={() => { setLowStockExportSite('all'); setLowStockExportAction('download'); }}><ArrowDownToLine size={16} /> Scarica lista</button><button className="button button-primary" onClick={() => { setLowStockExportSite('all'); setLowStockExportAction('share'); }}><Share2 size={16} /> Condividi lista</button></div></div>{data.sites.length ? data.sites.map((site) => { const lowStockProducts = lowStockProductsForSite(site.id); return <section className="panel low-stock-site-panel" key={site.id}><div className="panel-heading"><div><h3>{site.name}</h3><p>{lowStockProducts.length} articoli in esaurimento</p></div></div><Table headings={['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Soglia minima']}><>{lowStockProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td className="mono">{product.code}</td><td>{product.category}</td><td>{quantityFormat.format(product.siteStock)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}</td><td>{quantityFormat.format(product.low_stock_threshold)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}</td></tr>)}</>{!lowStockProducts.length && <tr><td colSpan={5} className="empty-cell">Nessun articolo in esaurimento in questa sede.</td></tr>}</Table></section>; }) : <Empty icon={Package} title="Nessuna sede registrata." detail="" />}</div>}
       {lowStockExportAction && <Modal title={lowStockExportAction === 'download' ? 'Scarica lista articoli in esaurimento' : 'Condividi lista articoli in esaurimento'} close={() => setLowStockExportAction(null)}><div className="form-grid low-stock-export-form"><label className="field"><span>Seleziona le sedi</span><select value={lowStockExportSite} onChange={(event) => setLowStockExportSite(event.target.value)}><option value="all">Tutte le sedi</option>{storeSites.map((site) => <option key={site.id} value={String(site.id)}>{site.name}</option>)}</select></label><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => setLowStockExportAction(null)}>Annulla</button><button className="button button-primary" type="button" onClick={() => void confirmLowStockExport()}>{lowStockExportAction === 'download' ? <><ArrowDownToLine size={16} /> Scarica</> : <><Share2 size={16} /> Condividi</>}</button></div></div></Modal>}
-      {section === 'site-create' && siteDraft && <div className="page-content settings-page"><section className="settings-panel"><button className="settings-back" onClick={() => navigateTo('site-list')}><ArrowLeft size={15} /> Lista sedi</button>{siteDraft.id && <div className="settings-title"><h2>Modifica sede</h2><p>Inserisci i riferimenti e le informazioni operative del punto vendita.</p></div>}<form className="settings-form site-form" onSubmit={(event) => void saveSite(event)}><Field label="Nome sede" value={siteDraft.name} onChange={(event) => setSiteDraft({ ...siteDraft, name: event.target.value })} required /><label className="field"><span>Ruolo sede</span><select value={siteDraft.site_role ?? 'Punto vendita'} onChange={(event) => { if (event.target.value === '__other__') { setShowSiteCustomRole(true); setSiteCustomRole(''); } else { setSiteDraft({ ...siteDraft, site_role: event.target.value }); setShowSiteCustomRole(false); } }} required><option value="">Seleziona tipo sede</option>{siteRoleOptions.map((role) => <option key={role}>{role}</option>)}<option value="__other__">Nuovo ruolo</option></select></label>{showSiteCustomRole && <div className="custom-role-field"><Field label="Nuovo ruolo" value={siteCustomRole} onChange={(event) => setSiteCustomRole(event.target.value)} /><button className="button button-outline" type="button" disabled={!siteCustomRole.trim()} onClick={() => { const enteredRole = siteCustomRole.trim(); const role = siteRoleOptions.find((item) => item.toLocaleLowerCase('it') === enteredRole.toLocaleLowerCase('it')) ?? enteredRole; const next = [...new Set([...siteRoleOptions, role])]; setSiteRoleOptions(next); window.localStorage.setItem('site-roles', JSON.stringify(next.filter((item) => !defaultSiteRoles.includes(item)))); setSiteDraft((current) => current ? { ...current, site_role: role } : current); setSiteCustomRole(''); setShowSiteCustomRole(false); }}>Aggiungi alla lista</button></div>}<Field label="Indirizzo" value={siteDraft.address} onChange={(event) => setSiteDraft({ ...siteDraft, address: event.target.value })} /><Field label="Telefono" type="tel" value={siteDraft.phone} onChange={(event) => setSiteDraft({ ...siteDraft, phone: event.target.value })} /><Field label="Email sede" type="email" value={siteDraft.email ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, email: event.target.value })} /><label className="field"><span>Responsabile sede</span><select value={siteDraft.manager_name ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, manager_name: event.target.value })}><option value="">Seleziona responsabile</option>{data.employees.filter((employee) => normalizedRole(employee.role) === 'responsabile sede').map((employee) => { const name = `${employee.first_name} ${employee.last_name}`; return <option key={employee.id} value={name}>{name}</option>; })}</select></label><Field label="Orari di apertura" value={siteDraft.opening_hours ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, opening_hours: event.target.value })} /><label className="field site-notes-field"><span>Note</span><textarea rows={3} maxLength={1000} value={siteDraft.notes ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, notes: event.target.value })} /></label><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setSiteDraft(null); navigateTo('site-list'); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Salva sede</button></div></form></section></div>}
-      {(section === 'site-list' || section === 'site-management') && <div className="page-content"><div className="page-toolbar"><div><h2>{section === 'site-management' ? 'Gestione sedi' : 'Lista sedi'}</h2><p>{data.sites.length} sedi registrate</p></div>{canAccess('site-management') && <button className="button button-primary" onClick={() => { setSiteDraft({ name: '', address: '', phone: '', site_role: 'Punto vendita' }); navigateTo('site-create'); }}><Plus size={16} /> Aggiungi sede</button>}</div><Table headings={['Sede', 'Tipo', 'Codice di riconoscimento', 'Indirizzo', 'Telefono', 'Dipendenti', 'Azioni']}><>{data.sites.map((site) => <tr key={site.id}><td><button className="site-name-link" onClick={() => setSelectedSiteDetails(site)}>{site.name}</button></td><td>{site.site_role || 'Punto vendita'}</td><td className="mono">{site.recognition_code}</td><td>{site.address || '—'}</td><td>{site.phone || '—'}</td><td>{data.employees.filter((employee) => employee.operational_site === site.name).length}</td><td><div className="toolbar-actions">{canAccess('site-management') && <><button className="button button-outline" onClick={() => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'edit' }); }}><Pencil size={14} /> Modifica</button><button className="button button-danger" onClick={() => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'delete' }); }}><Trash2 size={14} /> Elimina</button></>}</div></td></tr>)}</>{!data.sites.length && <tr><td colSpan={7} className="empty-cell">Nessuna sede trovata.</td></tr>}</Table></div>}
+      {section === 'site-create' && siteDraft && <div className="page-content settings-page">
+        <section className="settings-panel">
+          <button className="settings-back" onClick={() => navigateTo('site-list')}><ArrowLeft size={15} /> Lista sedi</button>
+          {siteDraft.id && <div className="settings-title"><h2>Modifica sede</h2><p>Inserisci i riferimenti e le informazioni operative del punto vendita.</p></div>}
+          <form className="settings-form site-form" onSubmit={(event) => void saveSite(event)}>
+            <Field label="Nome sede" value={siteDraft.name} onChange={(event) => setSiteDraft({ ...siteDraft, name: event.target.value })} required />
+            <label className="field"><span>Ruolo sede</span><select value={siteDraft.site_role ?? 'Punto vendita'} onChange={(event) => { if (event.target.value === '__other__') { setShowSiteCustomRole(true); setSiteCustomRole(''); } else { setSiteDraft({ ...siteDraft, site_role: event.target.value }); setShowSiteCustomRole(false); } }} required><option value="">Seleziona tipo sede</option>{siteRoleOptions.map((role) => <option key={role}>{role}</option>)}<option value="__other__">Nuovo ruolo</option></select></label>
+            {showSiteCustomRole && <div className="custom-role-field"><Field label="Nuovo ruolo" value={siteCustomRole} onChange={(event) => setSiteCustomRole(event.target.value)} /><button className="button button-outline" type="button" disabled={!siteCustomRole.trim()} onClick={() => { const enteredRole = siteCustomRole.trim(); const role = siteRoleOptions.find((item) => item.toLocaleLowerCase('it') === enteredRole.toLocaleLowerCase('it')) ?? enteredRole; const next = [...new Set([...siteRoleOptions, role])]; setSiteRoleOptions(next); window.localStorage.setItem('site-roles', JSON.stringify(next.filter((item) => !defaultSiteRoles.includes(item)))); setSiteDraft((current) => current ? { ...current, site_role: role } : current); setSiteCustomRole(''); setShowSiteCustomRole(false); }}>Aggiungi alla lista</button></div>}
+            <Field label="Indirizzo" value={siteDraft.address} onChange={(event) => setSiteDraft({ ...siteDraft, address: event.target.value })} />
+            <Field label="Telefono" type="tel" value={siteDraft.phone} onChange={(event) => setSiteDraft({ ...siteDraft, phone: event.target.value })} />
+            <Field label="Email sede" type="email" value={siteDraft.email ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, email: event.target.value })} />
+            <label className="field"><span>Responsabile sede</span><select value={siteDraft.manager_name ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, manager_name: event.target.value })}><option value="">Seleziona responsabile</option>{data.employees.filter((employee) => normalizedRole(employee.role) === 'responsabile sede').map((employee) => { const name = `${employee.first_name} ${employee.last_name}`; return <option key={employee.id} value={name}>{name}</option>; })}</select></label>
+            <div className="field">
+              <span>Giorni lavorativi</span>
+              <details className="working-days-picker">
+                <summary className="select-wrap"><span>{siteDraft.working_days || 'Seleziona i giorni lavorativi'}</span><ChevronDown size={14} /></summary>
+                <div className="working-days-options" role="group" aria-label="Seleziona i giorni lavorativi">
+                  {workingDayOptions.map((day) => {
+                    const selectedDays = new Set((siteDraft.working_days ?? '').split(',').map((value) => value.trim()).filter(Boolean));
+                    return <label key={day}><input type="checkbox" checked={selectedDays.has(day)} onChange={(event) => {
+                      const nextDays = new Set(selectedDays);
+                      if (event.currentTarget.checked) nextDays.add(day);
+                      else nextDays.delete(day);
+                      setSiteDraft({ ...siteDraft, working_days: workingDayOptions.filter((option) => nextDays.has(option)).join(', ') });
+                    }} />{day}</label>;
+                  })}
+                </div>
+              </details>
+            </div>
+            <OpeningHoursPicker value={siteDraft.opening_hours ?? ''} onChange={(opening_hours) => setSiteDraft({ ...siteDraft, opening_hours })} />
+            <label className="field site-notes-field"><span>Note</span><textarea rows={3} maxLength={1000} value={siteDraft.notes ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, notes: event.target.value })} /></label>
+            <div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setSiteDraft(null); navigateTo('site-list'); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Salva sede</button></div>
+          </form>
+        </section>
+      </div>}
+      {(section === 'site-list' || section === 'site-management') && <div className="page-content"><div className="page-toolbar"><div><h2>{section === 'site-management' ? 'Gestione sedi' : 'Lista sedi'}</h2><p>{data.sites.length} sedi registrate</p></div>{canAccess('site-management') && <button className="button button-primary" onClick={() => { setSiteDraft({ name: '', address: '', phone: '', site_role: 'Punto vendita' }); navigateTo('site-create'); }}><Plus size={16} /> Aggiungi sede</button>}</div><div className="site-card-grid">{data.sites.map((site) => <SiteCard key={site.id} site={site} dailyRevenue={data.sales.filter((sale) => sale.site === site.name && new Date(sale.created_at).toDateString() === new Date().toDateString()).reduce((sum, sale) => sum + sale.total, 0)} employeeCount={data.employees.filter((employee) => employee.operational_site === site.name).length} productCount={data.siteStocks.filter((stock) => stock.site_id === site.id && stock.stock > 0).length} canManage={canAccess('site-management')} onView={() => setSelectedSiteDetails(site)} onEdit={() => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'edit' }); }} onDelete={() => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'delete' }); }} />)}{!data.sites.length && <div className="empty-cell site-empty">Nessuna sede registrata.</div>}</div></div>}
       {section === 'employee-tracker' && <div className="page-content">
         <div id="employee-tracker-print">
           <div className="inventory-history-actions no-print">
@@ -4755,6 +4813,64 @@ function Table({ headings, children }: { headings: string[]; children: ReactNode
   const language = useContext(AppLanguageContext);
   return <div className="table-wrap"><table><thead><tr>{headings.map((heading) => <th key={heading}>{localizedText(heading, language)}</th>)}</tr></thead><tbody><LocalizedNodes>{children}</LocalizedNodes></tbody></table></div>;
 }
+function SiteCard({ site, dailyRevenue, employeeCount, productCount, canManage, onView, onEdit, onDelete }: {
+  site: Site;
+  dailyRevenue: number;
+  employeeCount: number;
+  productCount: number;
+  canManage: boolean;
+  onView: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return <article className="site-card">
+    <header className="site-card-header"><span className="site-card-icon"><Store size={20} aria-hidden="true" /></span><div><h3>{site.name}</h3><span>{site.site_role || 'Punto vendita'}</span></div></header>
+    <div className="site-card-info">
+      <div className="site-card-info-inline"><MapPin size={14} strokeWidth={2.5} aria-label="Indirizzo" role="img" /><span>{site.address || '—'}</span></div>
+      <div className="site-card-info-inline"><Phone size={14} strokeWidth={2.5} aria-label="Telefono" role="img" /><span>{site.phone || '—'}</span></div>
+      <div className="site-card-info-inline"><UserRound size={14} strokeWidth={2.5} aria-label="Responsabile" role="img" /><span><strong>Responsabile:</strong><span className="site-card-manager-value">{site.manager_name || '—'}</span></span></div>
+      <div className="site-card-info-inline"><CalendarDays size={14} strokeWidth={2.5} aria-label="Giorni lavorativi" role="img" /><span>{site.working_days || '—'}</span></div>
+      <div className="site-card-info-inline"><Clock size={14} strokeWidth={2.5} aria-label="Orari di apertura" role="img" /><span>{site.opening_hours || '—'}</span></div>
+    </div>
+    <div className="site-card-metrics">
+      <div className="site-card-metric"><span>Fatturato del giorno</span><strong>{money.format(dailyRevenue)}</strong></div>
+      <div className="site-card-metric"><span>Dipendenti</span><strong>{employeeCount}</strong></div>
+      <div className="site-card-metric"><span>Prodotti in sede</span><strong>{productCount}</strong></div>
+    </div>
+    <button className="button button-outline site-card-view" type="button" onClick={onView}><Eye size={14} /> Vedi nel dettaglio</button>
+    {canManage && <div className="site-card-actions"><button className="button button-danger" type="button" onClick={onDelete}><Trash2 size={14} /> Elimina</button><button className="button button-outline" type="button" onClick={onEdit}><Pencil size={14} /> Modifica</button></div>}
+  </article>;
+}
+function OpeningHoursPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const getTimes = (hours: string) => {
+    const match = hours.match(/((?:[01]\d|2[0-3]):[0-5]\d)\s*[-–]\s*((?:[01]\d|2[0-3]):[0-5]\d)/);
+    return { opening: match?.[1] ?? '', closing: match?.[2] ?? '' };
+  };
+  const initialTimes = getTimes(value);
+  const [opening, setOpening] = useState(initialTimes.opening);
+  const [closing, setClosing] = useState(initialTimes.closing);
+  useEffect(() => {
+    const times = getTimes(value);
+    setOpening(times.opening);
+    setClosing(times.closing);
+  }, [value]);
+  const updateTimes = (nextOpening: string, nextClosing: string) => {
+    setOpening(nextOpening);
+    setClosing(nextClosing);
+    if (nextOpening && nextClosing) onChange(`${nextOpening} - ${nextClosing}`);
+  };
+  return <div className="field">
+    <span>Orari di apertura</span>
+    <details className="opening-hours-picker">
+      <summary className="select-wrap"><span>{value || 'Seleziona apertura e chiusura'}</span><ChevronDown size={14} /></summary>
+      <div className="opening-hours-options">
+        <Field label="Apertura" type="time" value={opening} onChange={(event) => updateTimes(event.target.value, closing)} />
+        <Field label="Chiusura" type="time" value={closing} onChange={(event) => updateTimes(opening, event.target.value)} />
+        <button className="button button-quiet" type="button" onClick={() => { setOpening(''); setClosing(''); onChange(''); }}>Cancella orari</button>
+      </div>
+    </details>
+  </div>;
+}
 function SiteDetailsDrawer({ site, data, close }: { site: Site; data: AppState; close: () => void }) {
   const language = useContext(AppLanguageContext);
   const employees = data.employees.filter((employee) => employee.operational_site === site.name);
@@ -4770,7 +4886,7 @@ function SiteDetailsDrawer({ site, data, close }: { site: Site; data: AppState; 
   return <div className="drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><aside className="detail-drawer site-details-drawer"><header className="drawer-header"><div><p className="eyebrow">DETTAGLIO SEDE</p><h2>{site.name}</h2></div><button className="icon-button" onClick={close} aria-label={text('Chiudi')}><X size={18} /></button></header>
     <div className="site-details-content">
       <div className="site-details-metrics"><div className="site-details-metric"><span>{text('Incassi')}</span><strong>{money.format(income)}</strong></div><div className="site-details-metric"><span>{text('Rimborsi')}</span><strong>{money.format(refundTotal)}</strong></div><div className="site-details-metric"><span>{text('Spese')}</span><strong>{money.format(expenseTotal)}</strong></div><div className="site-details-metric"><span>{text('Scontrini')}</span><strong>{sales.length}</strong></div></div>
-      <section><h3>{text('Informazioni sede')}</h3><div className="site-detail-list">{site.address && <span>Indirizzo: {site.address}</span>}{site.phone && <span>Telefono: {site.phone}</span>}{site.email && <span>Email: {site.email}</span>}{site.tax_id && <span>Codice fiscale o partita IVA: {site.tax_id}</span>}{site.manager_name && <span>Responsabile: {site.manager_name}</span>}{site.opening_hours && <span>Orari: {site.opening_hours}</span>}{site.notes && <span>Note: {site.notes}</span>}{!site.address && !site.phone && !site.email && !site.tax_id && !site.manager_name && !site.opening_hours && !site.notes && <span>—</span>}</div></section>
+      <section><h3>{text('Informazioni sede')}</h3><div className="site-detail-list">{site.address && <span>Indirizzo: {site.address}</span>}{site.phone && <span>Telefono: {site.phone}</span>}{site.email && <span>Email: {site.email}</span>}{site.tax_id && <span>Codice fiscale o partita IVA: {site.tax_id}</span>}{site.manager_name && <span>Responsabile: {site.manager_name}</span>}{site.working_days && <span>Giorni lavorativi: {site.working_days}</span>}{site.opening_hours && <span>Orari di apertura: {site.opening_hours}</span>}{site.notes && <span>Note: {site.notes}</span>}{!site.address && !site.phone && !site.email && !site.tax_id && !site.manager_name && !site.working_days && !site.opening_hours && !site.notes && <span>—</span>}</div></section>
       <section><h3>{text('Dipendenti')} · {employees.length}</h3><div className="site-detail-list">{employees.length ? employees.map((employee) => <span key={employee.id}>{employee.first_name} {employee.last_name} · {text(employee.role)}</span>) : <span>—</span>}</div></section>
       <section><h3>{text('Merce in sede')}</h3><Table headings={['Articolo', 'Giacenza']}><>{inventory.map((stock) => { const product = data.products.find((item) => item.id === stock.product_id); return <tr key={stock.product_id}><td className="cell-primary">{product?.name ?? `#${stock.product_id}`}</td><td>{quantityFormat.format(stock.stock)} {product?.unit ?? 'PEZZO'}</td></tr>; })}{!inventory.length && <tr><td colSpan={2} className="empty-cell">—</td></tr>}</></Table></section>
       <section><h3>{text('Ultimi incassi')}</h3><Table headings={['Data e ora', 'Scontrino', 'Totale']}><>{sales.slice(0, 10).map((sale) => <tr key={sale.id}><td>{dateTimeText(new Date(sale.created_at))}</td><td>#{sale.receipt_no}</td><td className="align-right">{money.format(sale.total)}</td></tr>)}{!sales.length && <tr><td colSpan={3} className="empty-cell">—</td></tr>}</></Table></section>

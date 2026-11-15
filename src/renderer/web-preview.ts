@@ -24,6 +24,7 @@ const storageKey = 'gestionale-web-preview';
 const previousHistorySeedKey = `${storageKey}:history-v1`;
 const historySeedKey = `${storageKey}:history-v2`;
 const supplierSeedKey = `${storageKey}:suppliers-v1`;
+const warehouseProductSeedKey = `${storageKey}:warehouse-products-v1`;
 const demoOwnerBarcode = '0000000001';
 const siteRecognitionAlphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const now = new Date();
@@ -142,9 +143,9 @@ function demoSuppliers(): Supplier[] {
 
 function createDemoState(): AppState {
   const sites: AppState['sites'] = [
-    { id: 1, name: 'Centro', site_role: 'Punto vendita', address: 'Via Roma 12', phone: '02 555 0101', email: 'centro@example.test', tax_id: '', manager_name: 'Giulia Bianchi', opening_hours: 'Lun-Sab 08:00-20:00', notes: '', site_type: 'store', recognition_code: 'centro000000000', created_at: day(-120) },
-    { id: 2, name: 'Nord', site_role: 'Punto vendita', address: 'Via Milano 48', phone: '02 555 0102', email: 'nord@example.test', tax_id: '', manager_name: 'Marco Verdi', opening_hours: 'Lun-Sab 08:00-20:00', notes: '', site_type: 'store', recognition_code: 'nord00000000000', created_at: day(-90) },
-    { id: 3, name: 'Magazzino', site_role: 'Magazzino', address: 'Via Industria 5', phone: '02 555 0103', email: '', tax_id: '', manager_name: '', opening_hours: '', notes: '', site_type: 'warehouse', recognition_code: 'magaz0000000000', created_at: day(-75) },
+    { id: 1, name: 'Centro', site_role: 'Punto vendita', address: 'Via Roma 12', phone: '02 555 0101', email: 'centro@example.test', tax_id: '', manager_name: 'Giulia Bianchi', working_days: 'Lun-Sab', opening_hours: '08:00-20:00', notes: '', site_type: 'store', recognition_code: 'centro000000000', created_at: day(-120) },
+    { id: 2, name: 'Nord', site_role: 'Punto vendita', address: 'Via Milano 48', phone: '02 555 0102', email: 'nord@example.test', tax_id: '', manager_name: 'Marco Verdi', working_days: 'Lun-Sab', opening_hours: '08:00-20:00', notes: '', site_type: 'store', recognition_code: 'nord00000000000', created_at: day(-90) },
+    { id: 3, name: 'Magazzino', site_role: 'Magazzino', address: 'Via Industria 5', phone: '02 555 0103', email: '', tax_id: '', manager_name: '', working_days: '', opening_hours: '', notes: '', site_type: 'warehouse', recognition_code: 'magaz0000000000', created_at: day(-75) },
   ];
   const products: AppState['products'] = [
     { id: 1, code: '800123450001', name: 'Pasta di semola', unit: 'PEZZO', category: 'Dispensa', sale_price: 1.49, purchase_price: 0.72, stock: 132, low_stock_threshold: 24 },
@@ -152,7 +153,21 @@ function createDemoState(): AppState {
     { id: 3, code: '800123450003', name: 'Mele Golden', unit: 'KG', category: 'Frutta e verdura', sale_price: 2.4, purchase_price: 1.15, stock: 46.5, low_stock_threshold: 10 },
     { id: 4, code: '800123450004', name: 'Latte intero', unit: 'LITRO', category: 'Latticini', sale_price: 1.65, purchase_price: 0.92, stock: 53, low_stock_threshold: 15 },
     { id: 5, code: '800123450005', name: 'Caffè macinato', unit: 'PEZZO', category: 'Dispensa', sale_price: 4.8, purchase_price: 3.1, stock: 8, low_stock_threshold: 10 },
-    { id: 6, code: '800123450006', name: 'Detersivo piatti', unit: 'PEZZO', category: 'Casa', sale_price: 2.2, purchase_price: 1.05, stock: 0, low_stock_threshold: 8 },
+    { id: 6, code: '800123450006', name: 'Detersivo piatti', unit: 'PEZZO', category: 'Casa', sale_price: 2.2, purchase_price: 1.05, stock: 18, low_stock_threshold: 8 },
+    { id: 7, code: '800123450007', name: 'Riso Carnaroli', unit: 'PEZZO', category: 'Dispensa', sale_price: 3.2, purchase_price: 1.75, stock: 45, low_stock_threshold: 10 },
+    { id: 8, code: '800123450008', name: 'Pomodori pelati', unit: 'PEZZO', category: 'Dispensa', sale_price: 1.15, purchase_price: 0.62, stock: 58, low_stock_threshold: 12 },
+    { id: 9, code: '800123450009', name: 'Farina tipo 00', unit: 'PEZZO', category: 'Dispensa', sale_price: 0.95, purchase_price: 0.48, stock: 60, low_stock_threshold: 12 },
+    { id: 10, code: '800123450010', name: 'Zucchero semolato', unit: 'PEZZO', category: 'Dispensa', sale_price: 1.25, purchase_price: 0.68, stock: 62, low_stock_threshold: 12 },
+    { id: 11, code: '800123450011', name: 'Uova fresche', unit: 'PEZZO', category: 'Latticini', sale_price: 2.6, purchase_price: 1.55, stock: 42, low_stock_threshold: 10 },
+    { id: 12, code: '800123450012', name: 'Yogurt bianco', unit: 'PEZZO', category: 'Latticini', sale_price: 0.75, purchase_price: 0.38, stock: 46, low_stock_threshold: 10 },
+    { id: 13, code: '800123450013', name: 'Grana Padano', unit: 'PEZZO', category: 'Latticini', sale_price: 3.9, purchase_price: 2.4, stock: 27, low_stock_threshold: 6 },
+    { id: 14, code: '800123450014', name: 'Petto di pollo', unit: 'KG', category: 'Carne', sale_price: 9.9, purchase_price: 6.2, stock: 37, low_stock_threshold: 8 },
+    { id: 15, code: '800123450015', name: 'Tonno all’olio d’oliva', unit: 'PEZZO', category: 'Dispensa', sale_price: 2.3, purchase_price: 1.25, stock: 64, low_stock_threshold: 12 },
+    { id: 16, code: '800123450016', name: 'Acqua minerale', unit: 'PEZZO', category: 'Bevande', sale_price: 0.45, purchase_price: 0.18, stock: 90, low_stock_threshold: 24 },
+    { id: 17, code: '800123450017', name: 'Succo d’arancia', unit: 'LITRO', category: 'Bevande', sale_price: 2.1, purchase_price: 1.05, stock: 41, low_stock_threshold: 10 },
+    { id: 18, code: '800123450018', name: 'Banane', unit: 'KG', category: 'Frutta e verdura', sale_price: 2.2, purchase_price: 1.1, stock: 37.5, low_stock_threshold: 8 },
+    { id: 19, code: '800123450019', name: 'Patate', unit: 'KG', category: 'Frutta e verdura', sale_price: 1.6, purchase_price: 0.72, stock: 67, low_stock_threshold: 15 },
+    { id: 20, code: '800123450020', name: 'Biscotti integrali', unit: 'PEZZO', category: 'Dispensa', sale_price: 2.4, purchase_price: 1.25, stock: 43, low_stock_threshold: 10 },
   ];
   const employees: AppState['employees'] = [
     {
@@ -178,7 +193,11 @@ function createDemoState(): AppState {
     },
   ];
   const productStocks = [
-    [1, [52, 40, 40]], [2, [15, 11, 12]], [3, [20.5, 14, 12]], [4, [21, 17, 15]], [5, [3, 2, 3]], [6, [0, 0, 0]],
+    [1, [52, 40, 40]], [2, [15, 11, 12]], [3, [20.5, 14, 12]], [4, [21, 17, 15]], [5, [3, 2, 3]], [6, [0, 0, 18]],
+    [7, [12, 8, 25]], [8, [12, 16, 30]], [9, [15, 10, 35]], [10, [12, 10, 40]],
+    [11, [10, 8, 24]], [12, [8, 10, 28]], [13, [5, 4, 18]], [14, [8, 7, 22]],
+    [15, [16, 12, 36]], [16, [24, 18, 48]], [17, [8, 9, 24]], [18, [7.5, 9.5, 20.5]],
+    [19, [15, 12, 40]], [20, [9, 8, 26]],
   ] as const;
   const siteStocks: AppState['siteStocks'] = productStocks.flatMap(([productId, quantities]) =>
     sites.map((site, index) => ({ product_id: productId, site_id: site.id, site_name: site.name, stock: quantities[index] })),
@@ -436,6 +455,32 @@ function installWebPreview(): void {
   let state = storedState ? JSON.parse(storedState) as AppState : createDemoState();
   const persist = () => window.localStorage.setItem(storageKey, JSON.stringify(state));
   let migrationChanged = migrateDemoSiteRecognitionCodes(state);
+  if (!window.localStorage.getItem(warehouseProductSeedKey)) {
+    if (storedState) {
+      const demoState = createDemoState();
+      const demoProducts = demoState.products.filter((product) => product.id >= 6);
+      for (const demoProduct of demoProducts) {
+        const existing = state.products.find((product) => product.code === demoProduct.code);
+        const productId = existing?.id ?? Math.max(0, ...state.products.map((product) => product.id)) + 1;
+        if (!existing) state.products.push({ ...demoProduct, id: productId });
+        for (const demoStock of demoState.siteStocks.filter((stock) => stock.product_id === demoProduct.id)) {
+          const demoSite = demoState.sites.find((site) => site.id === demoStock.site_id);
+          const site = state.sites.find((candidate) => candidate.name === demoSite?.name);
+          if (!site) continue;
+          const currentStock = state.siteStocks.find((stock) => stock.product_id === productId && stock.site_id === site.id);
+          if (!currentStock) {
+            state.siteStocks.push({ ...demoStock, product_id: productId, site_id: site.id, site_name: site.name });
+          } else if (demoSite?.site_role === 'Magazzino' && currentStock.stock === 0) {
+            currentStock.stock = demoStock.stock;
+          }
+        }
+        const product = state.products.find((candidate) => candidate.id === productId);
+        if (product) product.stock = state.siteStocks.filter((stock) => stock.product_id === productId).reduce((sum, stock) => sum + stock.stock, 0);
+      }
+      migrationChanged = true;
+    }
+    window.localStorage.setItem(warehouseProductSeedKey, 'true');
+  }
   if (!window.localStorage.getItem(historySeedKey)) {
     if (storedState) {
       const previousSeeds = window.localStorage.getItem(previousHistorySeedKey)
@@ -838,7 +883,7 @@ function installWebPreview(): void {
         if (site) {
           const previousName = site.name;
           const siteRole = input.site_role ?? site.site_role ?? 'Punto vendita';
-          Object.assign(site, input, { site_role: siteRole, email: input.email ?? '', tax_id: input.tax_id ?? '', manager_name: input.manager_name ?? '', opening_hours: input.opening_hours ?? '', notes: input.notes ?? '', site_type: siteRole === 'Magazzino' ? 'warehouse' as const : 'store' as const });
+          Object.assign(site, input, { site_role: siteRole, email: input.email ?? '', tax_id: input.tax_id ?? '', manager_name: input.manager_name ?? '', working_days: input.working_days ?? '', opening_hours: input.opening_hours ?? '', notes: input.notes ?? '', site_type: siteRole === 'Magazzino' ? 'warehouse' as const : 'store' as const });
           state.employees.forEach((employee) => { if (employee.operational_site === previousName) employee.operational_site = site.name; });
           state.sales.forEach((sale) => { if (sale.site === previousName) sale.site = site.name; });
           state.expenses.forEach((expense) => { if (expense.site === previousName) expense.site = site.name; });
@@ -846,7 +891,7 @@ function installWebPreview(): void {
       } else {
         const recognitionCode = uniqueSiteRecognitionCode(new Set(state.sites.map((item) => item.recognition_code)));
         const siteRole = input.site_role ?? 'Punto vendita';
-        const site = { ...input, site_role: siteRole, email: input.email ?? '', tax_id: input.tax_id ?? '', manager_name: input.manager_name ?? '', opening_hours: input.opening_hours ?? '', notes: input.notes ?? '', id: nextId(state.sites), site_type: siteRole === 'Magazzino' ? 'warehouse' as const : 'store' as const, recognition_code: recognitionCode, created_at: new Date().toISOString() };
+        const site = { ...input, site_role: siteRole, email: input.email ?? '', tax_id: input.tax_id ?? '', manager_name: input.manager_name ?? '', working_days: input.working_days ?? '', opening_hours: input.opening_hours ?? '', notes: input.notes ?? '', id: nextId(state.sites), site_type: siteRole === 'Magazzino' ? 'warehouse' as const : 'store' as const, recognition_code: recognitionCode, created_at: new Date().toISOString() };
         state.sites.push(site);
       }
       persist();

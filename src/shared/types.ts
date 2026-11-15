@@ -3,8 +3,8 @@ export type RolePermission = Section | 'sales-report' | 'sales-csv' | 'sales-too
 export type RolePermissionMap = Partial<Record<string, RolePermission[]>>;
 export type ProductUnit = 'KG' | 'LITRO' | 'PEZZO';
 export type Printer = { name: string; displayName: string };
-export interface Site { id: number; name: string; site_role: string; address: string; phone: string; email: string; tax_id: string; manager_name: string; opening_hours: string; notes: string; site_type: 'store' | 'warehouse'; recognition_code: string; created_at: string }
-export type SiteInput = Pick<Site, 'name' | 'address' | 'phone'> & Partial<Pick<Site, 'site_role' | 'email' | 'tax_id' | 'manager_name' | 'opening_hours' | 'notes'>> & { id?: number };
+export interface Site { id: number; name: string; site_role: string; address: string; phone: string; email: string; tax_id: string; manager_name: string; working_days: string; opening_hours: string; notes: string; site_type: 'store' | 'warehouse'; recognition_code: string; created_at: string }
+export type SiteInput = Pick<Site, 'name' | 'address' | 'phone'> & Partial<Pick<Site, 'site_role' | 'email' | 'tax_id' | 'manager_name' | 'working_days' | 'opening_hours' | 'notes'>> & { id?: number };
 
 export interface Product {
   id: number;

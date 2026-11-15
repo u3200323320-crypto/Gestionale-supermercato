@@ -475,7 +475,7 @@ function initDatabase(): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, address TEXT NOT NULL DEFAULT '',
       site_role TEXT NOT NULL DEFAULT 'Punto vendita',
       phone TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', tax_id TEXT NOT NULL DEFAULT '',
-      manager_name TEXT NOT NULL DEFAULT '', opening_hours TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
+      manager_name TEXT NOT NULL DEFAULT '', working_days TEXT NOT NULL DEFAULT '', opening_hours TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
       site_type TEXT NOT NULL DEFAULT 'store' CHECK(site_type IN ('store', 'warehouse')),
       recognition_code TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
     );
@@ -576,7 +576,7 @@ function initDatabase(): void {
   }
   supplierOrderRepository.initialize();
   database.prepare("UPDATE sites SET site_role = 'Punto vendita' WHERE TRIM(site_role) = '' OR site_role = 'Responsabile sede'").run();
-  for (const column of ['email', 'tax_id', 'manager_name', 'opening_hours', 'notes']) {
+  for (const column of ['email', 'tax_id', 'manager_name', 'working_days', 'opening_hours', 'notes']) {
     if (!siteColumns.some((existing) => existing.name === column)) database.exec(`ALTER TABLE sites ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`);
   }
   const employeeColumns = database.prepare('PRAGMA table_info(employees)').all() as Array<{ name: string }>;
