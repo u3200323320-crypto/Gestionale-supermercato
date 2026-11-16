@@ -26,7 +26,7 @@ const historySeedKey = `${storageKey}:history-v2`;
 const supplierSeedKey = `${storageKey}:suppliers-v1`;
 const warehouseProductSeedKey = `${storageKey}:warehouse-products-v1`;
 const demoOwnerBarcode = '0000000001';
-const siteRecognitionAlphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+const siteRecognitionAlphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 const now = new Date();
 const day = (offset: number) => {
   const date = new Date(now);
@@ -38,9 +38,19 @@ const localDay = (offset: number) => day(offset).slice(0, 10);
 function uniqueSiteRecognitionCode(reservedCodes: Set<string>): string {
   let code = '';
   do {
-    const values = new Uint32Array(15);
+    const values = new Uint32Array(29);
     window.crypto.getRandomValues(values);
-    code = Array.from(values, (value) => siteRecognitionAlphabet[value % siteRecognitionAlphabet.length]).join('');
+    const characters = [
+      siteRecognitionAlphabet[values[0] % 26],
+      siteRecognitionAlphabet[26 + (values[1] % 26)],
+      siteRecognitionAlphabet[52 + (values[2] % 10)],
+      ...Array.from(values.slice(3, 15), (value) => siteRecognitionAlphabet[value % siteRecognitionAlphabet.length]),
+    ];
+    for (let index = characters.length - 1, randomIndex = 15; index > 0; index -= 1, randomIndex += 1) {
+      const swapIndex = values[randomIndex] % (index + 1);
+      [characters[index], characters[swapIndex]] = [characters[swapIndex], characters[index]];
+    }
+    code = characters.join('');
   } while (reservedCodes.has(code));
   reservedCodes.add(code);
   return code;
@@ -58,7 +68,8 @@ function migrateDemoSiteRecognitionCodes(state: AppState): boolean {
       site.site_type = 'warehouse';
       changed = true;
     }
-    if (/^[a-z0-9]{15}$/.test(site.recognition_code) && !reservedCodes.has(site.recognition_code)) {
+    if (/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z0-9]{15}$/.test(site.recognition_code)
+      && !reservedCodes.has(site.recognition_code)) {
       reservedCodes.add(site.recognition_code);
       continue;
     }

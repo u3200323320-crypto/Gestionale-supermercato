@@ -22,6 +22,7 @@ const EmployeeListPage = lazy(() => import('../pages/employee-list-page').then((
 const EmployeeTrackerPage = lazy(() => import('../pages/employee-tracker-page').then(({ EmployeeTrackerPage: Page }) => ({ default: Page })));
 const SiteCreatePage = lazy(() => import('../pages/site-create-page').then(({ SiteCreatePage: Page }) => ({ default: Page })));
 const SiteListPage = lazy(() => import('../pages/site-list-page').then(({ SiteListPage: Page }) => ({ default: Page })));
+const SiteMerchandisePage = lazy(() => import('../pages/site-merchandise-page').then(({ SiteMerchandisePage: Page }) => ({ default: Page })));
 const SiteStatisticsPage = lazy(() => import('../pages/site-statistics-page').then(({ SiteStatisticsPage: Page }) => ({ default: Page })));
 const LowStockPage = lazy(() => import('../pages/low-stock-page').then(({ LowStockPage: Page }) => ({ default: Page })));
 const ExpiredProductsPage = lazy(() => import('../pages/expired-products-page').then(({ ExpiredProductsPage: Page }) => ({ default: Page })));
@@ -189,7 +190,9 @@ const arabicUiTranslations: Record<string, string> = {
   'Stampa su termica USB': 'الطباعة على الطابعة الحرارية عبر USB',
   'GESTIONE CLIENTI': 'إدارة العملاء', 'Gestione sedi': 'إدارة الفروع',
   'Statistiche sedi': 'إحصاءات الفروع', 'Gestisci sedi': 'إدارة الفروع', 'Aggiungi sede': 'إضافة فرع', 'Lista sedi': 'قائمة الفروع',
-  'Merce nelle sedi': 'البضائع في الفروع',
+  'Merce nelle sedi': 'البضائع في الفروع', 'Merce nella sede': 'البضائع في الفرع', 'Merce': 'البضائع',
+  'articoli presenti': 'منتجات موجودة', 'Torna alla lista sedi': 'العودة إلى قائمة الفروع',
+  'Nessun prodotto presente in questa sede.': 'لا توجد منتجات في هذا الفرع.',
   'Distribuisci merce': 'توزيع البضائع', 'Distribuzione merce tra sedi': 'توزيع البضائع بين الفروع',
   'Trasferisci una quantità dalla giacenza di una sede a quella di un’altra.': 'انقل كمية من مخزون فرع إلى مخزون فرع آخر.',
   'Trasferisci una quantità dal magazzino alla sede selezionata.': 'انقل كمية من المخزن إلى الفرع المحدد.',
@@ -1112,6 +1115,7 @@ export default function App() {
   const [siteSaveAuthorizationBarcode, setSiteSaveAuthorizationBarcode] = useState('');
   const [siteEditorBarcode, setSiteEditorBarcode] = useState('');
   const [selectedSiteDetails, setSelectedSiteDetails] = useState<Site | null>(null);
+  const [selectedSiteMerchandise, setSelectedSiteMerchandise] = useState<Site | null>(null);
   const [siteStatsPeriod, setSiteStatsPeriod] = useState('Ultimi 6 mesi');
   const [siteStatsFrom, setSiteStatsFrom] = useState(localDateKey());
   const [siteStatsTo, setSiteStatsTo] = useState(localDateKey());
@@ -1387,6 +1391,7 @@ export default function App() {
       return;
     }
     if (nextTarget !== section) trackActivity(sectionNames[nextTarget] ?? nav.find((item) => item.section === nextTarget)?.label ?? nextTarget, 'Apertura sezione');
+    if (selectedSiteMerchandise) setSelectedSiteMerchandise(null);
     setSection(nextTarget);
     if (nextTarget !== 'sale-management') setSaleManagementSearch('');
     if (nextTarget === 'cash' && isOwner) {
@@ -3044,10 +3049,10 @@ export default function App() {
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  const exportInventoryReport = async (share = false) => {
+  const exportInventoryReport = async (share = false, siteOverride?: Site) => {
     if (!data) return;
     try {
-      const selectedSite = inventorySiteId === 'all' ? undefined : availableStockSites.find((site) => String(site.id) === inventorySiteId);
+      const selectedSite = siteOverride ?? (inventorySiteId === 'all' ? undefined : availableStockSites.find((site) => String(site.id) === inventorySiteId));
       const sitesToExport = selectedSite ? [selectedSite] : availableStockSites;
       const reportName = selectedSite ? `Merce nella sede ${selectedSite.name}` : 'Merce nelle sedi';
       const rtl = language === 'ar';
@@ -3921,7 +3926,16 @@ export default function App() {
       return activityDate >= rangeStart;
     }) ?? [];
   }, [activityEmployeeId, activityFrom, activityPeriod, activityTo, data?.employeeActivities, section, todayKey]);
-  const sectionLabel = sectionNames[section] ?? nav.find((item) => item.section === section)?.label ?? 'Impostazioni';
+  const sectionLabel = selectedSiteMerchandise ? 'Merce' : sectionNames[section] ?? nav.find((item) => item.section === section)?.label ?? 'Impostazioni';
+  const siteMerchandiseProducts = (siteId: number) => {
+    const stockByProduct = new Map((data?.siteStocks ?? [])
+      .filter((stock) => stock.site_id === siteId && stock.stock > 0)
+      .map((stock) => [stock.product_id, stock.stock]));
+    return (data?.products ?? []).flatMap((product) => {
+      const stock = stockByProduct.get(product.id);
+      return stock ? [{ ...product, stock }] : [];
+    });
+  };
   const startEmployeeCreation = () => {
     if (!data) {
       notify('Archivio non disponibile.');
@@ -4513,7 +4527,9 @@ export default function App() {
       {section === 'low-stock' && <LowStockPage sites={data.sites} getProductsForSite={lowStockProductsForSite} onDownload={() => { setLowStockExportSite('all'); setLowStockExportAction('download'); }} onShare={() => { setLowStockExportSite('all'); setLowStockExportAction('share'); }} />}
       {lowStockExportAction && <Modal title={lowStockExportAction === 'download' ? 'Scarica lista articoli in esaurimento' : 'Condividi lista articoli in esaurimento'} close={() => setLowStockExportAction(null)}><div className="form-grid low-stock-export-form"><label className="field"><span>Seleziona le sedi</span><select value={lowStockExportSite} onChange={(event) => setLowStockExportSite(event.target.value)}><option value="all">Tutte le sedi</option>{storeSites.map((site) => <option key={site.id} value={String(site.id)}>{site.name}</option>)}</select></label><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => setLowStockExportAction(null)}>Annulla</button><button className="button button-primary" type="button" onClick={() => void confirmLowStockExport()}>{lowStockExportAction === 'download' ? <><ArrowDownToLine size={16} /> Scarica</> : <><Share2 size={16} /> Condividi</>}</button></div></div></Modal>}
       {section === 'site-create' && siteDraft && <SiteCreatePage draft={siteDraft} managers={data.employees.filter((employee) => normalizedRole(employee.role) === 'responsabile sede')} roles={siteRoleOptions} workingDays={workingDayOptions} showCustomRole={showSiteCustomRole} customRole={siteCustomRole} onDraftChange={setSiteDraft} onRoleChange={(role) => { if (role === '__other__') { setShowSiteCustomRole(true); setSiteCustomRole(''); } else { setSiteDraft({ ...siteDraft, site_role: role }); setShowSiteCustomRole(false); } }} onCustomRoleChange={setSiteCustomRole} onAddCustomRole={() => { const enteredRole = siteCustomRole.trim(); const role = siteRoleOptions.find((item) => item.toLocaleLowerCase('it') === enteredRole.toLocaleLowerCase('it')) ?? enteredRole; const next = [...new Set([...siteRoleOptions, role])]; setSiteRoleOptions(next); window.localStorage.setItem('site-roles', JSON.stringify(next.filter((item) => !defaultSiteRoles.includes(item)))); setSiteDraft((current) => current ? { ...current, site_role: role } : current); setSiteCustomRole(''); setShowSiteCustomRole(false); }} onBack={() => navigateTo('site-list')} onCancel={() => { setSiteDraft(null); navigateTo('site-list'); }} onSave={(event) => void saveSite(event)} />}
-      {(section === 'site-list' || section === 'site-management') && <SiteListPage section={section} sites={data.sites} sales={data.sales} employees={data.employees} siteStocks={data.siteStocks} canManage={canAccess('site-management')} onCreate={() => { setSiteDraft({ name: '', address: '', phone: '', site_role: 'Punto vendita' }); navigateTo('site-create'); }} onView={setSelectedSiteDetails} onEdit={(site) => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'edit' }); }} onDelete={(site) => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'delete' }); }} />}
+      {(section === 'site-list' || section === 'site-management') && (selectedSiteMerchandise
+        ? <SiteMerchandisePage site={selectedSiteMerchandise} products={siteMerchandiseProducts(selectedSiteMerchandise.id)} onBack={() => setSelectedSiteMerchandise(null)} onDownload={() => void exportInventoryReport(false, selectedSiteMerchandise)} />
+        : <SiteListPage section={section} sites={data.sites} sales={data.sales} employees={data.employees} siteStocks={data.siteStocks} canManage={canAccess('site-management')} onCreate={() => { setSiteDraft({ name: '', address: '', phone: '', site_role: 'Punto vendita' }); navigateTo('site-create'); }} onView={setSelectedSiteDetails} onMerchandise={setSelectedSiteMerchandise} onEdit={(site) => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'edit' }); }} onDelete={(site) => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'delete' }); }} />)}
       {section === 'employee-tracker' && <EmployeeTrackerPage employees={data.employees} entries={employeeActivityList} period={activityPeriod} onPeriodChange={setActivityPeriod} from={activityFrom} onFromChange={setActivityFrom} to={activityTo} onToChange={setActivityTo} employeeId={activityEmployeeId} onEmployeeChange={setActivityEmployeeId} onExport={() => void exportEmployeeActivityPdf()} />}
       {section === 'employee-create' && employeeDraft && <div className="page-content settings-page"><section className="settings-panel employee-create-panel"><EmployeeForm initial={employeeDraft} save={saveEmployee} cancel={() => { setEmployeeDraft(null); navigateTo('employees'); }} notify={notify} canDelete={['proprietario', 'direttore'].includes(normalizedRole(activeRole))} sites={data.sites.map((site) => site.name)} onDelete={async () => { const employee = data.employees.find((item) => item.id === employeeDraft.id); if (employee) startEmployeeAction(employee, 'delete'); }} /></section></div>}
       {section === 'payroll' && <div className="page-content payroll-page">

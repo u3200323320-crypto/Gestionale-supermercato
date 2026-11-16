@@ -4,12 +4,22 @@ import type { SiteInput } from '../shared/types';
 
 export const WAREHOUSE_SITE_NAME = 'Magazzino';
 
-const recognitionAlphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+const recognitionAlphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
 function uniqueRecognitionCode(database: Database.Database, reservedCodes: Set<string>): string {
   let code = '';
   do {
-    code = Array.from({ length: 15 }, () => recognitionAlphabet[randomInt(recognitionAlphabet.length)]).join('');
+    const characters = [
+      recognitionAlphabet[randomInt(26)],
+      recognitionAlphabet[26 + randomInt(26)],
+      recognitionAlphabet[52 + randomInt(10)],
+      ...Array.from({ length: 12 }, () => recognitionAlphabet[randomInt(recognitionAlphabet.length)]),
+    ];
+    for (let index = characters.length - 1; index > 0; index -= 1) {
+      const swapIndex = randomInt(index + 1);
+      [characters[index], characters[swapIndex]] = [characters[swapIndex], characters[index]];
+    }
+    code = characters.join('');
   } while (reservedCodes.has(code) || database.prepare('SELECT 1 FROM sites WHERE recognition_code = ?').get(code));
   reservedCodes.add(code);
   return code;
@@ -74,7 +84,8 @@ export function migrateSites(database: Database.Database): void {
       .all() as Array<{ id: number; recognition_code: string }>;
     const updateCode = database.prepare('UPDATE sites SET recognition_code = ? WHERE id = ?');
     for (const site of sites) {
-      const hasValidCode = /^[a-z0-9]{15}$/.test(site.recognition_code) && !reservedCodes.has(site.recognition_code);
+      const hasValidCode = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z0-9]{15}$/.test(site.recognition_code)
+        && !reservedCodes.has(site.recognition_code);
       const code = hasValidCode ? site.recognition_code : uniqueRecognitionCode(database, reservedCodes);
       reservedCodes.add(code);
       if (code !== site.recognition_code) updateCode.run(code, site.id);

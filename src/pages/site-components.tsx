@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
-import { CalendarDays, Check, ChevronDown, Clock, Eye, MapPin, Pencil, Phone, Store, Trash2, UserRound, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, Clock, Eye, Fingerprint, MapPin, Package, Pencil, Phone, Store, Trash2, UserRound, X } from 'lucide-react';
 import type { AppState, Employee, Product, Sale, Site, SiteStock } from '../shared/types';
 import { usePageServices } from './page-services';
 
-export function SiteCard({ site, dailyRevenue, employeeCount, productCount, canManage, onView, onEdit, onDelete }: {
+export function SiteCard({ site, dailyRevenue, employeeCount, productCount, canManage, onView, onMerchandise, onEdit, onDelete }: {
   site: Site;
   dailyRevenue: number;
   employeeCount: number;
   productCount: number;
   canManage: boolean;
   onView: () => void;
+  onMerchandise: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -22,13 +23,17 @@ export function SiteCard({ site, dailyRevenue, employeeCount, productCount, canM
       <div className="site-card-info-inline"><UserRound size={14} strokeWidth={2.5} aria-label={text('Responsabile')} role="img" /><span><strong>{text('Responsabile:')}</strong><span className="site-card-manager-value no-translate">{site.manager_name || '—'}</span></span></div>
       <div className="site-card-info-inline"><CalendarDays size={14} strokeWidth={2.5} aria-label={text('Giorni lavorativi')} role="img" /><span className="no-translate">{site.working_days || '—'}</span></div>
       <div className="site-card-info-inline"><Clock size={14} strokeWidth={2.5} aria-label={text('Orari di apertura')} role="img" /><span className="no-translate">{site.opening_hours || '—'}</span></div>
+      <div className="site-card-info-inline"><Fingerprint size={14} strokeWidth={2.5} aria-label={text('Codice di riconoscimento')} role="img" /><span><strong>{text('Codice di riconoscimento')}:</strong><span className="site-card-recognition-code no-translate" dir="ltr">{site.recognition_code}</span></span></div>
     </div>
     <div className="site-card-metrics">
       <div className="site-card-metric"><span>{text('Fatturato del giorno')}</span><strong>{money.format(dailyRevenue)}</strong></div>
       <div className="site-card-metric"><span>{text('Dipendenti')}</span><strong>{employeeCount}</strong></div>
       <div className="site-card-metric"><span>{text('Prodotti in sede')}</span><strong>{productCount}</strong></div>
     </div>
-    <button className="button button-outline site-card-view" type="button" onClick={onView}><Eye size={14} /> {text('Vedi nel dettaglio')}</button>
+    <div className="site-card-navigation">
+      <button className="button button-outline" type="button" onClick={onView}><Eye size={14} /> {text('Vedi nel dettaglio')}</button>
+      <button className="button button-outline" type="button" onClick={onMerchandise}><Package size={14} /> {text('Merce')}</button>
+    </div>
     {canManage && <div className="site-card-actions"><button className="button button-danger" type="button" onClick={onDelete}><Trash2 size={14} /> {text('Elimina')}</button><button className="button button-outline" type="button" onClick={onEdit}><Pencil size={14} /> {text('Modifica')}</button></div>}
   </article>;
 }
