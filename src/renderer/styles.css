@@ -1381,9 +1381,12 @@ body svg text, body svg tspan { fill: #000 !important; }
 .site-card-metric { display: grid; min-width: 0; align-content: start; justify-items: start; gap: 5px; padding: 9px 7px; border: 1px solid var(--line); border-radius: 4px; background: #f7f8f6; }
 .site-card-metric > span { overflow-wrap: anywhere; color: var(--muted); font-size: 9px; font-weight: 700; }
 .site-card-metric > strong { overflow-wrap: anywhere; font-size: 12px; }
-.site-card-navigation { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.site-card-navigation { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
 .site-card-navigation .button { min-width: 0; width: 100%; padding-inline: 8px; font-size: 10px; }
+.site-card-navigation .button:last-child { width: auto; justify-self: start; }
 .site-merchandise-page .page-toolbar { align-items: flex-start; }
+.site-merchandise-page .table-wrap thead th { height: 55px; background: #1685dc !important; color: #ffffff !important; font-size: 15px; }
+.site-merchandise-total-row td { height: 55px; border-top: 2px solid var(--line); font-size: 13px; font-weight: 700; }
 .site-merchandise-print-heading { display: none; }
 .site-card-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
 .site-card-actions .button { min-width: 0; padding-inline: 8px; font-size: 10px; }

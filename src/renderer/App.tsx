@@ -1956,6 +1956,33 @@ export default function App() {
     if (locked) void window.gestionale.logout();
   }, [locked]);
   useEffect(() => {
+    if (locked || !selectedSiteMerchandise || !['site-list', 'site-management'].includes(section)) return;
+    let active = true;
+    let refreshingMerchandise = false;
+    const refreshMerchandise = async () => {
+      if (!active || refreshingMerchandise || document.visibilityState !== 'visible') return;
+      refreshingMerchandise = true;
+      try {
+        const next = await window.gestionale.getState();
+        if (active) setData(next);
+      } catch (error) {
+        if (active) notify(`Impossibile aggiornare la merce della sede: ${errorText(error)}`);
+      } finally {
+        refreshingMerchandise = false;
+      }
+    };
+    const interval = window.setInterval(() => void refreshMerchandise(), 60_000);
+    window.addEventListener('focus', refreshMerchandise);
+    document.addEventListener('visibilitychange', refreshMerchandise);
+    void refreshMerchandise();
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refreshMerchandise);
+      document.removeEventListener('visibilitychange', refreshMerchandise);
+    };
+  }, [locked, section, selectedSiteMerchandise?.id]);
+  useEffect(() => {
     if (section !== 'financial-balance') return;
     const refreshBalance = () => {
       if (document.visibilityState === 'visible') {
@@ -3087,22 +3114,53 @@ export default function App() {
         const reportProducts = data.products
           .map((item) => ({ ...item, stock: siteStockFor(item.id, site.id) }))
           .filter((item) => item.stock > 0);
+        const totals = reportProducts.reduce((sum, item) => {
+          const unit = item.unit ?? 'PEZZO';
+          sum.sale += item.sale_price * item.stock;
+          sum.purchase += item.purchase_price * item.stock;
+          sum.profit += (item.sale_price - item.purchase_price) * item.stock;
+          sum.stock[unit] += item.stock;
+          sum.threshold[unit] += item.low_stock_threshold;
+          return sum;
+        }, {
+          sale: 0,
+          purchase: 0,
+          profit: 0,
+          stock: { KG: 0, LITRO: 0, PEZZO: 0 },
+          threshold: { KG: 0, LITRO: 0, PEZZO: 0 },
+        });
+        const formatUnitTotals = (values: Record<ProductUnit, number>) => (['KG', 'LITRO', 'PEZZO'] as const)
+          .filter((unit) => values[unit] > 0)
+          .map((unit) => `${quantityFormat.format(values[unit])} ${rtl
+            ? unit === 'KG' ? 'كغ' : unit === 'LITRO' ? 'لتر' : 'قطعة'
+            : unit === 'KG' ? 'kg' : unit === 'LITRO' ? 'lit.' : 'pz'}`)
+          .join(' · ') || '0';
         const siteTitle = rtl ? `الفرع: ${site.name}` : `Sede: ${site.name}`;
         doc.setFont(font, 'bold');
         doc.setFontSize(10);
         doc.setTextColor(22, 133, 220);
         doc.text(reportText(siteTitle), rtl ? 202 : 8, cursorY, rtl ? { align: 'right' } : undefined);
+        const totalRow = [
+          'Totale', '', '', reportMoney(totals.sale), reportMoney(totals.purchase), reportMoney(totals.profit),
+          formatUnitTotals(totals.stock), formatUnitTotals(totals.threshold), '—',
+        ];
         autoTable(doc, {
           startY: cursorY + 3,
           head: [headings.map(reportText)],
-          body: reportProducts.map((item) => {
+          body: [...reportProducts.map((item) => {
             const row = [item.name, item.code, localizedText(item.category, language), reportMoney(item.sale_price), reportMoney(item.purchase_price), reportMoney(item.sale_price - item.purchase_price), `${item.stock} ${rtl ? item.unit === 'KG' ? 'كغ' : item.unit === 'LITRO' ? 'لتر' : 'قطعة' : item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'lit.' : 'pz'}`, String(item.low_stock_threshold), item.expiry_enabled && item.expiry_date ? new Intl.DateTimeFormat(rtl ? 'ar-EG' : 'it-IT', { dateStyle: 'short' }).format(new Date(`${item.expiry_date}T00:00:00`)) : '—'];
             return (rtl ? row.reverse() : row).map(reportText);
-          }),
+          }), (rtl ? totalRow.reverse() : totalRow).map(reportText)],
           theme: 'striped',
           styles: { font: rtl ? font : 'helvetica', fontSize: rtl ? 5 : 6, cellPadding: 1.5, overflow: 'linebreak', textColor: [49, 60, 53], lineColor: [224, 230, 224], halign: rtl ? 'right' : 'left' },
           headStyles: { fillColor: [22, 133, 220], textColor: [255, 255, 255], font, fontStyle: 'bold', halign: rtl ? 'right' : 'left' },
           alternateRowStyles: { fillColor: [244, 247, 244] },
+          didParseCell: (cellData) => {
+            if (cellData.section === 'body' && cellData.row.index === reportProducts.length) {
+              cellData.cell.styles.fontStyle = 'bold';
+              cellData.cell.styles.fillColor = [235, 239, 235];
+            }
+          },
           margin: { left: 8, right: 8, bottom: 22 },
           didDrawPage: () => {
             doc.setFontSize(8);
@@ -4365,9 +4423,9 @@ export default function App() {
             <button aria-expanded={openSidebarMenu === 'employees'} className={`nav-item${['employees', 'employee-create', 'payroll', 'employee-tracker'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'employees' ? null : 'employees')}><ClipboardList size={18} /><span>Dipendenti</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'employees' ? ' open' : ''}`} size={15} /></button>
             {openSidebarMenu === 'employees' && <div className="sidebar-submenu">{canAccess('employees') && <button className={`sidebar-subitem${section === 'employees' ? ' selected' : ''}`} onClick={() => navigateTo('employees')}>Lista Dipendenti</button>}{canAccess('payroll') && <button className={`sidebar-subitem${section === 'payroll' ? ' selected' : ''}`} onClick={() => navigateTo('payroll')}>Paga Stipendi</button>}{canAccess('employee-tracker') && <button className={`sidebar-subitem${section === 'employee-tracker' ? ' selected' : ''}`} onClick={() => navigateTo('employee-tracker')}>Tracker Dipendenti</button>}</div>}
           </>}
-          {(canAccess('site-statistics') || canAccess('site-management') || canAccess('site-create') || canAccess('site-list') || canAccess('low-stock') || canAccess('available-stock')) && <>
+          {(canAccess('site-statistics') || canAccess('site-management') || canAccess('site-create') || canAccess('site-list') || canAccess('low-stock')) && <>
             <button aria-expanded={siteMenuOpen} className={`nav-item${['site-statistics', 'site-management', 'site-create', 'site-list', 'low-stock', 'available-stock'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'sites' ? null : 'sites')}><Store size={18} /><span>Gestione sedi</span><ChevronDown className={`nav-chevron${siteMenuOpen ? ' open' : ''}`} size={15} /></button>
-            {siteMenuOpen && <div className="sidebar-submenu">{canAccess('available-stock') && <button className={`sidebar-subitem${section === 'available-stock' ? ' selected' : ''}`} onClick={() => navigateTo('available-stock')}>Merce nelle sedi</button>}{canAccess('low-stock') && <button className={`sidebar-subitem${section === 'low-stock' ? ' selected' : ''}`} onClick={() => navigateTo('low-stock')}>Merce in esaurimento</button>}{canAccess('site-list') && <button className={`sidebar-subitem${section === 'site-list' ? ' selected' : ''}`} onClick={() => navigateTo('site-list')}>Lista sedi</button>}{canAccess('site-statistics') && <button className={`sidebar-subitem${section === 'site-statistics' ? ' selected' : ''}`} onClick={() => navigateTo('site-statistics')}>Statistiche sedi</button>}</div>}
+            {siteMenuOpen && <div className="sidebar-submenu">{canAccess('low-stock') && <button className={`sidebar-subitem${section === 'low-stock' ? ' selected' : ''}`} onClick={() => navigateTo('low-stock')}>Merce in esaurimento</button>}{canAccess('site-list') && <button className={`sidebar-subitem${section === 'site-list' ? ' selected' : ''}`} onClick={() => navigateTo('site-list')}>Lista sedi</button>}{canAccess('site-statistics') && <button className={`sidebar-subitem${section === 'site-statistics' ? ' selected' : ''}`} onClick={() => navigateTo('site-statistics')}>Statistiche sedi</button>}</div>}
           </>}
           {(canAccess('supplier-list') || canAccess('supplier-order')) && <>
             <button aria-expanded={openSidebarMenu === 'suppliers'} className={`nav-item${['supplier-list', 'supplier-order'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'suppliers' ? null : 'suppliers')}><Store size={18} /><span>Gestione Fornitori</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'suppliers' ? ' open' : ''}`} size={15} /></button>
