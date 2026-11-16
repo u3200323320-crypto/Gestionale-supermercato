@@ -8,7 +8,7 @@ import { basename, dirname, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
-import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, Employee, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, RolePermission, RolePermissionMap, Sale, SaleItem, Section, Site, SiteInput, SiteStock, StockDistributionRecord, Supplier, SupplierInput, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
+import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, Employee, EmployeeActivity, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, RolePermission, RolePermissionMap, Sale, SaleItem, Section, Site, SiteInput, SiteStock, StockDistributionRecord, Supplier, SupplierInput, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
 import { ApplicationController } from './application-controller';
 import { ApplicationEventBus } from './application-events';
 import { SupplierOrderRepository, type SupplierOrderMovementWriter } from './data/supplier-order-repository';
@@ -1198,6 +1198,11 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   ipcMain.handle('state:get', (event) => {
     requireMainWindowSender(event.sender.id);
     return stateForSession(sessionForSender(event.sender.id));
+  });
+  ipcMain.handle('employee:activities', (event) => {
+    const session = requireSession(event.sender.id);
+    if (!['proprietario', 'direttore'].includes(normalizedEmployeeRole(session.role))) return [];
+    return database.prepare('SELECT * FROM employee_activity ORDER BY created_at DESC, id DESC').all() as EmployeeActivity[];
   });
   ipcMain.handle('settings:homepage-video', async (event) => {
     const session = requireSession(event.sender.id);

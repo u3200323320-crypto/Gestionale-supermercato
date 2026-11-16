@@ -1,5 +1,7 @@
-import { cloneElement, createContext, Fragment, isValidElement, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { cloneElement, createContext, Fragment, isValidElement, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, InputHTMLAttributes, ReactNode } from 'react';
+import { PageServicesProvider } from '../pages/page-services';
+import { OpeningHoursPicker, SalesTable, SiteDetailsDrawer, SiteStockStatistics } from '../pages/site-components';
 import { createPortal } from 'react-dom';
 import { Apple, Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Beef, Bell, CalendarDays, Camera, Carrot, Check, ChevronDown, CircleAlert, ClipboardList, Clock, Cookie, CreditCard, CupSoda, Eye, Fish, FolderOpen, House, LockKeyhole, Mail, MapPin, Menu, Milk, Minus, Package, Pencil, Phone, Plus, Printer, RefreshCw, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Snowflake, SprayCan, Store, Trash2, TrendingUp, UserRound, Users, Video, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -13,6 +15,18 @@ import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
 import homeBanner from './home-banner.svg';
 import type { AppDataBackup, AppState, AuthenticatedEmployee, Employee, EmployeeInput, Expense, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, RolePermission, RolePermissionMap, Sale, SaleItem, Section, Site, SiteInput, SiteStock, Supplier, SupplierInput, SupplierOrder, SupplierOrderInput } from '../shared/types';
+
+const HomePage = lazy(() => import('../pages/home-page').then(({ HomePage: Page }) => ({ default: Page })));
+const SalesPage = lazy(() => import('../pages/sales-page').then(({ SalesPage: Page }) => ({ default: Page })));
+const EmployeeListPage = lazy(() => import('../pages/employee-list-page').then(({ EmployeeListPage: Page }) => ({ default: Page })));
+const EmployeeTrackerPage = lazy(() => import('../pages/employee-tracker-page').then(({ EmployeeTrackerPage: Page }) => ({ default: Page })));
+const SiteCreatePage = lazy(() => import('../pages/site-create-page').then(({ SiteCreatePage: Page }) => ({ default: Page })));
+const SiteListPage = lazy(() => import('../pages/site-list-page').then(({ SiteListPage: Page }) => ({ default: Page })));
+const SiteStatisticsPage = lazy(() => import('../pages/site-statistics-page').then(({ SiteStatisticsPage: Page }) => ({ default: Page })));
+const LowStockPage = lazy(() => import('../pages/low-stock-page').then(({ LowStockPage: Page }) => ({ default: Page })));
+const ExpiredProductsPage = lazy(() => import('../pages/expired-products-page').then(({ ExpiredProductsPage: Page }) => ({ default: Page })));
+const SupplierListPage = lazy(() => import('../pages/suppliers').then(({ SupplierListPage: Page }) => ({ default: Page })));
+const SupplierOrderPage = lazy(() => import('../pages/suppliers').then(({ SupplierOrderPage: Page }) => ({ default: Page })));
 
 let money: Pick<Intl.NumberFormat, 'format'> = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
 let appCurrencySymbol = '€';
@@ -111,7 +125,7 @@ const arabicUiTranslations: Record<string, string> = {
   'Cerca con fotocamera': 'البحث بالكاميرا', 'Esporta Excel': 'تصدير Excel', 'Periodo': 'الفترة', 'Dipendente': 'الموظف',
   'Da': 'من', 'A': 'إلى', 'Stampa': 'طباعة', 'Stampa lista': 'طباعة القائمة', 'Scarica lista': 'تنزيل القائمة',
   'Scarica lista Excel': 'تنزيل القائمة بصيغة Excel', 'Data e ora': 'التاريخ والوقت', 'Attività': 'النشاط', 'Sezione': 'القسم', 'Dettagli': 'التفاصيل',
-  'Nessuna attività registrata per i filtri selezionati.': 'لا توجد أنشطة مسجلة للفلاتر المحددة.', 'Nessun articolo trovato': 'لم يتم العثور على منتجات',
+  'Nessuna attività registrata per i filtri selezionati.': 'لا توجد أنشطة مسجلة للفلاتر المحددة.', 'Mostra altre attività': 'عرض المزيد من الأنشطة', 'Nessun articolo trovato': 'لم يتم العثور على منتجات',
   'Modifica la ricerca o aggiungi un articolo.': 'عدّل البحث أو أضف منتجًا.', 'Nome': 'الاسم', 'Cognome': 'اسم العائلة', 'Ruolo': 'الدور', 'Sede': 'الفرع',
   'Cerca dipendente, ruolo o sede…': 'البحث عن موظف أو دور أو فرع…', 'Scarica contratti': 'تنزيل العقود', 'Nessun dipendente registrato.': 'لا يوجد موظفون مسجلون.',
   'Nessun dipendente corrisponde alla ricerca.': 'لا يوجد موظفون مطابقون للبحث.', 'Foto del dipendente': 'صورة الموظف', 'Foto documenti': 'صور المستندات',
@@ -664,125 +678,6 @@ function AccessPermissionsPanel({ roles, role, permissions, onRoleChange, onPerm
       </Fragment>)}</div>
     </> : <p className="help-copy">Non ci sono ruoli dipendente da configurare.</p>}
   </></LocalizedNodes>;
-}
-function SupplierListPage({ suppliers, orders, onSave, notify }: { suppliers: Supplier[]; orders: SupplierOrder[]; onSave: (supplier: SupplierInput) => Promise<void>; notify: (message: string) => void }) {
-  const [draft, setDraft] = useState<SupplierInput | null>(null);
-  const [details, setDetails] = useState<Supplier | null>(null);
-  const [saving, setSaving] = useState(false);
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!draft) return;
-    setSaving(true);
-    try {
-      await onSave(draft);
-      setDraft(null);
-    } catch (error) {
-      notify(errorText(error));
-    } finally {
-      setSaving(false);
-    }
-  };
-  const supplierOrders = details ? orders.filter((order) => order.supplier_id === details.id) : [];
-  const orderedProducts = new Map<string, { name: string; code: string; unit: string; quantity: number }>();
-  supplierOrders.forEach((order) => order.items.forEach((item) => {
-    const key = item.product_code || `${item.product_name}-${item.unit}`;
-    const current = orderedProducts.get(key);
-    orderedProducts.set(key, {
-      name: item.product_name,
-      code: item.product_code,
-      unit: item.unit,
-      quantity: (current?.quantity ?? 0) + item.quantity,
-    });
-  }));
-  return <LocalizedNodes><div className="page-content supplier-page">
-    <div className="page-toolbar"><div><p>{suppliers.length} fornitori registrati</p></div><button className="button button-primary" type="button" onClick={() => setDraft({ name: '', contact_name: '', phone: '', email: '', address: '', notes: '' })}><Plus size={16} /> Aggiungi fornitore</button></div>
-    <div className="supplier-card-grid">{suppliers.map((supplier) => <article className="supplier-card" key={supplier.id}><div className="supplier-card-icon"><Store size={20} /></div><h3>{supplier.name}</h3><span className="supplier-card-contact"><Phone size={14} aria-hidden="true" /><strong>Telefono:</strong><span>{supplier.phone || 'non disponibile'}</span></span><span className="supplier-card-contact"><Mail size={14} aria-hidden="true" /><strong>Email:</strong><span className="no-translate">{supplier.email || 'non disponibile'}</span></span><div className="supplier-card-actions"><button className="button button-outline" type="button" onClick={() => setDraft({ id: supplier.id, name: supplier.name, contact_name: supplier.contact_name, phone: supplier.phone, email: supplier.email, address: supplier.address, notes: supplier.notes })}><Pencil size={14} /> Modifica</button><button className="button button-outline" type="button" onClick={() => setDetails(supplier)}><Eye size={14} /> Dai un’occhiata</button></div></article>)}{!suppliers.length && <div className="empty-cell supplier-empty">Nessun fornitore registrato.</div>}</div>
-    {draft && <Modal title={draft.id ? 'Modifica fornitore' : 'Aggiungi fornitore'} close={() => setDraft(null)} wide portal><form className="form-grid supplier-form" onSubmit={(event) => void submit(event)}><Field label="Nome fornitore" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} maxLength={120} required autoFocus /><Field label="Nome referente" value={draft.contact_name} onChange={(event) => setDraft({ ...draft, contact_name: event.target.value })} maxLength={120} /><Field label="Telefono" type="tel" value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} maxLength={40} /><Field label="Email" type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} maxLength={254} /><Field label="Indirizzo" value={draft.address} onChange={(event) => setDraft({ ...draft, address: event.target.value })} maxLength={240} /><label className="field supplier-notes"><span>Note</span><textarea rows={3} maxLength={1000} value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} /></label><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => setDraft(null)}>Annulla</button><button className="button button-primary" disabled={saving}><Check size={16} /> Salva fornitore</button></div></form></Modal>}
-    {details && createPortal(<LocalizedNodes><div className="drawer-backdrop supplier-details-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetails(null); }}><aside className="detail-drawer supplier-details-drawer"><header className="drawer-header"><div><p className="eyebrow">DETTAGLIO FORNITORE</p><h2>{details.name}</h2></div><button className="icon-button" type="button" onClick={() => setDetails(null)} aria-label="Chiudi"><X size={18} /></button></header><div className="drawer-content"><div className="detail-list supplier-detail-list"><Detail label="Nome fornitore" value={details.name} /><Detail label="Referente" value={details.contact_name || '—'} /><Detail label="Telefono" value={details.phone || '—'} /><Detail label="Email" value={details.email || '—'} /><Detail label="Indirizzo" value={details.address || '—'} /><Detail label="Registrato il" value={dateTimeText(new Date(details.created_at))} /><Detail label="Note" value={details.notes || '—'} /></div><section className="supplier-ordered-products"><h3>Articoli ordinati</h3><p>{supplierOrders.length} ordini registrati</p>{orderedProducts.size ? <div>{[...orderedProducts.values()].map((item) => <article key={`${item.code}-${item.unit}`}><strong>{item.name}</strong><span>{item.code} · {quantityFormat.format(item.quantity)} {item.unit}</span></article>)}</div> : <p className="empty-cell">Nessun articolo ordinato da questo fornitore.</p>}</section></div></aside></div></LocalizedNodes>, document.body)}
-  </div></LocalizedNodes>;
-}
-function SupplierOrderPage({ suppliers, products, sites, orders, onSave, onReceive, onItemUpdate, onItemDelete, notify }: { suppliers: Supplier[]; products: Product[]; sites: Site[]; orders: SupplierOrder[]; onSave: (order: SupplierOrderInput) => Promise<void>; onReceive: (orderId: number, itemId: number | null, barcode: string) => Promise<void>; onItemUpdate: (orderId: number, itemId: number, quantity: number, unitCost: number, barcode: string) => Promise<void>; onItemDelete: (orderId: number, itemId: number, barcode: string) => Promise<void>; notify: (message: string) => void }) {
-  const [supplierId, setSupplierId] = useState('');
-  const [siteId, setSiteId] = useState('');
-  const [productId, setProductId] = useState('');
-  const [quantity, setQuantity] = useState('');
-  const [unitCost, setUnitCost] = useState('');
-  const [expectedArrivalDate, setExpectedArrivalDate] = useState('');
-  const [orderStatus, setOrderStatus] = useState<'pending' | 'received'>('pending');
-  const [items, setItems] = useState<SupplierOrderInput['items']>([]);
-  const [barcodeAction, setBarcodeAction] = useState<{ type: 'register' } | { type: 'receive'; order: SupplierOrder; itemId: number | null; itemName?: string } | { type: 'update-item' | 'delete-item'; order: SupplierOrder; item: SupplierOrder['items'][number] } | null>(null);
-  const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
-  const [employeeBarcode, setEmployeeBarcode] = useState('');
-  const [editQuantity, setEditQuantity] = useState('');
-  const [editUnitCost, setEditUnitCost] = useState('');
-  const [saving, setSaving] = useState(false);
-  const selectedProduct = products.find((product) => String(product.id) === productId);
-  const addItem = () => {
-    const parsedQuantity = Number(quantity);
-    const parsedCost = Number(unitCost);
-    if (!selectedProduct || !Number.isFinite(parsedQuantity) || parsedQuantity <= 0 || !Number.isFinite(parsedCost) || parsedCost < 0) {
-      notify('Seleziona un articolo e inserisci quantità e costo validi.');
-      return;
-    }
-    if (items.some((item) => item.product_id === selectedProduct.id)) {
-      notify('L’articolo è già presente nell’ordine.');
-      return;
-    }
-    setItems((current) => [...current, { product_id: selectedProduct.id, quantity: parsedQuantity, unit_cost: parsedCost }]);
-    setProductId('');
-    setQuantity('');
-    setUnitCost('');
-  };
-  const submitOrder = () => {
-    if (!supplierId || !siteId || !items.length || (orderStatus === 'pending' && !expectedArrivalDate)) {
-      notify('Seleziona fornitore e sede, aggiungi articoli e indica la data prevista di arrivo.');
-      return;
-    }
-    setEmployeeBarcode('');
-    setBarcodeAction({ type: 'register' });
-  };
-  const confirmBarcodeAction = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!employeeBarcode.trim() || !barcodeAction) return;
-    setSaving(true);
-    try {
-      if (barcodeAction.type === 'register') {
-        const received = orderStatus === 'received';
-        await onSave({ supplier_id: Number(supplierId), site_id: Number(siteId), expected_arrival_date: received ? null : expectedArrivalDate, received, employee_barcode: employeeBarcode.trim(), notes: '', items });
-        setSupplierId('');
-        setSiteId('');
-        setProductId('');
-        setQuantity('');
-        setUnitCost('');
-        setItems([]);
-      } else if (barcodeAction.type === 'receive') {
-        await onReceive(barcodeAction.order.id, barcodeAction.itemId, employeeBarcode.trim());
-      } else if (barcodeAction.type === 'update-item') {
-        await onItemUpdate(barcodeAction.order.id, barcodeAction.item.id, Number(editQuantity), Number(editUnitCost), employeeBarcode.trim());
-      } else {
-        await onItemDelete(barcodeAction.order.id, barcodeAction.item.id, employeeBarcode.trim());
-      }
-      setExpectedArrivalDate('');
-      setOrderStatus('pending');
-      setBarcodeAction(null);
-      setEmployeeBarcode('');
-    } catch (error) {
-      notify(errorText(error));
-    } finally {
-      setSaving(false);
-    }
-  };
-  return <LocalizedNodes><div className="page-content supplier-page">
-    {!suppliers.length ? <Empty icon={Store} title="Registra prima un fornitore" detail="Aggiungi un fornitore dalla sezione Lista fornitori." /> : <div className="supplier-order-layout">
-      <div className="panel supplier-order-form"><SelectField label="Fornitore" value={supplierId} onChange={setSupplierId} options={['', ...suppliers.map((supplier) => String(supplier.id))]} labels={['Seleziona fornitore', ...suppliers.map((supplier) => supplier.name)]} /><SelectField label="Sede di ricevimento" value={siteId} onChange={setSiteId} options={['', ...sites.map((site) => String(site.id))]} labels={['Seleziona sede', ...sites.map((site) => site.name)]} /><SelectField label="Articolo" value={productId} onChange={(value) => { setProductId(value); const product = products.find((item) => String(item.id) === value); setUnitCost(product ? String(product.purchase_price) : ''); }} options={['', ...products.map((product) => String(product.id))]} labels={['Seleziona articolo', ...products.map((product) => `${product.name} · ${product.code}`)]} /><div className="supplier-order-line-inputs"><Field label="Quantità" type="number" min="1" step="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} /><Field label="Costo unitario (€)" type="number" min="0" step="0.01" value={unitCost} onChange={(event) => setUnitCost(event.target.value)} /></div><button className="button button-outline" type="button" disabled={!productId} onClick={addItem}><Plus size={15} /> Aggiungi articolo</button></div>
-      <section className="panel supplier-order-items"><div className="panel-heading"><div><h3>Articoli nell’ordine</h3><p>{items.length} articoli</p></div></div><div className="supplier-order-item-list">{items.map((item) => { const product = products.find((candidate) => candidate.id === item.product_id); if (!product) return null; return <div className="supplier-order-item" key={item.product_id}><div><strong>{product.name}</strong><small>{quantityFormat.format(item.quantity)} {product.unit ?? 'PEZZO'} × {money.format(item.unit_cost)}</small></div><strong>{money.format(item.quantity * item.unit_cost)}</strong><button className="icon-button small" type="button" title="Rimuovi articolo" aria-label={`Rimuovi ${product.name}`} onClick={() => setItems((current) => current.filter((entry) => entry.product_id !== item.product_id))}><X size={14} /></button></div>; })}{!items.length && <p className="empty-cell">Aggiungi articoli per comporre l’ordine.</p>}<div className="supplier-order-total"><span>Totale stimato</span><strong>{money.format(items.reduce((sum, item) => sum + item.quantity * item.unit_cost, 0))}</strong></div><div className="supplier-order-controls"><div className="supplier-order-status"><SelectField label="Stato ordine" value={orderStatus} onChange={(value) => setOrderStatus(value as 'pending' | 'received')} options={['pending', 'received']} labels={['In attesa di ricevimento', 'Ordine già ricevuto']} />{orderStatus === 'pending' && <Field label="Data prevista di arrivo" type="date" value={expectedArrivalDate} onChange={(event) => setExpectedArrivalDate(event.target.value)} />}</div><button className="button button-primary full-width" type="button" disabled={saving || !items.length || !supplierId || !siteId || (orderStatus === 'pending' && !expectedArrivalDate)} onClick={submitOrder}><Check size={16} /> Registra ordine</button></div></div></section>
-    </div>}
-    <section className="supplier-orders-history"><div className="panel-heading"><div><h3>Ordini registrati</h3><p>{orders.length} ordini</p></div></div><Table headings={['Ordine', 'Data', 'Fornitore', 'Sede', 'Articoli', 'Stato', 'Totale']}><>{orders.map((order) => {
-      const hasReceivedItems = order.items.some((item) => item.received_at);
-      return <Fragment key={order.id}><tr><td><button className="supplier-order-folder" type="button" aria-expanded={expandedOrderId === order.id} onClick={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}><FolderOpen size={15} /> #{order.id}<ChevronDown size={13} /></button></td><td>{dateTimeText(new Date(order.created_at))}</td><td>{order.supplier_name}</td><td>{order.site_name || '—'}</td><td>{order.items.length}</td><td>{order.received_at ? 'Ricevuto' : hasReceivedItems ? 'Parzialmente ricevuto' : order.expected_arrival_date ? `Previsto ${formatLocalDate(order.expected_arrival_date)}` : '—'}</td><td>{money.format(order.items.reduce((sum, item) => sum + item.quantity * item.unit_cost, 0))}</td></tr>{expandedOrderId === order.id && <tr><td className="supplier-order-details-cell" colSpan={7}><div className="supplier-order-details"><div className="supplier-order-details-heading"><strong>Articoli dell’ordine #{order.id}</strong>{!order.received_at && <button className="button button-outline" type="button" onClick={() => { setEmployeeBarcode(''); setBarcodeAction({ type: 'receive', order, itemId: null }); }}><Check size={14} /> Ricevi tutto l’ordine</button>}</div>{order.items.map((item) => <div className="supplier-order-received-item" key={item.id}><div><strong>{item.product_name}</strong><small>{item.product_code} · {quantityFormat.format(item.quantity)} {item.unit} × {money.format(item.unit_cost)}</small></div>{item.received_at ? <span className="supplier-order-received-label">Ricevuto · modifica non disponibile</span> : <div className="supplier-order-item-actions"><button className="button button-outline" type="button" onClick={() => { setEmployeeBarcode(''); setEditQuantity(String(item.quantity)); setEditUnitCost(String(item.unit_cost)); setBarcodeAction({ type: 'update-item', order, item }); }}><Pencil size={14} /> Modifica</button><button className="button button-danger" type="button" onClick={() => { setEmployeeBarcode(''); setBarcodeAction({ type: 'delete-item', order, item }); }}><Trash2 size={14} /> Elimina</button><button className="button button-outline" type="button" onClick={() => { setEmployeeBarcode(''); setBarcodeAction({ type: 'receive', order, itemId: item.id, itemName: item.product_name }); }}><Check size={14} /> Ricevi articolo</button></div>}</div>)}</div></td></tr>}</Fragment>;
-    })}{!orders.length && <tr><td colSpan={7} className="empty-cell">Nessun ordine registrato.</td></tr>}</></Table></section>
-    {barcodeAction && <Modal title={barcodeAction.type === 'receive' ? barcodeAction.itemId === null ? 'Conferma ricevimento ordine' : 'Conferma ricevimento articolo' : barcodeAction.type === 'register' ? 'Conferma registrazione ordine' : barcodeAction.type === 'update-item' ? 'Modifica articolo ordine' : 'Elimina articolo ordine'} close={() => setBarcodeAction(null)} wide portal><form className="form-grid supplier-order-barcode-form" onSubmit={(event) => void confirmBarcodeAction(event)}><p className="supplier-order-barcode-description">{barcodeAction.type === 'receive' ? `${barcodeAction.itemName ? `Articolo: ${barcodeAction.itemName}` : `Ordine #${barcodeAction.order.id}`}. Scansiona il barcode della persona che conferma il ricevimento.` : barcodeAction.type === 'register' ? 'Scansiona il barcode del dipendente che registra l’ordine.' : `Ordine #${barcodeAction.order.id} · ${barcodeAction.item.product_name}. Scansiona il barcode del dipendente per confermare.`}</p>{barcodeAction.type === 'update-item' && <div className="supplier-order-line-inputs"><Field label="Quantità" type="number" min="0.001" step="0.001" value={editQuantity} onChange={(event) => setEditQuantity(event.target.value)} required /><Field label="Costo unitario (€)" type="number" min="0" step="0.01" value={editUnitCost} onChange={(event) => setEditUnitCost(event.target.value)} required /></div>}<Field label="Barcode dipendente" value={employeeBarcode} onChange={(event) => setEmployeeBarcode(event.target.value)} autoFocus required /><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => setBarcodeAction(null)}>Annulla</button><button className={`button ${barcodeAction.type === 'delete-item' ? 'button-danger' : 'button-primary'}`} disabled={saving}><Check size={16} /> {barcodeAction.type === 'register' ? 'Registra e conferma' : barcodeAction.type === 'receive' ? 'Conferma ricevimento' : barcodeAction.type === 'update-item' ? 'Salva modifiche' : 'Conferma eliminazione'}</button></div></form></Modal>}
-  </div></LocalizedNodes>;
 }
 const voucherCodeSpace = 10_000_000_000;
 function randomVoucherCode(prefix: string, usedCodes: Set<string>): string {
@@ -1502,7 +1397,11 @@ export default function App() {
       setAutomaticPromotionId(undefined);
     }
     setOpenSidebarMenu(null);
-    if (nextTarget === 'employee-tracker') void refresh();
+    if (nextTarget === 'employee-tracker') {
+      void window.gestionale.getEmployeeActivities()
+        .then((employeeActivities) => setData((current) => current ? { ...current, employeeActivities } : current))
+        .catch((error: unknown) => notify(`Impossibile aggiornare le attività: ${errorText(error)}`));
+    }
   };
   const downloadEmployeeBadge = async (employee: Employee) => {
     const canvas = document.createElement('canvas');
@@ -3469,12 +3368,27 @@ export default function App() {
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  const todaySales = data?.sales.filter((sale) => new Date(sale.created_at).toDateString() === new Date().toDateString()) ?? [];
-  const dailyProfit = todaySales.reduce((sum, sale) =>
-    sum + sale.total - sale.items.reduce((cost, item) => cost + item.quantity * item.purchase_price, 0), 0);
-  const dailyGross = todaySales.reduce((sum, sale) => sum + sale.gross_total, 0);
-  const dailyUnits = todaySales.reduce((sum, sale) => sum + sale.item_count, 0);
-  const todayRefunds = data?.refunds.filter((refund) => new Date(refund.created_at).toDateString() === new Date().toDateString()).reduce((sum, refund) => sum + refund.amount, 0) ?? 0;
+  const todaySales = useMemo(() => {
+    const today = new Date(`${todayKey}T00:00:00`).toDateString();
+    return (data?.sales ?? []).filter((sale) => new Date(sale.created_at).toDateString() === today);
+  }, [data?.sales, todayKey]);
+  const { dailyProfit, dailyGross, dailyUnits } = useMemo(() => todaySales.reduce((totals, sale) => ({
+    dailyProfit: totals.dailyProfit + sale.total - sale.items.reduce((cost, item) => cost + item.quantity * item.purchase_price, 0),
+    dailyGross: totals.dailyGross + sale.gross_total,
+    dailyUnits: totals.dailyUnits + sale.item_count,
+  }), { dailyProfit: 0, dailyGross: 0, dailyUnits: 0 }), [todaySales]);
+  const todayRefunds = useMemo(() => {
+    const today = new Date(`${todayKey}T00:00:00`).toDateString();
+    return (data?.refunds ?? [])
+      .filter((refund) => new Date(refund.created_at).toDateString() === today)
+      .reduce((sum, refund) => sum + refund.amount, 0);
+  }, [data?.refunds, todayKey]);
+  const dynamicNames = useMemo(() => new Set([
+    data?.settings.shop_name,
+    ...(data?.products ?? []).map((product) => product.name),
+    ...(data?.employees ?? []).flatMap((employee) => [employee.first_name, employee.last_name, `${employee.first_name} ${employee.last_name}`.trim()]),
+    ...(data?.sales ?? []).flatMap((sale) => sale.items.map((item) => item.name)),
+  ].filter((name): name is string => Boolean(name))), [data?.employees, data?.products, data?.sales, data?.settings.shop_name]);
   const balance = useMemo(() => {
     if (section !== 'financial-balance') return null;
     const balanceMonthCount = balancePeriod === 'Ultimo mese' ? 1 : balancePeriod === 'Ultimi 3 mesi' ? 3 : balancePeriod === 'Ultimi 6 mesi' ? 6 : 12;
@@ -3981,27 +3895,31 @@ export default function App() {
   }, [data?.stockMovements, inventoryHistoryFrom, inventoryHistoryPeriod, inventoryHistorySearch, inventoryHistoryTo, section, todayKey]);
   const employeeActivityList = useMemo(() => {
     if (section !== 'employee-tracker') return [];
-    const matchesPeriod = (createdAt: string) => {
-      const activityDate = new Date(createdAt);
-      const today = new Date();
-      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      if (activityPeriod === 'Da - A') {
-        const from = activityFrom ? new Date(`${activityFrom}T00:00:00`) : null;
-        const to = activityTo ? new Date(`${activityTo}T23:59:59.999`) : null;
-        return (!from || activityDate >= from) && (!to || activityDate <= to);
-      }
+    const activities = data?.employeeActivities ?? [];
+    if (activityPeriod === 'Tutti' && activityEmployeeId === 'Tutti') return activities;
+    if (activityPeriod === 'Tutti') {
+      return activities.filter((entry) => entry.employee_id === Number(activityEmployeeId));
+    }
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+    const yesterdayStart = new Date(todayStart);
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+    const rangeStart = new Date(todayStart);
+    if (activityPeriod === 'Ultima settimana') rangeStart.setDate(rangeStart.getDate() - 6);
+    else if (activityPeriod === 'Ultimo mese') rangeStart.setMonth(rangeStart.getMonth() - 1);
+    const from = activityFrom ? new Date(`${activityFrom}T00:00:00`) : null;
+    const to = activityTo ? new Date(`${activityTo}T23:59:59.999`) : null;
+    return activities.filter((entry) => {
+      if (activityEmployeeId !== 'Tutti' && entry.employee_id !== Number(activityEmployeeId)) return false;
       if (activityPeriod === 'Tutti') return true;
-      if (activityPeriod === 'Oggi') return activityDate >= todayStart && activityDate < new Date(todayStart.getTime() + 86400000);
-      if (activityPeriod === 'Ieri') return activityDate >= new Date(todayStart.getTime() - 86400000) && activityDate < todayStart;
-      const rangeStart = new Date(todayStart);
-      if (activityPeriod === 'Ultima settimana') rangeStart.setDate(rangeStart.getDate() - 6);
-      else if (activityPeriod === 'Ultimo mese') rangeStart.setMonth(rangeStart.getMonth() - 1);
+      const activityDate = new Date(entry.created_at);
+      if (activityPeriod === 'Da - A') return (!from || activityDate >= from) && (!to || activityDate <= to);
+      if (activityPeriod === 'Oggi') return activityDate >= todayStart && activityDate < tomorrowStart;
+      if (activityPeriod === 'Ieri') return activityDate >= yesterdayStart && activityDate < todayStart;
       return activityDate >= rangeStart;
-    };
-    return data?.employeeActivities.filter((entry) =>
-      (activityEmployeeId === 'Tutti' || entry.employee_id === Number(activityEmployeeId))
-      && matchesPeriod(entry.created_at)
-    ) ?? [];
+    }) ?? [];
   }, [activityEmployeeId, activityFrom, activityPeriod, activityTo, data?.employeeActivities, section, todayKey]);
   const sectionLabel = sectionNames[section] ?? nav.find((item) => item.section === section)?.label ?? 'Impostazioni';
   const startEmployeeCreation = () => {
@@ -4398,13 +4316,7 @@ export default function App() {
 
   if (!data) return <div className="loading-screen"><span className="loader" />{language === 'ar' ? 'جارٍ تحميل الأرشيف…' : 'Caricamento archivio…'}</div>;
 
-  const dynamicNames = new Set([
-    data.settings.shop_name,
-    ...data.products.map((product) => product.name),
-    ...data.employees.flatMap((employee) => [employee.first_name, employee.last_name, `${employee.first_name} ${employee.last_name}`.trim()]),
-    ...data.sales.flatMap((sale) => sale.items.map((item) => item.name)),
-  ].filter(Boolean));
-  return <AppLanguageContext.Provider value={language}><AppDynamicNamesContext.Provider value={dynamicNames}><LocalizedNodes><div className={`app-shell${isCashierRole(activeRole) ? ' cashier-mode' : ''}`} onPointerMove={(event) => { if (cursorGlowRef.current) { cursorGlowRef.current.style.left = `${event.clientX}px`; cursorGlowRef.current.style.top = `${event.clientY}px`; } }}>
+  return <AppLanguageContext.Provider value={language}><AppDynamicNamesContext.Provider value={dynamicNames}><LocalizedNodes><PageServicesProvider value={{ language, text: (value) => localizedText(value, language), money, quantityFormat, receiptDate, dateTimeText, formatLocalDate, errorText, Field, Modal, Table, Detail, Empty, SelectField, FilterSelectField, LocalizedNodes, Metric, SectionHeading, SearchInput }}><div className={`app-shell${isCashierRole(activeRole) ? ' cashier-mode' : ''}`} onPointerMove={(event) => { if (cursorGlowRef.current) { cursorGlowRef.current.style.left = `${event.clientX}px`; cursorGlowRef.current.style.top = `${event.clientY}px`; } }}>
     <div className="app-cursor-glow" ref={cursorGlowRef} aria-hidden="true" />
     <WebPreviewNotice />
     {!isCashierRole(activeRole) && <aside className="sidebar">
@@ -4470,20 +4382,10 @@ export default function App() {
       {data.settings.shop_logo ? <img className="topbar-logo" src={data.settings.shop_logo} alt="Logo negozio" /> : <div className="topbar-logo-fallback"><Store size={19} /></div>}
       <div className="topbar-right"><div className="today-date">{navbarDate.format(currentTime)} · {navbarTime.format(currentTime)}</div>{!isCashierRole(activeRole) && <div className="notification-center" ref={notificationCenterRef}><button className="icon-button notification-trigger" type="button" aria-label={`Notifiche${lowStockNotifications.filter((item) => !item.read).length ? `: ${lowStockNotifications.filter((item) => !item.read).length} nuove` : ''}`} aria-expanded={notificationsOpen} onClick={() => { setNotificationsOpen((open) => !open); setSelectedNotification(null); }}><Bell size={18} />{lowStockNotifications.some((item) => !item.read) && <span className="notification-badge">{lowStockNotifications.filter((item) => !item.read).length > 99 ? '99+' : lowStockNotifications.filter((item) => !item.read).length}</span>}</button>{notificationsOpen && <section className="notification-panel" aria-label="Notifiche"><div className="notification-panel-heading">{selectedNotification ? <button className="notification-back" type="button" onClick={() => setSelectedNotification(null)}><ArrowLeft size={14} /> Indietro</button> : <strong>Notifiche</strong>}<button className="icon-button small" type="button" aria-label="Chiudi notifiche" onClick={() => { setNotificationsOpen(false); setSelectedNotification(null); }}><X size={15} /></button></div>{selectedNotification ? <article className={`notification-detail${selectedNotification.read ? '' : ' unread'}`}><strong>{selectedNotification.productName}</strong><span>Scorta in esaurimento · {selectedNotification.siteName}</span><small>Disponibili: {quantityFormat.format(selectedNotification.stock)} · Soglia: {quantityFormat.format(selectedNotification.threshold)}</small><time>{dateTimeText(new Date(selectedNotification.createdAt))}</time></article> : lowStockNotifications.length ? <div className="notification-items">{lowStockNotifications.map((item) => <button className={`notification-item${item.read ? ' ' : ' unread'}`} type="button" key={`${item.id}-${item.createdAt}`} onClick={() => { setSelectedNotification({ ...item, read: true }); setLowStockNotifications((items) => items.map((notification) => notification.id === item.id && notification.createdAt === item.createdAt ? { ...notification, read: true } : notification)); }}><strong>{item.productName}</strong><span>Scorta in esaurimento · {item.siteName}</span><small>Disponibili: {quantityFormat.format(item.stock)} · Soglia: {quantityFormat.format(item.threshold)}</small></button>)}</div> : <p className="notification-empty">Nessuna notifica.</p>}</section>}</div>}{isCashierRole(activeRole) && data.employees.length > 0 && <button className="icon-button" type="button" title="Blocca e cambia utente" aria-label="Blocca e cambia utente" onClick={() => { trackActivity('Accesso', 'Uscita dal gestionale'); setCurrentUser(null); setLocked(true); setLoginBarcode(''); }}><LockKeyhole size={17} /></button>}</div>
     </header>
+      <Suspense fallback={null}>
       {section === 'home' && data.settings.home_video && <video className="home-banner-overlay" src={data.settings.home_video} autoPlay muted loop playsInline />}
 
-      {section === 'home' && <div className="page-content home-page">
-        <img className="home-banner" src={data.settings.home_image || homeBanner} alt="Immagine homepage" />
-        <div className="metric-grid">
-          <Metric icon={Banknote} label="Vendite di oggi" value={money.format(dailyGross)} detail={`${todaySales.length} scontrini emessi`} />
-          <Metric icon={ArrowDownToLine} label="Rimborsi" value={money.format(todayRefunds)} detail="Rimborsi registrati oggi" />
-          <Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyProfit)} detail="Profitto dopo sconti e costo merce" />
-          <Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString(appLocale)} detail="Pezzi registrati oggi" />
-          <Metric icon={CircleAlert} label="Da riordinare" value={reorderProducts.length.toLocaleString(appLocale)} detail="Articoli sotto soglia" action={<button className="text-button metric-action" type="button" onClick={() => setReorderListOpen(true)}>{localizedText('Vedi lista', language)}</button>} />
-          <Metric icon={CircleAlert} label="Avviso date di scadenza" value={expiringProducts.length.toLocaleString(appLocale)} detail={expiringProducts.length ? 'Articoli in scadenza entro 10 giorni' : 'Nessun articolo in scadenza nei prossimi 10 giorni'} action={canAccess('inventory') ? <button className="text-button metric-action" type="button" onClick={() => setExpiryListOpen(true)}>{localizedText('Vedi lista', language)}</button> : undefined} />
-        </div>
-        <section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => navigateTo('sales')}>{language === 'ar' ? 'كل المبيعات ←' : 'Tutte le vendite →'}</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section>
-      </div>}
+      {section === 'home' && <HomePage image={data.settings.home_image || homeBanner} dailyGross={dailyGross} salesCount={todaySales.length} todayRefunds={todayRefunds} dailyProfit={dailyProfit} dailyUnitsLabel={dailyUnits.toLocaleString(appLocale)} reorderCount={reorderProducts.length} reorderCountLabel={reorderProducts.length.toLocaleString(appLocale)} expiringCount={expiringProducts.length} expiringCountLabel={expiringProducts.length.toLocaleString(appLocale)} canOpenExpiryList={canAccess('inventory')} recentSales={data.sales.slice(0, 5)} onOpenReorderList={() => setReorderListOpen(true)} onOpenExpiryList={() => setExpiryListOpen(true)} onOpenSales={() => navigateTo('sales')} onSelectSale={setReceipt} />}
       {expiryListOpen && <Modal title="Articoli in scadenza" close={() => setExpiryListOpen(false)} wide>
         <div className="reorder-list-modal-content">
           <Table headings={['Articolo', 'Data di scadenza']}><>
@@ -4519,7 +4421,7 @@ export default function App() {
         <div className="product-grid">{inventoryList.map((product) => { const stock = inventoryStockFor(product.id); return <button className="product-tile" key={product.id} onClick={() => { if (!isCashierRole(activeRole)) setSelectedProduct(product); }}><img className="tile-art" src={product.photo_data || productArtwork(product)} alt="" /><span className="tile-category">{product.category}</span><strong>{product.name}</strong><span className="tile-price">{money.format(product.sale_price)}</span><span className={`tile-stock${stock <= product.low_stock_threshold ? ' text-low' : ''}`}>{quantityFormat.format(stock)} disponibili</span></button>; })}</div>{inventoryList.length === 0 && <Empty icon={Package} title="Nessun articolo trovato" detail="Modifica la ricerca o aggiungi un articolo." />}
       </div>}
 
-      {section === 'expired-products' && <div className="page-content"><div className="page-toolbar"><div><h2>Gestione prodotti scaduti</h2><p>Verifica gli articoli scaduti e registra lo smaltimento.</p></div><div className="toolbar-actions"><button className="button button-outline" disabled={!expiredProducts.length} onClick={exportExpiredProductsCsv}><ArrowDownToLine size={16} /> Scarica lista</button><button className="button button-outline" onClick={() => navigateTo('inventory')}>Torna al magazzino</button></div></div><Table headings={['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Data di scadenza', 'Azione']}><>{expiredProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td className="mono">{product.code}</td><td>{product.category}</td><td>{quantityFormat.format(product.stock)} {product.unit ?? 'PEZZO'}</td><td>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</td><td><button className="button button-danger" onClick={() => void disposeExpiredProduct(product)}><Trash2 size={14} /> Butta articolo</button></td></tr>)}</>{!expiredProducts.length && <tr><td colSpan={6} className="empty-cell">Non ci sono prodotti scaduti da gestire.</td></tr>}</Table></div>}
+      {section === 'expired-products' && <ExpiredProductsPage products={expiredProducts} onExport={exportExpiredProductsCsv} onBack={() => navigateTo('inventory')} onDispose={(product) => void disposeExpiredProduct(product)} />}
 
       {section === 'inventory-history' && <div className="page-content"><div id="inventory-history-print">
         <div className="inventory-history-actions no-print"><FilterSelectField label="Periodo" value={inventoryHistoryPeriod} onChange={setInventoryHistoryPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Da - A']} />{inventoryHistoryPeriod === 'Da - A' && <><Field label="Da" type="date" value={inventoryHistoryFrom} onChange={(event) => setInventoryHistoryFrom(event.target.value)} /><Field label="A" type="date" value={inventoryHistoryTo} onChange={(event) => setInventoryHistoryTo(event.target.value)} /></>}<SearchInput value={inventoryHistorySearch} onChange={setInventoryHistorySearch} placeholder="Cerca articolo, persona o nota…" /><button className="button button-outline" onClick={() => void exportInventoryHistoryPdf()}><ArrowDownToLine size={16} /> Esporta lista</button></div>
@@ -4560,7 +4462,7 @@ export default function App() {
         <aside className="cart-panel"><div className="cart-heading"><div className="cart-heading-title"><h2>CARRELLO <span>{quantityFormat.format(cart.reduce((sum, item) => sum + item.quantity, 0))}</span></h2></div><button className="icon-button cart-clear-button" title="Svuota carrello" aria-label="Svuota carrello" disabled={!cart.length || salesDisabled} onClick={() => { setCart([]); setManualPromotionId(undefined); setAutomaticPromotionId(undefined); }}><Trash2 size={17} /></button></div><div className="cart-lines">{cart.map((item) => <div className="cart-line" key={item.product_id}><div className="cart-line-name"><strong>{item.name}</strong><small>{quantityFormat.format(item.quantity)} {item.unit === 'KG' ? 'kg' : item.unit === 'LITRO' ? 'L' : 'pz'}</small></div><div className="quantity-control"><button disabled={salesDisabled} onClick={() => changeQuantity(item.product_id, -1)} aria-label="Rimuovi uno"><Minus size={13} /></button><span>{quantityFormat.format(item.quantity)}</span><button disabled={salesDisabled} onClick={() => changeQuantity(item.product_id, 1)} aria-label="Aggiungi uno"><Plus size={13} /></button></div><strong className="line-total">{money.format(item.quantity * item.unit_price)}</strong></div>)}{!cart.length && <div className="cart-empty"><ShoppingBasket size={25} /><span>Seleziona gli articoli<br />per iniziare una vendita</span></div>}</div><div className="receipt-summary"><div><span>Subtotale</span><span>{money.format(subtotal)}</span></div><div className="total-row"><strong>TOTALE</strong><strong>{money.format(subtotal)}</strong></div></div><button className="button button-primary checkout-button" disabled={!cart.length || salesDisabled} onClick={() => setCheckoutOpen(true)}>Procedi al pagamento <span>→</span></button></aside>
       </div></div>}
 
-      {section === 'sales' && <div className="page-content"><div className="sale-tools"><button className="button button-outline sale-camera-button" onClick={() => setCamera(true)}><Camera size={18} /> Cerca con fotocamera</button><SearchInput value={saleSearch} onChange={setSaleSearch} placeholder="Cerca numero scontrino…" numericOnly />{canAccessSalesFeature('sales-report') && <button className="button button-outline sale-report-button" onClick={() => { setReportExportType('sales-pdf'); setReportExportOpen(true); }}><ArrowDownToLine size={16} /> Scarica report</button>}{canAccessSalesFeature('sales-csv') && <button className="button button-outline" onClick={exportSalesCsv}><ArrowDownToLine size={16} /> Esporta CSV</button>}</div><div className="sale-filters"><details className="statistics-period-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Categoria: {salesCategory}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra vendite per categoria">{['Tutte', ...categories].map((categoryOption) => <button key={categoryOption} className={`status-filter${salesCategory === categoryOption ? ' active' : ''}`} aria-pressed={salesCategory === categoryOption} onClick={(event) => { setSalesCategory(categoryOption); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{categoryOption}</button>)}</div></details><details className="statistics-period-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Periodo: {salesPeriod}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra vendite per periodo">{['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A'].map((period) => <button key={period} className={`status-filter${salesPeriod === period ? ' active' : ''}`} aria-pressed={salesPeriod === period} onClick={(event) => { setSalesPeriod(period); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{period}</button>)}</div></details><details className="statistics-period-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Sede: {salesSite}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra vendite per sede">{['Tutte', ...storeSites.map((site) => site.name)].map((site) => <button key={site} className={`status-filter${salesSite === site ? ' active' : ''}`} aria-pressed={salesSite === site} onClick={(event) => { setSalesSite(site); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{site}</button>)}</div></details>{salesPeriod === 'Da - A' && <><Field label="Da" type="date" value={salesFrom} onChange={(event) => setSalesFrom(event.target.value)} /><Field label="A" type="date" value={salesTo} onChange={(event) => setSalesTo(event.target.value)} /></>}</div><SalesTable sales={salesList} onSelect={setReceipt} /></div>}
+      {section === 'sales' && <SalesPage search={saleSearch} onSearch={setSaleSearch} canExportReport={canAccessSalesFeature('sales-report')} canExportCsv={canAccessSalesFeature('sales-csv')} onOpenCamera={() => setCamera(true)} onOpenReport={() => { setReportExportType('sales-pdf'); setReportExportOpen(true); }} onExportCsv={exportSalesCsv} categories={categories} category={salesCategory} onCategoryChange={setSalesCategory} period={salesPeriod} onPeriodChange={setSalesPeriod} periods={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Da - A']} site={salesSite} onSiteChange={setSalesSite} sites={storeSites} from={salesFrom} onFromChange={setSalesFrom} to={salesTo} onToChange={setSalesTo} sales={salesList} onSelect={setReceipt} />}
       {section === 'sale-management' && <div className="page-content sale-management-page">
         <div className="sale-management-search"><SearchInput value={saleManagementSearch} onChange={setSaleManagementSearch} placeholder="Inserisci o scansiona il numero dello scontrino…" numericOnly /></div>
         {saleMatch ? <section className="panel sale-found">
@@ -4606,63 +4508,13 @@ export default function App() {
         </div>)}</div>
       </section></div>}
 
-      {section === 'employees' && <div className="page-content employee-page">
-        <div className="page-toolbar employee-toolbar"><SearchInput value={employeeSearch} onChange={setEmployeeSearch} placeholder="Cerca dipendente, ruolo o sede…" /><div className="toolbar-actions"><button className="button button-primary" onClick={startEmployeeCreation}><Plus size={16} /> Aggiungi dipendente</button></div></div>
-        <section className="employee-list-panel"><div className="employee-card-grid">{employeeList.map((employee) => <button className="employee-card" key={employee.id} onClick={() => setEmployeeDetails(employee)} aria-label={`Apri informazioni di ${employee.first_name} ${employee.last_name}`}><img className="employee-list-photo" src={employee.photo_data} alt={`Foto di ${employee.first_name} ${employee.last_name}`} /><span><small>Nome</small><strong>{employee.first_name}</strong></span><span><small>Cognome</small><strong>{employee.last_name}</strong></span><span><small>Ruolo</small><strong>{employee.role}</strong></span><span><small>Sede</small><strong>{employee.operational_site}</strong></span></button>)}{!employeeList.length && <Empty icon={ClipboardList} title={data.employees.length ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente registrato.'} detail="" />}</div></section>
-      </div>}
-      {section === 'site-statistics' && <div className="page-content accounting-page site-statistics-page"><div className="site-statistics-filters"><SelectField label="Periodo" value={siteStatsPeriod} onChange={setSiteStatsPeriod} options={['Oggi', 'Ultima settimana', 'Ultimo mese', 'Ultimi 3 mesi', 'Ultimi 6 mesi', 'Tutto', 'Da - A']} /><SelectField label="Sede" value={siteStatsFilter} onChange={setSiteStatsFilter} options={['Tutte', ...data.sites.map((site) => site.name)]} /><>{siteStatsPeriod === 'Da - A' && <><Field label="Da" type="date" value={siteStatsFrom} onChange={(event) => setSiteStatsFrom(event.target.value)} /><Field label="A" type="date" value={siteStatsTo} onChange={(event) => setSiteStatsTo(event.target.value)} /></>}</></div><div className="metric-grid accounting-metrics"><Metric icon={Banknote} label="Entrate sedi" value={money.format(siteStatsIncome)} detail={siteStatsPeriod} /><Metric icon={ArrowDownToLine} label="Uscite sedi" value={money.format(siteStatsExpenses)} detail={siteStatsPeriod} /><Metric icon={TrendingUp} label="Saldo sedi" value={money.format(siteStatsIncome - siteStatsExpenses)} detail="Entrate meno uscite" /><Metric icon={Package} label="Sedi attive" value={String(selectedSiteStats.length)} detail="Sedi nel filtro selezionato" /></div><section className="panel site-summary-panel"><div className="panel-heading"><div><h3>Entrate e uscite per sede</h3><p>{siteStatsPeriod}</p></div></div><Table headings={['Sede', 'Entrate', 'Uscite', 'Saldo', 'Scontrini', 'Carico merce', 'Scarico merce']}><>{selectedSiteStats.map((site) => <tr key={site.id}><td className="cell-primary">{site.name}</td><td className="align-right">{money.format(site.income)}</td><td className="align-right">{money.format(site.expenses)}</td><td className="align-right cell-primary">{money.format(site.balance)}</td><td>{site.receipts}</td><td>{quantityFormat.format(site.stockIn)}</td><td>{quantityFormat.format(site.stockOut)}</td></tr>)}</>{!selectedSiteStats.length && <tr><td colSpan={7} className="empty-cell">Nessuna sede trovata.</td></tr>}</Table></section><SiteStockStatistics sites={data.sites.filter((site) => siteStatsFilter === 'Tutte' || site.name === siteStatsFilter)} siteStocks={data.siteStocks} employees={data.employees} products={data.products} /></div>}
-      {section === 'low-stock' && <div className="page-content low-stock-page"><div className="page-toolbar low-stock-toolbar"><div className="toolbar-actions"><button className="button button-outline" onClick={() => { setLowStockExportSite('all'); setLowStockExportAction('download'); }}><ArrowDownToLine size={16} /> Scarica lista</button><button className="button button-primary" onClick={() => { setLowStockExportSite('all'); setLowStockExportAction('share'); }}><Share2 size={16} /> Condividi lista</button></div></div>{data.sites.length ? data.sites.map((site) => { const lowStockProducts = lowStockProductsForSite(site.id); return <section className="panel low-stock-site-panel" key={site.id}><div className="panel-heading"><div><h3>{site.name}</h3><p>{lowStockProducts.length} articoli in esaurimento</p></div></div><Table headings={['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Soglia minima']}><>{lowStockProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td className="mono">{product.code}</td><td>{product.category}</td><td>{quantityFormat.format(product.siteStock)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}</td><td>{quantityFormat.format(product.low_stock_threshold)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}</td></tr>)}</>{!lowStockProducts.length && <tr><td colSpan={5} className="empty-cell">Nessun articolo in esaurimento in questa sede.</td></tr>}</Table></section>; }) : <Empty icon={Package} title="Nessuna sede registrata." detail="" />}</div>}
+      {section === 'employees' && <EmployeeListPage employees={employeeList} totalEmployees={data.employees.length} search={employeeSearch} onSearch={setEmployeeSearch} onAdd={startEmployeeCreation} onOpen={setEmployeeDetails} />}
+      {section === 'site-statistics' && <SiteStatisticsPage period={siteStatsPeriod} onPeriodChange={setSiteStatsPeriod} siteFilter={siteStatsFilter} onSiteFilterChange={setSiteStatsFilter} from={siteStatsFrom} onFromChange={setSiteStatsFrom} to={siteStatsTo} onToChange={setSiteStatsTo} sites={data.sites} selectedStats={selectedSiteStats} income={siteStatsIncome} expenses={siteStatsExpenses} siteStocks={data.siteStocks} employees={data.employees} products={data.products} />}
+      {section === 'low-stock' && <LowStockPage sites={data.sites} getProductsForSite={lowStockProductsForSite} onDownload={() => { setLowStockExportSite('all'); setLowStockExportAction('download'); }} onShare={() => { setLowStockExportSite('all'); setLowStockExportAction('share'); }} />}
       {lowStockExportAction && <Modal title={lowStockExportAction === 'download' ? 'Scarica lista articoli in esaurimento' : 'Condividi lista articoli in esaurimento'} close={() => setLowStockExportAction(null)}><div className="form-grid low-stock-export-form"><label className="field"><span>Seleziona le sedi</span><select value={lowStockExportSite} onChange={(event) => setLowStockExportSite(event.target.value)}><option value="all">Tutte le sedi</option>{storeSites.map((site) => <option key={site.id} value={String(site.id)}>{site.name}</option>)}</select></label><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => setLowStockExportAction(null)}>Annulla</button><button className="button button-primary" type="button" onClick={() => void confirmLowStockExport()}>{lowStockExportAction === 'download' ? <><ArrowDownToLine size={16} /> Scarica</> : <><Share2 size={16} /> Condividi</>}</button></div></div></Modal>}
-      {section === 'site-create' && siteDraft && <div className="page-content settings-page">
-        <section className="settings-panel">
-          <button className="settings-back" onClick={() => navigateTo('site-list')}><ArrowLeft size={15} /> Lista sedi</button>
-          {siteDraft.id && <div className="settings-title"><h2>Modifica sede</h2><p>Inserisci i riferimenti e le informazioni operative del punto vendita.</p></div>}
-          <form className="settings-form site-form" onSubmit={(event) => void saveSite(event)}>
-            <Field label="Nome sede" value={siteDraft.name} onChange={(event) => setSiteDraft({ ...siteDraft, name: event.target.value })} required />
-            <label className="field"><span>Ruolo sede</span><select value={siteDraft.site_role ?? 'Punto vendita'} onChange={(event) => { if (event.target.value === '__other__') { setShowSiteCustomRole(true); setSiteCustomRole(''); } else { setSiteDraft({ ...siteDraft, site_role: event.target.value }); setShowSiteCustomRole(false); } }} required><option value="">Seleziona tipo sede</option>{siteRoleOptions.map((role) => <option key={role}>{role}</option>)}<option value="__other__">Nuovo ruolo</option></select></label>
-            {showSiteCustomRole && <div className="custom-role-field"><Field label="Nuovo ruolo" value={siteCustomRole} onChange={(event) => setSiteCustomRole(event.target.value)} /><button className="button button-outline" type="button" disabled={!siteCustomRole.trim()} onClick={() => { const enteredRole = siteCustomRole.trim(); const role = siteRoleOptions.find((item) => item.toLocaleLowerCase('it') === enteredRole.toLocaleLowerCase('it')) ?? enteredRole; const next = [...new Set([...siteRoleOptions, role])]; setSiteRoleOptions(next); window.localStorage.setItem('site-roles', JSON.stringify(next.filter((item) => !defaultSiteRoles.includes(item)))); setSiteDraft((current) => current ? { ...current, site_role: role } : current); setSiteCustomRole(''); setShowSiteCustomRole(false); }}>Aggiungi alla lista</button></div>}
-            <Field label="Indirizzo" value={siteDraft.address} onChange={(event) => setSiteDraft({ ...siteDraft, address: event.target.value })} />
-            <Field label="Telefono" type="tel" value={siteDraft.phone} onChange={(event) => setSiteDraft({ ...siteDraft, phone: event.target.value })} />
-            <Field label="Email sede" type="email" value={siteDraft.email ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, email: event.target.value })} />
-            <label className="field"><span>Responsabile sede</span><select value={siteDraft.manager_name ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, manager_name: event.target.value })}><option value="">Seleziona responsabile</option>{data.employees.filter((employee) => normalizedRole(employee.role) === 'responsabile sede').map((employee) => { const name = `${employee.first_name} ${employee.last_name}`; return <option key={employee.id} value={name}>{name}</option>; })}</select></label>
-            <div className="field">
-              <span>Giorni lavorativi</span>
-              <details className="working-days-picker">
-                <summary className="select-wrap"><span>{siteDraft.working_days || 'Seleziona i giorni lavorativi'}</span><ChevronDown size={14} /></summary>
-                <div className="working-days-options" role="group" aria-label="Seleziona i giorni lavorativi">
-                  {workingDayOptions.map((day) => {
-                    const selectedDays = new Set((siteDraft.working_days ?? '').split(',').map((value) => value.trim()).filter(Boolean));
-                    return <label key={day}><input type="checkbox" checked={selectedDays.has(day)} onChange={(event) => {
-                      const nextDays = new Set(selectedDays);
-                      if (event.currentTarget.checked) nextDays.add(day);
-                      else nextDays.delete(day);
-                      setSiteDraft({ ...siteDraft, working_days: workingDayOptions.filter((option) => nextDays.has(option)).join(', ') });
-                    }} />{day}</label>;
-                  })}
-                </div>
-              </details>
-            </div>
-            <OpeningHoursPicker value={siteDraft.opening_hours ?? ''} onChange={(opening_hours) => setSiteDraft({ ...siteDraft, opening_hours })} />
-            <label className="field site-notes-field"><span>Note</span><textarea rows={3} maxLength={1000} value={siteDraft.notes ?? ''} onChange={(event) => setSiteDraft({ ...siteDraft, notes: event.target.value })} /></label>
-            <div className="form-actions"><button className="button button-quiet" type="button" onClick={() => { setSiteDraft(null); navigateTo('site-list'); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Salva sede</button></div>
-          </form>
-        </section>
-      </div>}
-      {(section === 'site-list' || section === 'site-management') && <div className="page-content"><div className="page-toolbar"><div><h2>{section === 'site-management' ? 'Gestione sedi' : 'Lista sedi'}</h2><p>{data.sites.length} sedi registrate</p></div>{canAccess('site-management') && <button className="button button-primary" onClick={() => { setSiteDraft({ name: '', address: '', phone: '', site_role: 'Punto vendita' }); navigateTo('site-create'); }}><Plus size={16} /> Aggiungi sede</button>}</div><div className="site-card-grid">{data.sites.map((site) => <SiteCard key={site.id} site={site} dailyRevenue={data.sales.filter((sale) => sale.site === site.name && new Date(sale.created_at).toDateString() === new Date().toDateString()).reduce((sum, sale) => sum + sale.total, 0)} employeeCount={data.employees.filter((employee) => employee.operational_site === site.name).length} productCount={data.siteStocks.filter((stock) => stock.site_id === site.id && stock.stock > 0).length} canManage={canAccess('site-management')} onView={() => setSelectedSiteDetails(site)} onEdit={() => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'edit' }); }} onDelete={() => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'delete' }); }} />)}{!data.sites.length && <div className="empty-cell site-empty">Nessuna sede registrata.</div>}</div></div>}
-      {section === 'employee-tracker' && <div className="page-content">
-        <div id="employee-tracker-print">
-          <div className="inventory-history-actions no-print">
-            <FilterSelectField label="Periodo" value={activityPeriod} onChange={setActivityPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Da - A']} />
-            {activityPeriod === 'Da - A' && <><Field label="Da" type="date" value={activityFrom} onChange={(event) => setActivityFrom(event.target.value)} /><Field label="A" type="date" value={activityTo} onChange={(event) => setActivityTo(event.target.value)} /></>}
-            <FilterSelectField label="Dipendente" value={activityEmployeeId} onChange={setActivityEmployeeId} options={['Tutti', ...data.employees.map((employee) => String(employee.id))]} labels={['Tutti', ...data.employees.map((employee) => `${employee.first_name} ${employee.last_name}`)]} preserveLabels />
-            <button className="button button-outline" onClick={() => void exportEmployeeActivityPdf()}><ArrowDownToLine size={16} /> Scarica lista in PDF</button>
-          </div>
-          <Table headings={['Data e ora', 'Dipendente', 'Attività', 'Sezione', 'Dettagli']}>
-            <>{employeeActivityList.map((entry) => <tr key={entry.id}><td>{dateTimeText(new Date(entry.created_at))}</td><td className="cell-primary">{entry.employee_name}</td><td>{localizedText(entry.action, language)}</td><td>{localizedText(entry.section, language)}</td><td>{localizedText(entry.detail || '—', language)}</td></tr>)}</>
-            {!employeeActivityList.length && <tr><td colSpan={5} className="empty-cell">Nessuna attività registrata per i filtri selezionati.</td></tr>}
-          </Table>
-        </div>
-      </div>}
+      {section === 'site-create' && siteDraft && <SiteCreatePage draft={siteDraft} managers={data.employees.filter((employee) => normalizedRole(employee.role) === 'responsabile sede')} roles={siteRoleOptions} workingDays={workingDayOptions} showCustomRole={showSiteCustomRole} customRole={siteCustomRole} onDraftChange={setSiteDraft} onRoleChange={(role) => { if (role === '__other__') { setShowSiteCustomRole(true); setSiteCustomRole(''); } else { setSiteDraft({ ...siteDraft, site_role: role }); setShowSiteCustomRole(false); } }} onCustomRoleChange={setSiteCustomRole} onAddCustomRole={() => { const enteredRole = siteCustomRole.trim(); const role = siteRoleOptions.find((item) => item.toLocaleLowerCase('it') === enteredRole.toLocaleLowerCase('it')) ?? enteredRole; const next = [...new Set([...siteRoleOptions, role])]; setSiteRoleOptions(next); window.localStorage.setItem('site-roles', JSON.stringify(next.filter((item) => !defaultSiteRoles.includes(item)))); setSiteDraft((current) => current ? { ...current, site_role: role } : current); setSiteCustomRole(''); setShowSiteCustomRole(false); }} onBack={() => navigateTo('site-list')} onCancel={() => { setSiteDraft(null); navigateTo('site-list'); }} onSave={(event) => void saveSite(event)} />}
+      {(section === 'site-list' || section === 'site-management') && <SiteListPage section={section} sites={data.sites} sales={data.sales} employees={data.employees} siteStocks={data.siteStocks} canManage={canAccess('site-management')} onCreate={() => { setSiteDraft({ name: '', address: '', phone: '', site_role: 'Punto vendita' }); navigateTo('site-create'); }} onView={setSelectedSiteDetails} onEdit={(site) => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'edit' }); }} onDelete={(site) => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'delete' }); }} />}
+      {section === 'employee-tracker' && <EmployeeTrackerPage employees={data.employees} entries={employeeActivityList} period={activityPeriod} onPeriodChange={setActivityPeriod} from={activityFrom} onFromChange={setActivityFrom} to={activityTo} onToChange={setActivityTo} employeeId={activityEmployeeId} onEmployeeChange={setActivityEmployeeId} onExport={() => void exportEmployeeActivityPdf()} />}
       {section === 'employee-create' && employeeDraft && <div className="page-content settings-page"><section className="settings-panel employee-create-panel"><EmployeeForm initial={employeeDraft} save={saveEmployee} cancel={() => { setEmployeeDraft(null); navigateTo('employees'); }} notify={notify} canDelete={['proprietario', 'direttore'].includes(normalizedRole(activeRole))} sites={data.sites.map((site) => site.name)} onDelete={async () => { const employee = data.employees.find((item) => item.id === employeeDraft.id); if (employee) startEmployeeAction(employee, 'delete'); }} /></section></div>}
       {section === 'payroll' && <div className="page-content payroll-page">
         <section className="panel payroll-employee-list">
@@ -4770,6 +4622,7 @@ export default function App() {
       </section>}</div></div>}
       {section === 'supplier-list' && canAccess('supplier-list') && <SupplierListPage suppliers={data.suppliers} orders={data.supplierOrders} notify={notify} onSave={async (supplier) => { await window.gestionale.saveSupplier(supplier); await refresh(); notify('Fornitore salvato.'); }} />}
       {section === 'supplier-order' && canAccess('supplier-order') && <SupplierOrderPage suppliers={data.suppliers} products={data.products} sites={warehouseSites} orders={data.supplierOrders} notify={notify} onSave={async (order) => { await window.gestionale.application.execute({ type: 'supplier-order.save', input: order }); await refresh(); notify('Ordine registrato.'); }} onReceive={async (orderId, itemId, barcode) => { await window.gestionale.application.execute({ type: 'supplier-order.receive', orderId, itemId, employeeBarcode: barcode }); await refresh(); notify(itemId === null ? 'Ricevimento dell’ordine confermato.' : 'Ricevimento dell’articolo confermato.'); }} onItemUpdate={async (orderId, itemId, quantity, unitCost, barcode) => { await window.gestionale.application.execute({ type: 'supplier-order.update-item', orderId, itemId, quantity, unitCost, employeeBarcode: barcode }); await refresh(); notify('Articolo dell’ordine modificato.'); }} onItemDelete={async (orderId, itemId, barcode) => { await window.gestionale.application.execute({ type: 'supplier-order.delete-item', orderId, itemId, employeeBarcode: barcode }); await refresh(); notify('Articolo dell’ordine eliminato.'); }} />}
+      </Suspense>
     </main>
     {permissionsAuthorizationOpen && isOwner && <Modal title="Verifica barcode Proprietario" close={() => { setPermissionsAuthorizationOpen(false); setPermissionsAuthorizationBarcode(''); }}><form className="site-authorization" onSubmit={(event) => void confirmPermissionsAuthorization(event)}><p>{localizedText(`Scansiona o inserisci il barcode del Proprietario per aprire ${protectedSettingsTarget === 'Gestione dati app' ? 'la gestione dati app' : 'i permessi di accesso'}.`, language)}</p><Field label="Barcode del Proprietario" value={permissionsAuthorizationBarcode} onChange={(event) => setPermissionsAuthorizationBarcode(event.target.value.trim())} autoFocus required /><div className="form-actions"><button className="button button-outline" type="button" onClick={() => { setPermissionsAuthorizationOpen(false); setPermissionsAuthorizationBarcode(''); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Verifica barcode</button></div></form></Modal>}
 
@@ -4845,7 +4698,7 @@ export default function App() {
     {selectedSiteDetails && <SiteDetailsDrawer site={selectedSiteDetails} data={data} close={() => setSelectedSiteDetails(null)} />}
     {camera && <CameraScanner close={() => setCamera(false)} scan={scanCameraCode} />}
     {notice && <div className="toast">{notice}</div>}
-  </div></LocalizedNodes></AppDynamicNamesContext.Provider></AppLanguageContext.Provider>;
+  </div></PageServicesProvider></LocalizedNodes></AppDynamicNamesContext.Provider></AppLanguageContext.Provider>;
 }
 
 function Metric({ icon: Icon, label, value, detail, compact = false, action, className = '', valueDir }: { icon: typeof House; label: string; value: string; detail: string; compact?: boolean; action?: ReactNode; className?: string; valueDir?: 'ltr' | 'rtl' }) {
@@ -4859,117 +4712,6 @@ function SectionHeading({ icon: Icon, title, detail, action }: { icon: typeof Ho
 function Table({ headings, children }: { headings: string[]; children: ReactNode }) {
   const language = useContext(AppLanguageContext);
   return <div className="table-wrap"><table><thead><tr>{headings.map((heading) => <th key={heading}>{localizedText(heading, language)}</th>)}</tr></thead><tbody><LocalizedNodes>{children}</LocalizedNodes></tbody></table></div>;
-}
-function SiteCard({ site, dailyRevenue, employeeCount, productCount, canManage, onView, onEdit, onDelete }: {
-  site: Site;
-  dailyRevenue: number;
-  employeeCount: number;
-  productCount: number;
-  canManage: boolean;
-  onView: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const language = useContext(AppLanguageContext);
-  return <article className="site-card">
-    <header className="site-card-header"><span className="site-card-icon"><Store size={20} aria-hidden="true" /></span><div><h3>{site.name}</h3><span>{localizedText(site.site_role || 'Punto vendita', language)}</span></div></header>
-    <div className="site-card-info">
-      <div className="site-card-info-inline"><MapPin size={14} strokeWidth={2.5} aria-label={localizedText('Indirizzo', language)} role="img" /><span className="no-translate">{site.address || '—'}</span></div>
-      <div className="site-card-info-inline"><Phone size={14} strokeWidth={2.5} aria-label={localizedText('Telefono', language)} role="img" /><span className="no-translate">{site.phone || '—'}</span></div>
-      <div className="site-card-info-inline"><UserRound size={14} strokeWidth={2.5} aria-label={localizedText('Responsabile', language)} role="img" /><span><strong>{localizedText('Responsabile:', language)}</strong><span className="site-card-manager-value no-translate">{site.manager_name || '—'}</span></span></div>
-      <div className="site-card-info-inline"><CalendarDays size={14} strokeWidth={2.5} aria-label={localizedText('Giorni lavorativi', language)} role="img" /><span className="no-translate">{site.working_days || '—'}</span></div>
-      <div className="site-card-info-inline"><Clock size={14} strokeWidth={2.5} aria-label={localizedText('Orari di apertura', language)} role="img" /><span className="no-translate">{site.opening_hours || '—'}</span></div>
-    </div>
-    <div className="site-card-metrics">
-      <div className="site-card-metric"><span>{localizedText('Fatturato del giorno', language)}</span><strong>{money.format(dailyRevenue)}</strong></div>
-      <div className="site-card-metric"><span>{localizedText('Dipendenti', language)}</span><strong>{employeeCount}</strong></div>
-      <div className="site-card-metric"><span>{localizedText('Prodotti in sede', language)}</span><strong>{productCount}</strong></div>
-    </div>
-    <button className="button button-outline site-card-view" type="button" onClick={onView}><Eye size={14} /> {localizedText('Vedi nel dettaglio', language)}</button>
-    {canManage && <div className="site-card-actions"><button className="button button-danger" type="button" onClick={onDelete}><Trash2 size={14} /> {localizedText('Elimina', language)}</button><button className="button button-outline" type="button" onClick={onEdit}><Pencil size={14} /> {localizedText('Modifica', language)}</button></div>}
-  </article>;
-}
-function OpeningHoursPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  const getTimes = (hours: string) => {
-    const match = hours.match(/((?:[01]\d|2[0-3]):[0-5]\d)\s*[-–]\s*((?:[01]\d|2[0-3]):[0-5]\d)/);
-    return { opening: match?.[1] ?? '', closing: match?.[2] ?? '' };
-  };
-  const initialTimes = getTimes(value);
-  const [opening, setOpening] = useState(initialTimes.opening);
-  const [closing, setClosing] = useState(initialTimes.closing);
-  useEffect(() => {
-    const times = getTimes(value);
-    setOpening(times.opening);
-    setClosing(times.closing);
-  }, [value]);
-  const updateTimes = (nextOpening: string, nextClosing: string) => {
-    setOpening(nextOpening);
-    setClosing(nextClosing);
-    if (nextOpening && nextClosing) onChange(`${nextOpening} - ${nextClosing}`);
-  };
-  return <div className="field">
-    <span>Orari di apertura</span>
-    <details className="opening-hours-picker">
-      <summary className="select-wrap"><span>{value || 'Seleziona apertura e chiusura'}</span><ChevronDown size={14} /></summary>
-      <div className="opening-hours-options">
-        <Field label="Apertura" type="time" value={opening} onChange={(event) => updateTimes(event.target.value, closing)} />
-        <Field label="Chiusura" type="time" value={closing} onChange={(event) => updateTimes(opening, event.target.value)} />
-        <button className="button button-quiet" type="button" onClick={() => { setOpening(''); setClosing(''); onChange(''); }}>Cancella orari</button>
-      </div>
-    </details>
-  </div>;
-}
-function SiteDetailsDrawer({ site, data, close }: { site: Site; data: AppState; close: () => void }) {
-  const language = useContext(AppLanguageContext);
-  const employees = data.employees.filter((employee) => employee.operational_site === site.name);
-  const sales = data.sales.filter((sale) => sale.site === site.name);
-  const expenses = data.expenses.filter((expense) => expense.site === site.name);
-  const refunds = data.refunds.filter((refund) => refund.site === site.name);
-  const inventory = data.siteStocks.filter((stock) => stock.site_id === site.id && stock.stock > 0);
-  const movements = data.stockMovements.filter((movement) => movement.site === site.name || movement.destination === site.name);
-  const income = sales.reduce((sum, sale) => sum + sale.total, 0);
-  const expenseTotal = expenses.reduce((sum, expense) => sum + expense.amount, 0);
-  const refundTotal = refunds.reduce((sum, refund) => sum + refund.amount, 0);
-  const text = (value: string) => localizedText(value, language);
-  return <div className="drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><aside className="detail-drawer site-details-drawer"><header className="drawer-header"><div><p className="eyebrow">DETTAGLIO SEDE</p><h2>{site.name}</h2></div><button className="icon-button" onClick={close} aria-label={text('Chiudi')}><X size={18} /></button></header>
-    <div className="site-details-content">
-      <div className="site-details-metrics"><div className="site-details-metric"><span>{text('Incassi')}</span><strong>{money.format(income)}</strong></div><div className="site-details-metric"><span>{text('Rimborsi')}</span><strong>{money.format(refundTotal)}</strong></div><div className="site-details-metric"><span>{text('Spese')}</span><strong>{money.format(expenseTotal)}</strong></div><div className="site-details-metric"><span>{text('Scontrini')}</span><strong>{sales.length}</strong></div></div>
-      <section><h3>{text('Informazioni sede')}</h3><div className="site-detail-list">{site.address && <span>Indirizzo: {site.address}</span>}{site.phone && <span>Telefono: {site.phone}</span>}{site.email && <span>Email: {site.email}</span>}{site.tax_id && <span>Codice fiscale o partita IVA: {site.tax_id}</span>}{site.manager_name && <span>Responsabile: {site.manager_name}</span>}{site.working_days && <span>Giorni lavorativi: {site.working_days}</span>}{site.opening_hours && <span>Orari di apertura: {site.opening_hours}</span>}{site.notes && <span>Note: {site.notes}</span>}{!site.address && !site.phone && !site.email && !site.tax_id && !site.manager_name && !site.working_days && !site.opening_hours && !site.notes && <span>—</span>}</div></section>
-      <section><h3>{text('Dipendenti')} · {employees.length}</h3><div className="site-detail-list">{employees.length ? employees.map((employee) => <span key={employee.id}>{employee.first_name} {employee.last_name} · {text(employee.role)}</span>) : <span>—</span>}</div></section>
-      <section><h3>{text('Merce in sede')}</h3><Table headings={['Articolo', 'Giacenza']}><>{inventory.map((stock) => { const product = data.products.find((item) => item.id === stock.product_id); return <tr key={stock.product_id}><td className="cell-primary">{product?.name ?? `#${stock.product_id}`}</td><td>{quantityFormat.format(stock.stock)} {product?.unit ?? 'PEZZO'}</td></tr>; })}{!inventory.length && <tr><td colSpan={2} className="empty-cell">—</td></tr>}</></Table></section>
-      <section><h3>{text('Ultimi incassi')}</h3><Table headings={['Data e ora', 'Scontrino', 'Totale']}><>{sales.slice(0, 10).map((sale) => <tr key={sale.id}><td>{dateTimeText(new Date(sale.created_at))}</td><td>#{sale.receipt_no}</td><td className="align-right">{money.format(sale.total)}</td></tr>)}{!sales.length && <tr><td colSpan={3} className="empty-cell">—</td></tr>}</></Table></section>
-      <section><h3>{text('Spese e movimenti')} · {expenses.length} / {movements.length}</h3><div className="site-detail-list">{expenses.slice(0, 8).map((expense) => <span key={`expense-${expense.id}`}>{formatLocalDate(expense.expense_date)} · {expense.description} · {money.format(expense.amount)}</span>)}{movements.slice(0, 8).map((movement) => <span key={`movement-${movement.id}`}>{dateTimeText(new Date(movement.created_at))} · {movement.product_name} · {text(movement.movement_type)} {quantityFormat.format(movement.quantity)}</span>)}{!expenses.length && !movements.length && <span>—</span>}</div></section>
-    </div></aside></div>;
-}
-function SiteStockStatistics({ sites, siteStocks, employees, products }: { sites: Site[]; siteStocks: SiteStock[]; employees: Employee[]; products: Product[] }) {
-  const language = useContext(AppLanguageContext);
-  return <section className="panel site-summary-panel"><div className="panel-heading"><div><h3>{localizedText('Magazzino e personale per sede', language)}</h3><p>{localizedText('Quantità, personale e valore delle scorte per sede', language)}</p></div></div>
-    <Table headings={['Sede', 'Dipendenti', 'Persone che lavorano', 'Articoli disponibili', 'Valore a costo', 'Valore di vendita']}>
-      <>{sites.map((site) => {
-        const workers = employees.filter((employee) => employee.operational_site === site.name);
-        const inventory = siteStocks.filter((stock) => stock.site_id === site.id && stock.stock > 0);
-        const cost = inventory.reduce((sum, stock) => sum + stock.stock * (products.find((product) => product.id === stock.product_id)?.purchase_price ?? 0), 0);
-        const retail = inventory.reduce((sum, stock) => sum + stock.stock * (products.find((product) => product.id === stock.product_id)?.sale_price ?? 0), 0);
-        return <tr key={site.id}>
-          <td className="cell-primary">{site.name}</td>
-          <td><span className="site-stat-count">{workers.length}</span></td>
-          <td><div className="site-stat-people">{workers.map((employee) => <span className="no-translate" key={employee.id}>{employee.first_name} {employee.last_name}</span>)}</div></td>
-          <td><div className="site-stock-lines">{inventory.length ? inventory.map((stock) => {
-            const product = products.find((item) => item.id === stock.product_id);
-            const unit = product?.unit === 'KG' ? 'kg' : product?.unit === 'LITRO' ? 'lit.' : 'pz';
-            return <span className="site-stat-stock-line" key={stock.product_id}><strong className="no-translate">{product?.name ?? `#${stock.product_id}`}</strong><small>{quantityFormat.format(stock.stock)} {localizedText(unit, language)}</small></span>;
-          }) : '—'}</div></td>
-          <td className="align-right"><span className="site-stat-value">{money.format(cost)}</span></td>
-          <td className="align-right"><span className="site-stat-value">{money.format(retail)}</span></td>
-        </tr>;
-      })}</>
-      {!sites.length && <tr><td colSpan={6} className="empty-cell">Nessuna sede trovata.</td></tr>}
-    </Table>
-  </section>;
-}
-function SalesTable({ sales, onSelect }: { sales: Sale[]; onSelect?: (sale: Sale) => void }) {
-  const language = useContext(AppLanguageContext);
-  return <div className="table-wrap"><table id="sales-list-table"><thead><tr><th>{localizedText('Numero scontrino', language)}</th><th>{localizedText('Data e ora', language)}</th><th>{localizedText('Persona', language)}</th><th>{localizedText('Articoli', language)}</th><th>{localizedText('Pagamento', language)}</th><th className="align-right">{localizedText('Totale', language)}</th></tr></thead><tbody><LocalizedNodes>{sales.map((sale) => <tr key={sale.id} onClick={onSelect ? () => onSelect(sale) : undefined}><td className="receipt-number">#{sale.receipt_no}</td><td>{dateTimeText(new Date(sale.created_at))}</td><td>{sale.person || '—'}</td><td>{sale.item_count}</td><td><span className="payment-tag">{localizedText(sale.payment_method, language)}</span></td><td className="align-right cell-primary">{money.format(sale.total)}</td></tr>)}{!sales.length && <tr><td colSpan={6} className="empty-cell">Nessuna vendita registrata.</td></tr>}</LocalizedNodes></tbody></table></div>;
 }
 function SearchInput({ value, onChange, placeholder, numericOnly = false }: { value: string; onChange: (value: string) => void; placeholder: string; numericOnly?: boolean }) {
   const language = useContext(AppLanguageContext);

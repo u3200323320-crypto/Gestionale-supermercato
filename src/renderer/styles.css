@@ -228,6 +228,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .page-toolbar { margin-bottom: 19px; }
 .inventory-history-actions { display: flex; min-width: 0; flex: 1; align-items: flex-end; gap: 8px; }
 .inventory-history-actions { margin-bottom: 15px; }
+.tracker-load-more { display: flex; justify-content: center; padding: 12px 0; }
 .inventory-history-actions > .field { min-width: 0; flex: 1; }
 .inventory-history-actions > .field:first-child { flex: 0 0 132px; }
 .inventory-history-actions > .statistics-period-dropdown:first-child { flex: 0 0 132px; }

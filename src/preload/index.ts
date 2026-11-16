@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AppDataBackup, AppState, ApplicationCommand, AuthenticatedEmployee, CheckoutInput, CustomerInput, EmployeeInput, Expense, PayrollPaymentInput, Printer, ProductInput, PromotionInput, SaleItem, SiteInput, SupplierInput, VoucherBatchInput } from '../shared/types';
+import type { AppDataBackup, AppState, ApplicationCommand, AuthenticatedEmployee, CheckoutInput, CustomerInput, EmployeeActivity, EmployeeInput, Expense, PayrollPaymentInput, Printer, ProductInput, PromotionInput, SaleItem, SiteInput, SupplierInput, VoucherBatchInput } from '../shared/types';
 
 let stateRequest: Promise<AppState> | null = null;
 let homepageVideoRequest: Promise<string> | null = null;
@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('gestionale', {
     }
     return stateRequest;
   },
+  getEmployeeActivities: (): Promise<EmployeeActivity[]> => ipcRenderer.invoke('employee:activities'),
   getHomepageVideo: () => {
     if (!homepageVideoRequest) {
       homepageVideoRequest = ipcRenderer.invoke('settings:homepage-video').finally(() => { homepageVideoRequest = null; });
