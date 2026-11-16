@@ -1211,11 +1211,6 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     requireSession(event.sender.id, ['proprietario', 'direttore']);
     return isEmployeeBarcode(barcode);
   });
-  ipcMain.handle('employee:authorize-tracker', (event, barcode: string) => {
-    requireSession(event.sender.id, ['proprietario', 'direttore']);
-    const employee = employeeForLogin(barcode);
-    return Boolean(employee && ['proprietario', 'direttore'].includes(normalizedEmployeeRole(employee.role)));
-  });
   ipcMain.handle('employee:login', (event, barcode: string) => {
     requireMainWindowSender(event.sender.id);
     assertLoginAllowed(event.sender.id);

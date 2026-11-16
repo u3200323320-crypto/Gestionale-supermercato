@@ -24,7 +24,6 @@ contextBridge.exposeInMainWorld('gestionale', {
     return () => ipcRenderer.removeListener('sales:expired', listener);
   },
   verifyEmployeeBarcode: (barcode: string) => ipcRenderer.invoke('employee:authorize', barcode),
-  authorizeTracker: (barcode: string): Promise<boolean> => ipcRenderer.invoke('employee:authorize-tracker', barcode),
   loginEmployee: (barcode: string): Promise<AuthenticatedEmployee | null> => ipcRenderer.invoke('employee:login', barcode),
   logout: () => ipcRenderer.invoke('session:logout'),
   recordEmployeeActivity: (input: { employee_barcode: string; section: string; action: string; detail?: string }) => ipcRenderer.invoke('employee:activity', input),

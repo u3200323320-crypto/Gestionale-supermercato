@@ -300,7 +300,6 @@ declare global {
     getHomepageVideo: () => Promise<string>;
     onSalesExpired: (callback: () => void) => () => void;
     verifyEmployeeBarcode: (barcode: string) => Promise<boolean>;
-    authorizeTracker: (barcode: string) => Promise<boolean>;
     loginEmployee: (barcode: string) => Promise<AuthenticatedEmployee | null>;
     logout: () => Promise<void>;
     saveProduct: (product: ProductInput, siteId?: number) => Promise<void>;

@@ -1,4 +1,4 @@
-import { cloneElement, createContext, Fragment, isValidElement, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { cloneElement, createContext, Fragment, isValidElement, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, InputHTMLAttributes, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Apple, Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Beef, Bell, CalendarDays, Camera, Carrot, Check, ChevronDown, CircleAlert, ClipboardList, Clock, Cookie, CreditCard, CupSoda, Eye, Fish, FolderOpen, House, LockKeyhole, Mail, MapPin, Menu, Milk, Minus, Package, Pencil, Phone, Plus, Printer, RefreshCw, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Snowflake, SprayCan, Store, Trash2, TrendingUp, UserRound, Users, Video, X } from 'lucide-react';
@@ -338,6 +338,17 @@ const arabicUiTranslations: Record<string, string> = {
   'Dipendente eliminato': 'تم حذف الموظف', 'Apertura sezione': 'فتح القسم',
   'Accesso al gestionale': 'تسجيل الدخول إلى النظام', 'Uscita dal gestionale': 'تسجيل الخروج من النظام', 'Esci': 'خروج',
   'Accesso': 'الدخول',
+  'supplier-order': 'طلب المورد', 'stock-distribution': 'توزيع البضائع',
+  'Ordine registrato': 'تم تسجيل الطلب', 'Ricevimento ordine confermato': 'تم تأكيد استلام الطلب',
+  'Articolo ordine modificato': 'تم تعديل منتج الطلب', 'Articolo ordine eliminato': 'تم حذف منتج الطلب',
+  'Distribuzione eliminata': 'تم حذف عملية التوزيع',
+  'Ordine fornitore': 'طلب المورد', 'Scontrino': 'الإيصال',
+  'registrato come già ricevuto': 'تم تسجيله كمستلم بالفعل', 'articolo ricevuto': 'منتج مستلم', 'articoli ricevuti': 'منتجات مستلمة',
+  'articolo #': 'المنتج رقم ', 'Distribuzione #': 'عملية التوزيع رقم ',
+  'Fatturato del giorno': 'إيرادات اليوم', 'Responsabile': 'المسؤول', 'Responsabile:': 'المسؤول:',
+  'Prodotti in sede': 'المنتجات في الفرع',
+  'Giorni lavorativi': 'أيام العمل', 'Vedi nel dettaglio': 'عرض التفاصيل',
+  'Quantità, personale e valore delle scorte per sede': 'الكميات والموظفون وقيمة المخزون حسب الفرع',
   'Indirizzo': 'العنوان', 'Email': 'البريد الإلكتروني', 'Telefono': 'الهاتف',
   'Sede operativa': 'مقر العمل', 'PDF allegato': 'ملف PDF مرفق', 'Non presente': 'غير موجود',
   'FOTO': 'الصورة',
@@ -414,6 +425,11 @@ const arabicUiTranslations: Record<string, string> = {
   'Aggiungi alla lista': 'إضافة إلى القائمة', 'Modifica gruppo': 'تعديل المجموعة',
   'fornitori registrati': 'موردون مسجلون', 'Contatto': 'جهة الاتصال', 'Azioni': 'الإجراءات',
   'Salva fornitore': 'حفظ المورد', 'Permessi di accesso': 'صلاحيات الوصول',
+  'Telefono:': 'الهاتف:', 'Email:': 'البريد الإلكتروني:', 'non disponibile': 'غير متاح',
+  'Referente': 'جهة الاتصال', 'Registrato il': 'تاريخ التسجيل', 'Note': 'ملاحظات',
+  'ordini registrati': 'طلبات مسجلة', 'Nessun articolo ordinato da questo fornitore.': 'لا توجد منتجات مطلوبة من هذا المورد.',
+  'Aggiungi articoli per comporre l’ordine.': 'أضف منتجات لإعداد الطلب.', 'Articolo:': 'المنتج:',
+  'Scansiona il barcode del dipendente per confermare.': 'امسح الرمز الشريطي للموظف للتأكيد.',
   'Scegli quali pagine possono essere aperte dai dipendenti con ciascun ruolo.': 'اختر الصفحات التي يمكن للموظفين فتحها حسب كل دور.',
   'Ruolo dipendente': 'دور الموظف', 'Non ci sono ruoli dipendente da configurare.': 'لا توجد أدوار للموظفين لتهيئتها.',
   'Puoi allegare fino a 20 immagini PNG, JPG o WEBP da massimo 5 MB ciascuna.': 'يمكنك إرفاق ما يصل إلى 20 صورة PNG أو JPG أو WEBP، بحجم أقصى 5 ميجابايت لكل صورة.',
@@ -521,7 +537,7 @@ function LocalizedNodes({ children }: { children: ReactNode }) {
       const value = node.props[attribute];
       if (value) localizedAttributes[attribute] = localizedText(value, language, dynamicNames);
     }
-    const preserveContent = preserve || className.split(/\s+/).includes('cell-primary')
+    const preserveContent = preserve || className.split(/\s+/).some((name) => ['cell-primary', 'no-translate'].includes(name))
       || (elementType === 'strong' && ['product-tile', 'cash-product', 'cart-line-name', 'user-card'].some((name) => parentClass.split(/\s+/).includes(name)));
     if (node.props.children === undefined) return cloneElement(node, localizedAttributes);
     if (elementType === 'option') {
@@ -678,12 +694,12 @@ function SupplierListPage({ suppliers, orders, onSave, notify }: { suppliers: Su
       quantity: (current?.quantity ?? 0) + item.quantity,
     });
   }));
-  return <div className="page-content supplier-page">
+  return <LocalizedNodes><div className="page-content supplier-page">
     <div className="page-toolbar"><div><p>{suppliers.length} fornitori registrati</p></div><button className="button button-primary" type="button" onClick={() => setDraft({ name: '', contact_name: '', phone: '', email: '', address: '', notes: '' })}><Plus size={16} /> Aggiungi fornitore</button></div>
-    <div className="supplier-card-grid">{suppliers.map((supplier) => <article className="supplier-card" key={supplier.id}><div className="supplier-card-icon"><Store size={20} /></div><h3>{supplier.name}</h3><span className="supplier-card-contact"><Phone size={14} aria-hidden="true" /><strong>Telefono:</strong><span>{supplier.phone || 'non disponibile'}</span></span><span className="supplier-card-contact"><Mail size={14} aria-hidden="true" /><strong>Email:</strong><span>{supplier.email || 'non disponibile'}</span></span><div className="supplier-card-actions"><button className="button button-outline" type="button" onClick={() => setDraft({ id: supplier.id, name: supplier.name, contact_name: supplier.contact_name, phone: supplier.phone, email: supplier.email, address: supplier.address, notes: supplier.notes })}><Pencil size={14} /> Modifica</button><button className="button button-outline" type="button" onClick={() => setDetails(supplier)}><Eye size={14} /> Dai un’occhiata</button></div></article>)}{!suppliers.length && <div className="empty-cell supplier-empty">Nessun fornitore registrato.</div>}</div>
+    <div className="supplier-card-grid">{suppliers.map((supplier) => <article className="supplier-card" key={supplier.id}><div className="supplier-card-icon"><Store size={20} /></div><h3>{supplier.name}</h3><span className="supplier-card-contact"><Phone size={14} aria-hidden="true" /><strong>Telefono:</strong><span>{supplier.phone || 'non disponibile'}</span></span><span className="supplier-card-contact"><Mail size={14} aria-hidden="true" /><strong>Email:</strong><span className="no-translate">{supplier.email || 'non disponibile'}</span></span><div className="supplier-card-actions"><button className="button button-outline" type="button" onClick={() => setDraft({ id: supplier.id, name: supplier.name, contact_name: supplier.contact_name, phone: supplier.phone, email: supplier.email, address: supplier.address, notes: supplier.notes })}><Pencil size={14} /> Modifica</button><button className="button button-outline" type="button" onClick={() => setDetails(supplier)}><Eye size={14} /> Dai un’occhiata</button></div></article>)}{!suppliers.length && <div className="empty-cell supplier-empty">Nessun fornitore registrato.</div>}</div>
     {draft && <Modal title={draft.id ? 'Modifica fornitore' : 'Aggiungi fornitore'} close={() => setDraft(null)} wide portal><form className="form-grid supplier-form" onSubmit={(event) => void submit(event)}><Field label="Nome fornitore" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} maxLength={120} required autoFocus /><Field label="Nome referente" value={draft.contact_name} onChange={(event) => setDraft({ ...draft, contact_name: event.target.value })} maxLength={120} /><Field label="Telefono" type="tel" value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} maxLength={40} /><Field label="Email" type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} maxLength={254} /><Field label="Indirizzo" value={draft.address} onChange={(event) => setDraft({ ...draft, address: event.target.value })} maxLength={240} /><label className="field supplier-notes"><span>Note</span><textarea rows={3} maxLength={1000} value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} /></label><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => setDraft(null)}>Annulla</button><button className="button button-primary" disabled={saving}><Check size={16} /> Salva fornitore</button></div></form></Modal>}
-    {details && createPortal(<div className="drawer-backdrop supplier-details-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetails(null); }}><aside className="detail-drawer supplier-details-drawer"><header className="drawer-header"><div><p className="eyebrow">DETTAGLIO FORNITORE</p><h2>{details.name}</h2></div><button className="icon-button" type="button" onClick={() => setDetails(null)} aria-label="Chiudi"><X size={18} /></button></header><div className="drawer-content"><div className="detail-list supplier-detail-list"><Detail label="Nome fornitore" value={details.name} /><Detail label="Referente" value={details.contact_name || '—'} /><Detail label="Telefono" value={details.phone || '—'} /><Detail label="Email" value={details.email || '—'} /><Detail label="Indirizzo" value={details.address || '—'} /><Detail label="Registrato il" value={dateTimeText(new Date(details.created_at))} /><Detail label="Note" value={details.notes || '—'} /></div><section className="supplier-ordered-products"><h3>Articoli ordinati</h3><p>{supplierOrders.length} ordini registrati</p>{orderedProducts.size ? <div>{[...orderedProducts.values()].map((item) => <article key={`${item.code}-${item.unit}`}><strong>{item.name}</strong><span>{item.code} · {quantityFormat.format(item.quantity)} {item.unit}</span></article>)}</div> : <p className="empty-cell">Nessun articolo ordinato da questo fornitore.</p>}</section></div></aside></div>, document.body)}
-  </div>;
+    {details && createPortal(<LocalizedNodes><div className="drawer-backdrop supplier-details-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetails(null); }}><aside className="detail-drawer supplier-details-drawer"><header className="drawer-header"><div><p className="eyebrow">DETTAGLIO FORNITORE</p><h2>{details.name}</h2></div><button className="icon-button" type="button" onClick={() => setDetails(null)} aria-label="Chiudi"><X size={18} /></button></header><div className="drawer-content"><div className="detail-list supplier-detail-list"><Detail label="Nome fornitore" value={details.name} /><Detail label="Referente" value={details.contact_name || '—'} /><Detail label="Telefono" value={details.phone || '—'} /><Detail label="Email" value={details.email || '—'} /><Detail label="Indirizzo" value={details.address || '—'} /><Detail label="Registrato il" value={dateTimeText(new Date(details.created_at))} /><Detail label="Note" value={details.notes || '—'} /></div><section className="supplier-ordered-products"><h3>Articoli ordinati</h3><p>{supplierOrders.length} ordini registrati</p>{orderedProducts.size ? <div>{[...orderedProducts.values()].map((item) => <article key={`${item.code}-${item.unit}`}><strong>{item.name}</strong><span>{item.code} · {quantityFormat.format(item.quantity)} {item.unit}</span></article>)}</div> : <p className="empty-cell">Nessun articolo ordinato da questo fornitore.</p>}</section></div></aside></div></LocalizedNodes>, document.body)}
+  </div></LocalizedNodes>;
 }
 function SupplierOrderPage({ suppliers, products, sites, orders, onSave, onReceive, onItemUpdate, onItemDelete, notify }: { suppliers: Supplier[]; products: Product[]; sites: Site[]; orders: SupplierOrder[]; onSave: (order: SupplierOrderInput) => Promise<void>; onReceive: (orderId: number, itemId: number | null, barcode: string) => Promise<void>; onItemUpdate: (orderId: number, itemId: number, quantity: number, unitCost: number, barcode: string) => Promise<void>; onItemDelete: (orderId: number, itemId: number, barcode: string) => Promise<void>; notify: (message: string) => void }) {
   const [supplierId, setSupplierId] = useState('');
@@ -756,7 +772,7 @@ function SupplierOrderPage({ suppliers, products, sites, orders, onSave, onRecei
       setSaving(false);
     }
   };
-  return <div className="page-content supplier-page">
+  return <LocalizedNodes><div className="page-content supplier-page">
     {!suppliers.length ? <Empty icon={Store} title="Registra prima un fornitore" detail="Aggiungi un fornitore dalla sezione Lista fornitori." /> : <div className="supplier-order-layout">
       <div className="panel supplier-order-form"><SelectField label="Fornitore" value={supplierId} onChange={setSupplierId} options={['', ...suppliers.map((supplier) => String(supplier.id))]} labels={['Seleziona fornitore', ...suppliers.map((supplier) => supplier.name)]} /><SelectField label="Sede di ricevimento" value={siteId} onChange={setSiteId} options={['', ...sites.map((site) => String(site.id))]} labels={['Seleziona sede', ...sites.map((site) => site.name)]} /><SelectField label="Articolo" value={productId} onChange={(value) => { setProductId(value); const product = products.find((item) => String(item.id) === value); setUnitCost(product ? String(product.purchase_price) : ''); }} options={['', ...products.map((product) => String(product.id))]} labels={['Seleziona articolo', ...products.map((product) => `${product.name} · ${product.code}`)]} /><div className="supplier-order-line-inputs"><Field label="Quantità" type="number" min="1" step="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} /><Field label="Costo unitario (€)" type="number" min="0" step="0.01" value={unitCost} onChange={(event) => setUnitCost(event.target.value)} /></div><button className="button button-outline" type="button" disabled={!productId} onClick={addItem}><Plus size={15} /> Aggiungi articolo</button></div>
       <section className="panel supplier-order-items"><div className="panel-heading"><div><h3>Articoli nell’ordine</h3><p>{items.length} articoli</p></div></div><div className="supplier-order-item-list">{items.map((item) => { const product = products.find((candidate) => candidate.id === item.product_id); if (!product) return null; return <div className="supplier-order-item" key={item.product_id}><div><strong>{product.name}</strong><small>{quantityFormat.format(item.quantity)} {product.unit ?? 'PEZZO'} × {money.format(item.unit_cost)}</small></div><strong>{money.format(item.quantity * item.unit_cost)}</strong><button className="icon-button small" type="button" title="Rimuovi articolo" aria-label={`Rimuovi ${product.name}`} onClick={() => setItems((current) => current.filter((entry) => entry.product_id !== item.product_id))}><X size={14} /></button></div>; })}{!items.length && <p className="empty-cell">Aggiungi articoli per comporre l’ordine.</p>}<div className="supplier-order-total"><span>Totale stimato</span><strong>{money.format(items.reduce((sum, item) => sum + item.quantity * item.unit_cost, 0))}</strong></div><div className="supplier-order-controls"><div className="supplier-order-status"><SelectField label="Stato ordine" value={orderStatus} onChange={(value) => setOrderStatus(value as 'pending' | 'received')} options={['pending', 'received']} labels={['In attesa di ricevimento', 'Ordine già ricevuto']} />{orderStatus === 'pending' && <Field label="Data prevista di arrivo" type="date" value={expectedArrivalDate} onChange={(event) => setExpectedArrivalDate(event.target.value)} />}</div><button className="button button-primary full-width" type="button" disabled={saving || !items.length || !supplierId || !siteId || (orderStatus === 'pending' && !expectedArrivalDate)} onClick={submitOrder}><Check size={16} /> Registra ordine</button></div></div></section>
@@ -766,7 +782,7 @@ function SupplierOrderPage({ suppliers, products, sites, orders, onSave, onRecei
       return <Fragment key={order.id}><tr><td><button className="supplier-order-folder" type="button" aria-expanded={expandedOrderId === order.id} onClick={() => setExpandedOrderId((current) => current === order.id ? null : order.id)}><FolderOpen size={15} /> #{order.id}<ChevronDown size={13} /></button></td><td>{dateTimeText(new Date(order.created_at))}</td><td>{order.supplier_name}</td><td>{order.site_name || '—'}</td><td>{order.items.length}</td><td>{order.received_at ? 'Ricevuto' : hasReceivedItems ? 'Parzialmente ricevuto' : order.expected_arrival_date ? `Previsto ${formatLocalDate(order.expected_arrival_date)}` : '—'}</td><td>{money.format(order.items.reduce((sum, item) => sum + item.quantity * item.unit_cost, 0))}</td></tr>{expandedOrderId === order.id && <tr><td className="supplier-order-details-cell" colSpan={7}><div className="supplier-order-details"><div className="supplier-order-details-heading"><strong>Articoli dell’ordine #{order.id}</strong>{!order.received_at && <button className="button button-outline" type="button" onClick={() => { setEmployeeBarcode(''); setBarcodeAction({ type: 'receive', order, itemId: null }); }}><Check size={14} /> Ricevi tutto l’ordine</button>}</div>{order.items.map((item) => <div className="supplier-order-received-item" key={item.id}><div><strong>{item.product_name}</strong><small>{item.product_code} · {quantityFormat.format(item.quantity)} {item.unit} × {money.format(item.unit_cost)}</small></div>{item.received_at ? <span className="supplier-order-received-label">Ricevuto · modifica non disponibile</span> : <div className="supplier-order-item-actions"><button className="button button-outline" type="button" onClick={() => { setEmployeeBarcode(''); setEditQuantity(String(item.quantity)); setEditUnitCost(String(item.unit_cost)); setBarcodeAction({ type: 'update-item', order, item }); }}><Pencil size={14} /> Modifica</button><button className="button button-danger" type="button" onClick={() => { setEmployeeBarcode(''); setBarcodeAction({ type: 'delete-item', order, item }); }}><Trash2 size={14} /> Elimina</button><button className="button button-outline" type="button" onClick={() => { setEmployeeBarcode(''); setBarcodeAction({ type: 'receive', order, itemId: item.id, itemName: item.product_name }); }}><Check size={14} /> Ricevi articolo</button></div>}</div>)}</div></td></tr>}</Fragment>;
     })}{!orders.length && <tr><td colSpan={7} className="empty-cell">Nessun ordine registrato.</td></tr>}</></Table></section>
     {barcodeAction && <Modal title={barcodeAction.type === 'receive' ? barcodeAction.itemId === null ? 'Conferma ricevimento ordine' : 'Conferma ricevimento articolo' : barcodeAction.type === 'register' ? 'Conferma registrazione ordine' : barcodeAction.type === 'update-item' ? 'Modifica articolo ordine' : 'Elimina articolo ordine'} close={() => setBarcodeAction(null)} wide portal><form className="form-grid supplier-order-barcode-form" onSubmit={(event) => void confirmBarcodeAction(event)}><p className="supplier-order-barcode-description">{barcodeAction.type === 'receive' ? `${barcodeAction.itemName ? `Articolo: ${barcodeAction.itemName}` : `Ordine #${barcodeAction.order.id}`}. Scansiona il barcode della persona che conferma il ricevimento.` : barcodeAction.type === 'register' ? 'Scansiona il barcode del dipendente che registra l’ordine.' : `Ordine #${barcodeAction.order.id} · ${barcodeAction.item.product_name}. Scansiona il barcode del dipendente per confermare.`}</p>{barcodeAction.type === 'update-item' && <div className="supplier-order-line-inputs"><Field label="Quantità" type="number" min="0.001" step="0.001" value={editQuantity} onChange={(event) => setEditQuantity(event.target.value)} required /><Field label="Costo unitario (€)" type="number" min="0" step="0.01" value={editUnitCost} onChange={(event) => setEditUnitCost(event.target.value)} required /></div>}<Field label="Barcode dipendente" value={employeeBarcode} onChange={(event) => setEmployeeBarcode(event.target.value)} autoFocus required /><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => setBarcodeAction(null)}>Annulla</button><button className={`button ${barcodeAction.type === 'delete-item' ? 'button-danger' : 'button-primary'}`} disabled={saving}><Check size={16} /> {barcodeAction.type === 'register' ? 'Registra e conferma' : barcodeAction.type === 'receive' ? 'Conferma ricevimento' : barcodeAction.type === 'update-item' ? 'Salva modifiche' : 'Conferma eliminazione'}</button></div></form></Modal>}
-  </div>;
+  </div></LocalizedNodes>;
 }
 const voucherCodeSpace = 10_000_000_000;
 function randomVoucherCode(prefix: string, usedCodes: Set<string>): string {
@@ -1178,9 +1194,6 @@ export default function App() {
   const [employeeDetails, setEmployeeDetails] = useState<Employee | null>(null);
   const [employeeAction, setEmployeeAction] = useState<{ employee: Employee; action: 'edit' | 'delete' } | null>(null);
   const [employeeActionBarcode, setEmployeeActionBarcode] = useState('');
-  const [trackerAccessOpen, setTrackerAccessOpen] = useState(false);
-  const [trackerAccessBarcode, setTrackerAccessBarcode] = useState('');
-  const trackerAccessRequestRef = useRef(0);
   const [reportExportOpen, setReportExportOpen] = useState(false);
   const [reportExportType, setReportExportType] = useState<'sales-pdf' | 'sales-xlsx' | 'balance'>('sales-pdf');
   const [payrollMonth, setPayrollMonth] = useState(localDateKey().slice(0, 7));
@@ -1353,8 +1366,8 @@ export default function App() {
   }, [locked]);
   const activeRole = currentUser?.role ?? (data && data.employees.length === 0 ? 'Proprietario' : 'cassiere');
   const storeSites = data?.sites ?? [];
-  const warehouseSites = storeSites.filter((site) => site.site_role === 'Magazzino');
-  const retailSites = storeSites.filter((site) => site.site_role === 'Punto vendita');
+  const warehouseSites = useMemo(() => storeSites.filter((site) => site.site_role === 'Magazzino'), [storeSites]);
+  const retailSites = useMemo(() => storeSites.filter((site) => site.site_role === 'Punto vendita'), [storeSites]);
   const cashSites = retailSites;
   const isOwner = normalizedRole(activeRole) === 'proprietario';
   const canViewHomepageMedia = ['proprietario', 'direttore'].includes(normalizedRole(activeRole));
@@ -1402,14 +1415,21 @@ export default function App() {
   const distributionRecipients = data?.employees.filter((employee) =>
     employee.operational_site === data.sites.find((site) => String(site.id) === distributionToSiteId)?.name
       || normalizedRole(employee.role) === 'proprietario') ?? [];
-  const siteStockFor = (productId: number, siteId = activeSiteId) => siteStockIndex.get(`${siteId}:${productId}`) ?? 0;
+  const siteStockByProduct = useMemo(() => {
+    const stockByProduct = new Map<number, number>();
+    for (const stock of data?.siteStocks ?? []) {
+      stockByProduct.set(stock.product_id, (stockByProduct.get(stock.product_id) ?? 0) + stock.stock);
+    }
+    return stockByProduct;
+  }, [data?.siteStocks]);
+  const siteStockFor = useCallback((productId: number, siteId = activeSiteId) => siteStockIndex.get(`${siteId}:${productId}`) ?? 0, [activeSiteId, siteStockIndex]);
   const warehouseStockFor = (productId: number) => warehouseSites.reduce((sum, site) => sum + siteStockFor(productId, site.id), 0);
   const lowStockProductsForSite = (siteId: number) => (data?.products ?? [])
     .map((product) => ({ ...product, siteStock: siteStockFor(product.id, siteId) }))
     .filter((product) => product.siteStock > 0 && product.siteStock <= product.low_stock_threshold);
-  const reorderProducts = (data?.products ?? [])
-    .map((product) => ({ ...product, stock: warehouseStockFor(product.id) }))
-    .filter((product) => product.stock <= product.low_stock_threshold);
+  const reorderProducts = useMemo(() => (data?.products ?? [])
+    .map((product) => ({ ...product, stock: siteStockByProduct.get(product.id) ?? 0 }))
+    .filter((product) => product.stock <= product.low_stock_threshold), [data?.products, siteStockByProduct]);
   const canAccess = (target: Section) => canAccessSection(activeRole, target, rolePermissions);
   const canAccessSalesFeature = (feature: 'sales-report' | 'sales-csv') => {
     if (normalizedRole(activeRole) === 'proprietario') return true;
@@ -1465,13 +1485,8 @@ export default function App() {
       detail,
     }).catch((error: unknown) => notify(`Impossibile registrare l’attività: ${errorText(error)}`));
   };
-  const navigateTo = (target: Section, trackerBarcodeVerified = false) => {
+  const navigateTo = (target: Section) => {
     const nextTarget = target;
-    if (nextTarget === 'employee-tracker' && !trackerBarcodeVerified) {
-      setTrackerAccessBarcode('');
-      setTrackerAccessOpen(true);
-      return;
-    }
     if (!locked && data && !canAccess(nextTarget)) {
       notify('Non hai i permessi per accedere a questa sezione.');
       return;
@@ -3460,127 +3475,165 @@ export default function App() {
   const dailyGross = todaySales.reduce((sum, sale) => sum + sale.gross_total, 0);
   const dailyUnits = todaySales.reduce((sum, sale) => sum + sale.item_count, 0);
   const todayRefunds = data?.refunds.filter((refund) => new Date(refund.created_at).toDateString() === new Date().toDateString()).reduce((sum, refund) => sum + refund.amount, 0) ?? 0;
-  const balanceMonthCount = balancePeriod === 'Ultimo mese' ? 1 : balancePeriod === 'Ultimi 3 mesi' ? 3 : balancePeriod === 'Ultimi 6 mesi' ? 6 : 12;
-  const balanceRangeStart = new Date();
-  balanceRangeStart.setHours(0, 0, 0, 0);
-  const balanceStartDay = balanceRangeStart.getDate();
-  const balanceTargetMonth = new Date(balanceRangeStart.getFullYear(), balanceRangeStart.getMonth() - balanceMonthCount, 1);
-  balanceRangeStart.setFullYear(
-    balanceTargetMonth.getFullYear(),
-    balanceTargetMonth.getMonth(),
-    Math.min(balanceStartDay, new Date(balanceTargetMonth.getFullYear(), balanceTargetMonth.getMonth() + 1, 0).getDate()),
-  );
-  const balanceRangeStartKey = localDateKey(balanceRangeStart);
-  const balanceSales = data?.sales.filter((sale) => new Date(sale.created_at) >= balanceRangeStart) ?? [];
-  const balanceExpenses = data?.expenses.filter((expense) => expense.expense_date >= balanceRangeStartKey && expense.expense_date <= todayKey) ?? [];
-  const balanceRefunds = data?.refunds.filter((refund) => new Date(refund.created_at) >= balanceRangeStart && new Date(refund.created_at) <= new Date(`${todayKey}T23:59:59.999`)) ?? [];
-  const balanceRefundTotal = balanceRefunds.reduce((sum, refund) => sum + refund.amount, 0);
-  const balanceWasteLoss = balanceExpenses.filter((expense) => expense.category === 'Merce buttata').reduce((sum, expense) => sum + expense.amount, 0);
-  const balanceRevenue = balanceSales.reduce((sum, sale) => sum + sale.total, 0);
-  const balanceGoodsCost = balanceSales.reduce((sum, sale) =>
-    sum + sale.items.reduce((cost, item) => cost + item.quantity * item.purchase_price, 0), 0);
-  const balanceOperatingExpenses = balanceExpenses.filter((expense) => expense.category !== 'Merce buttata').reduce((sum, expense) => sum + expense.amount, 0);
-  const balanceOperatingResult = balanceRevenue - balanceGoodsCost - balanceOperatingExpenses - balanceWasteLoss;
-  const balancePieParts = [
-    { name: localizedText('Acquisto merce venduta', language), value: balanceGoodsCost },
-    { name: localizedText('Spese operative', language), value: balanceOperatingExpenses + balanceWasteLoss },
-    { name: localizedText('Margine di profitto', language), value: Math.max(0, balanceOperatingResult) },
-  ].filter((part) => part.value > 0);
-  const balancePieTotal = balancePieParts.reduce((sum, part) => sum + part.value, 0);
-  const balanceFirstMonth = new Date(new Date().getFullYear(), new Date().getMonth() - 11, 1);
-  const balanceMonthly = Array.from({ length: 12 }, (_, index) => {
-    const month = new Date(balanceFirstMonth.getFullYear(), balanceFirstMonth.getMonth() + index, 1);
-    const monthKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`;
-    const salesInMonth = (data?.sales ?? []).filter((sale) => sale.created_at.slice(0, 7) === monthKey);
-    const revenue = salesInMonth.reduce((sum, sale) => sum + sale.total, 0);
-    const goodsCost = salesInMonth.reduce((sum, sale) =>
+  const balance = useMemo(() => {
+    if (section !== 'financial-balance') return null;
+    const balanceMonthCount = balancePeriod === 'Ultimo mese' ? 1 : balancePeriod === 'Ultimi 3 mesi' ? 3 : balancePeriod === 'Ultimi 6 mesi' ? 6 : 12;
+    const balanceRangeStart = new Date();
+    balanceRangeStart.setHours(0, 0, 0, 0);
+    const balanceStartDay = balanceRangeStart.getDate();
+    const balanceTargetMonth = new Date(balanceRangeStart.getFullYear(), balanceRangeStart.getMonth() - balanceMonthCount, 1);
+    balanceRangeStart.setFullYear(
+      balanceTargetMonth.getFullYear(),
+      balanceTargetMonth.getMonth(),
+      Math.min(balanceStartDay, new Date(balanceTargetMonth.getFullYear(), balanceTargetMonth.getMonth() + 1, 0).getDate()),
+    );
+    const balanceRangeStartKey = localDateKey(balanceRangeStart);
+    const balanceSales = data?.sales.filter((sale) => new Date(sale.created_at) >= balanceRangeStart) ?? [];
+    const balanceExpenses = data?.expenses.filter((expense) => expense.expense_date >= balanceRangeStartKey && expense.expense_date <= todayKey) ?? [];
+    const balanceRefunds = data?.refunds.filter((refund) => new Date(refund.created_at) >= balanceRangeStart && new Date(refund.created_at) <= new Date(`${todayKey}T23:59:59.999`)) ?? [];
+    const balanceRefundTotal = balanceRefunds.reduce((sum, refund) => sum + refund.amount, 0);
+    const balanceWasteLoss = balanceExpenses.filter((expense) => expense.category === 'Merce buttata').reduce((sum, expense) => sum + expense.amount, 0);
+    const balanceRevenue = balanceSales.reduce((sum, sale) => sum + sale.total, 0);
+    const balanceGoodsCost = balanceSales.reduce((sum, sale) =>
       sum + sale.items.reduce((cost, item) => cost + item.quantity * item.purchase_price, 0), 0);
-    const monthlyExpenses = (data?.expenses ?? []).filter((expense) => expense.expense_date.startsWith(monthKey));
-    const monthlyRefunds = (data?.refunds ?? []).filter((refund) => refund.created_at.startsWith(monthKey));
-    const expenses = monthlyExpenses.filter((expense) => expense.category !== 'Merce buttata')
-      .reduce((sum, expense) => sum + expense.amount, 0);
-    const wasteLoss = monthlyExpenses.filter((expense) => expense.category === 'Merce buttata')
-      .reduce((sum, expense) => sum + expense.amount, 0);
-    return {
-      mese: month.toLocaleDateString(appLocale, { month: 'short' }),
-      vendite: revenue,
-      costiMerce: goodsCost,
-      speseOperative: expenses,
-      rimborsi: monthlyRefunds.reduce((sum, refund) => sum + refund.amount, 0),
-      merceButtata: wasteLoss,
-      risultato: revenue - goodsCost - expenses - wasteLoss,
-    };
-  });
-  const statisticsStart = new Date();
-  statisticsStart.setHours(0, 0, 0, 0);
-  const statisticsDays: Record<string, number> = { 'Ultimo giorno': 1, 'Ultimi 3 giorni': 3, 'Ultima settimana': 7 };
-  if (statisticsDays[statisticsPeriod]) statisticsStart.setDate(statisticsStart.getDate() - statisticsDays[statisticsPeriod] + 1);
-  else if (statisticsPeriod !== 'Tutti') {
-    const months = statisticsPeriod === 'Ultimo mese' ? 1 : statisticsPeriod === 'Ultimi 3 mesi' ? 3 : statisticsPeriod === 'Ultimi 6 mesi' ? 6 : 12;
-    const day = statisticsStart.getDate();
-    const targetMonth = new Date(statisticsStart.getFullYear(), statisticsStart.getMonth() - months, 1);
-    statisticsStart.setFullYear(targetMonth.getFullYear(), targetMonth.getMonth(), Math.min(day, new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0).getDate()));
-  }
-  if (statisticsPeriod === 'Tutti' && data?.sales.length) {
-    const oldestSale = data.sales.reduce((oldest, sale) => {
-      const saleDate = new Date(sale.created_at);
-      return saleDate < oldest ? saleDate : oldest;
-    }, new Date(data.sales[0].created_at));
-    statisticsStart.setFullYear(oldestSale.getFullYear(), oldestSale.getMonth(), 1);
-  }
-  const statisticsSales = (statisticsPeriod === 'Tutti'
-    ? data?.sales ?? []
-    : data?.sales.filter((sale) => new Date(sale.created_at) >= statisticsStart) ?? [])
-    .filter((sale) => statisticsSite === 'Tutte' || sale.site === statisticsSite);
-  const statisticsExpenses = (data?.expenses ?? []).filter((expense) =>
-    expense.expense_date <= todayKey
-      && (statisticsPeriod === 'Tutti' || expense.expense_date >= localDateKey(statisticsStart))
-      && (statisticsSite === 'Tutte' || expense.site === statisticsSite));
-  const statisticsRefunds = (data?.refunds ?? []).filter((refund) =>
-    new Date(refund.created_at) <= new Date(`${todayKey}T23:59:59.999`)
-      && (statisticsPeriod === 'Tutti' || new Date(refund.created_at) >= statisticsStart)
-      && (statisticsSite === 'Tutte' || refund.site === statisticsSite));
-  const statisticsRefundTotal = statisticsRefunds.reduce((sum, refund) => sum + refund.amount, 0);
-  const statisticsWasteLoss = statisticsExpenses.filter((expense) => expense.category === 'Merce buttata').reduce((sum, expense) => sum + expense.amount, 0);
-  const soldCost = statisticsSales.reduce((sum, sale) => sum + sale.items.reduce((subtotal, item) => subtotal + item.quantity * item.purchase_price, 0), 0);
-  const soldTotal = statisticsSales.reduce((sum, sale) => sum + sale.total, 0);
-  const estimatedNet = soldTotal - soldCost - statisticsExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-  const soldUnits = statisticsSales.reduce((sum, sale) => sum + sale.item_count, 0);
-  const selectedStatisticsSiteId = data?.sites.find((site) => site.name === statisticsSite)?.id;
-  const statisticsProducts = (data?.products ?? []).map((product) => ({
-    ...product,
-    stock: statisticsSite === 'Tutte' ? product.stock : siteStockFor(product.id, selectedStatisticsSiteId),
-  }));
-  const totalTrackedUnits = soldUnits + statisticsProducts.reduce((sum, product) => sum + product.stock, 0);
-  const unsoldListProducts = (data?.products ?? []).map((product) => ({
+    const balanceOperatingExpenses = balanceExpenses.filter((expense) => expense.category !== 'Merce buttata').reduce((sum, expense) => sum + expense.amount, 0);
+    const balanceOperatingResult = balanceRevenue - balanceGoodsCost - balanceOperatingExpenses - balanceWasteLoss;
+    const balancePieParts = [
+      { name: localizedText('Acquisto merce venduta', language), value: balanceGoodsCost },
+      { name: localizedText('Spese operative', language), value: balanceOperatingExpenses + balanceWasteLoss },
+      { name: localizedText('Margine di profitto', language), value: Math.max(0, balanceOperatingResult) },
+    ].filter((part) => part.value > 0);
+    const balancePieTotal = balancePieParts.reduce((sum, part) => sum + part.value, 0);
+    return { balanceRangeStartKey, balanceSales, balanceExpenses, balanceRefunds, balanceRefundTotal, balanceWasteLoss, balanceRevenue, balanceGoodsCost, balanceOperatingExpenses, balanceOperatingResult, balancePieParts, balancePieTotal };
+  }, [balancePeriod, data?.expenses, data?.refunds, data?.sales, language, section, todayKey]);
+  const balanceRangeStartKey = balance?.balanceRangeStartKey ?? '';
+  const balanceSales = balance?.balanceSales ?? [];
+  const balanceExpenses = balance?.balanceExpenses ?? [];
+  const balanceRefunds = balance?.balanceRefunds ?? [];
+  const balanceRefundTotal = balance?.balanceRefundTotal ?? 0;
+  const balanceWasteLoss = balance?.balanceWasteLoss ?? 0;
+  const balanceRevenue = balance?.balanceRevenue ?? 0;
+  const balanceGoodsCost = balance?.balanceGoodsCost ?? 0;
+  const balanceOperatingExpenses = balance?.balanceOperatingExpenses ?? 0;
+  const balanceOperatingResult = balance?.balanceOperatingResult ?? 0;
+  const balancePieParts = balance?.balancePieParts ?? [];
+  const balancePieTotal = balance?.balancePieTotal ?? 0;
+  const balanceFirstMonth = new Date(new Date().getFullYear(), new Date().getMonth() - 11, 1);
+  const balanceMonthly = useMemo(() => {
+    if (section !== 'financial-balance') return [];
+    return Array.from({ length: 12 }, (_, index) => {
+      const month = new Date(balanceFirstMonth.getFullYear(), balanceFirstMonth.getMonth() + index, 1);
+      const monthKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`;
+      const salesInMonth = (data?.sales ?? []).filter((sale) => sale.created_at.slice(0, 7) === monthKey);
+      const revenue = salesInMonth.reduce((sum, sale) => sum + sale.total, 0);
+      const goodsCost = salesInMonth.reduce((sum, sale) =>
+        sum + sale.items.reduce((cost, item) => cost + item.quantity * item.purchase_price, 0), 0);
+      const monthlyExpenses = (data?.expenses ?? []).filter((expense) => expense.expense_date.startsWith(monthKey));
+      const monthlyRefunds = (data?.refunds ?? []).filter((refund) => refund.created_at.startsWith(monthKey));
+      const expenses = monthlyExpenses.filter((expense) => expense.category !== 'Merce buttata')
+        .reduce((sum, expense) => sum + expense.amount, 0);
+      const wasteLoss = monthlyExpenses.filter((expense) => expense.category === 'Merce buttata')
+        .reduce((sum, expense) => sum + expense.amount, 0);
+      return {
+        mese: month.toLocaleDateString(appLocale, { month: 'short' }),
+        vendite: revenue,
+        costiMerce: goodsCost,
+        speseOperative: expenses,
+        rimborsi: monthlyRefunds.reduce((sum, refund) => sum + refund.amount, 0),
+        merceButtata: wasteLoss,
+        risultato: revenue - goodsCost - expenses - wasteLoss,
+      };
+    });
+  }, [data?.expenses, data?.refunds, data?.sales, language, section, todayKey]);
+  const statistics = useMemo(() => {
+    if (section !== 'statistics') return null;
+    const statisticsStart = new Date();
+    statisticsStart.setHours(0, 0, 0, 0);
+    const statisticsDays: Record<string, number> = { 'Ultimo giorno': 1, 'Ultimi 3 giorni': 3, 'Ultima settimana': 7 };
+    if (statisticsDays[statisticsPeriod]) statisticsStart.setDate(statisticsStart.getDate() - statisticsDays[statisticsPeriod] + 1);
+    else if (statisticsPeriod !== 'Tutti') {
+      const months = statisticsPeriod === 'Ultimo mese' ? 1 : statisticsPeriod === 'Ultimi 3 mesi' ? 3 : statisticsPeriod === 'Ultimi 6 mesi' ? 6 : 12;
+      const day = statisticsStart.getDate();
+      const targetMonth = new Date(statisticsStart.getFullYear(), statisticsStart.getMonth() - months, 1);
+      statisticsStart.setFullYear(targetMonth.getFullYear(), targetMonth.getMonth(), Math.min(day, new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0).getDate()));
+    }
+    if (statisticsPeriod === 'Tutti' && data?.sales.length) {
+      const oldestSale = data.sales.reduce((oldest, sale) => {
+        const saleDate = new Date(sale.created_at);
+        return saleDate < oldest ? saleDate : oldest;
+      }, new Date(data.sales[0].created_at));
+      statisticsStart.setFullYear(oldestSale.getFullYear(), oldestSale.getMonth(), 1);
+    }
+    const statisticsSales = (statisticsPeriod === 'Tutti'
+      ? data?.sales ?? []
+      : data?.sales.filter((sale) => new Date(sale.created_at) >= statisticsStart) ?? [])
+      .filter((sale) => statisticsSite === 'Tutte' || sale.site === statisticsSite);
+    const statisticsExpenses = (data?.expenses ?? []).filter((expense) =>
+      expense.expense_date <= todayKey
+        && (statisticsPeriod === 'Tutti' || expense.expense_date >= localDateKey(statisticsStart))
+        && (statisticsSite === 'Tutte' || expense.site === statisticsSite));
+    const statisticsRefunds = (data?.refunds ?? []).filter((refund) =>
+      new Date(refund.created_at) <= new Date(`${todayKey}T23:59:59.999`)
+        && (statisticsPeriod === 'Tutti' || new Date(refund.created_at) >= statisticsStart)
+        && (statisticsSite === 'Tutte' || refund.site === statisticsSite));
+    const statisticsRefundTotal = statisticsRefunds.reduce((sum, refund) => sum + refund.amount, 0);
+    const statisticsWasteLoss = statisticsExpenses.filter((expense) => expense.category === 'Merce buttata').reduce((sum, expense) => sum + expense.amount, 0);
+    const soldCost = statisticsSales.reduce((sum, sale) => sum + sale.items.reduce((subtotal, item) => subtotal + item.quantity * item.purchase_price, 0), 0);
+    const soldTotal = statisticsSales.reduce((sum, sale) => sum + sale.total, 0);
+    const estimatedNet = soldTotal - soldCost - statisticsExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+    const soldUnits = statisticsSales.reduce((sum, sale) => sum + sale.item_count, 0);
+    const selectedStatisticsSiteId = data?.sites.find((site) => site.name === statisticsSite)?.id;
+    const statisticsProducts = (data?.products ?? []).map((product) => ({
+      ...product,
+      stock: statisticsSite === 'Tutte' ? product.stock : siteStockFor(product.id, selectedStatisticsSiteId),
+    }));
+    const totalTrackedUnits = soldUnits + statisticsProducts.reduce((sum, product) => sum + product.stock, 0);
+    const stockCost = statisticsProducts.reduce((sum, item) => sum + item.stock * item.purchase_price, 0);
+    const stockRetail = statisticsProducts.reduce((sum, item) => sum + item.stock * item.sale_price, 0);
+    const productSales = statisticsSales.flatMap((sale) => sale.items).reduce<Record<number, { quantity: number; revenue: number }>>((totals, item) => {
+      const total = totals[item.product_id] ?? { quantity: 0, revenue: 0 };
+      totals[item.product_id] = { quantity: total.quantity + item.quantity, revenue: total.revenue + item.quantity * item.unit_price };
+      return totals;
+    }, {});
+    const productSalesRanking = (data?.products ?? []).map((product) => ({
+      ...product,
+      quantitySold: productSales[product.id]?.quantity ?? 0,
+      revenue: productSales[product.id]?.revenue ?? 0,
+    })).sort((left, right) => right.quantitySold - left.quantitySold || left.name.localeCompare(right.name, 'it'));
+    const categoriesSales = statisticsSales.flatMap((sale) => sale.items).reduce<Record<string, number>>((totals, item) => { const cat = data?.products.find((product) => product.id === item.product_id)?.category ?? 'Altro'; totals[cat] = (totals[cat] ?? 0) + item.quantity * item.unit_price; return totals; }, {});
+    const paymentTotals = statisticsSales.reduce<Record<string, number>>((totals, sale) => { totals[sale.payment_method] = (totals[sale.payment_method] ?? 0) + sale.total; return totals; }, {});
+    const currentMonth = new Date();
+    const monthsBetween = (currentMonth.getFullYear() - statisticsStart.getFullYear()) * 12 + currentMonth.getMonth() - statisticsStart.getMonth();
+    const monthlySales = Array.from({ length: monthsBetween + 1 }, (_, index) => {
+      const month = new Date(statisticsStart.getFullYear(), statisticsStart.getMonth() + index, 1);
+      const monthSales = statisticsSales.filter((sale) => {
+        const date = new Date(sale.created_at);
+        return date.getFullYear() === month.getFullYear() && date.getMonth() === month.getMonth();
+      });
+      return { mese: month.toLocaleDateString(appLocale, { month: 'short' }), totale: monthSales.reduce((sum, sale) => sum + sale.total, 0) };
+    });
+    const chartDays = Array.from({ length: 7 }, (_, index) => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - 6 + index); const sales = statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()); return { giorno: date.toLocaleDateString(appLocale, { weekday: 'short' }), totale: sales.reduce((sum, sale) => sum + sale.total, 0) }; });
+    return { statisticsSales, statisticsRefundTotal, statisticsWasteLoss, soldCost, soldTotal, estimatedNet, soldUnits, totalTrackedUnits, stockCost, stockRetail, productSalesRanking, categoriesSales, paymentTotals, monthlySales, chartDays };
+  }, [data?.expenses, data?.products, data?.refunds, data?.sales, data?.sites, language, section, siteStockFor, statisticsPeriod, statisticsSite, todayKey]);
+  const statisticsSales = statistics?.statisticsSales ?? [];
+  const statisticsRefundTotal = statistics?.statisticsRefundTotal ?? 0;
+  const statisticsWasteLoss = statistics?.statisticsWasteLoss ?? 0;
+  const soldCost = statistics?.soldCost ?? 0;
+  const soldTotal = statistics?.soldTotal ?? 0;
+  const estimatedNet = statistics?.estimatedNet ?? 0;
+  const soldUnits = statistics?.soldUnits ?? 0;
+  const totalTrackedUnits = statistics?.totalTrackedUnits ?? 0;
+  const stockCost = statistics?.stockCost ?? 0;
+  const stockRetail = statistics?.stockRetail ?? 0;
+  const productSalesRanking = statistics?.productSalesRanking ?? [];
+  const categoriesSales = statistics?.categoriesSales ?? {};
+  const paymentTotals = statistics?.paymentTotals ?? {};
+  const monthlySales = statistics?.monthlySales ?? [];
+  const chartDays = statistics?.chartDays ?? [];
+  const unsoldListProducts = useMemo(() => (data?.products ?? []).map((product) => ({
     ...product,
     stock: unsoldSite === 'Tutto' ? product.stock : siteStockFor(product.id, Number(unsoldSite)),
-  })).filter((product) => product.stock > 0);
-  const stockCost = statisticsProducts.reduce((sum, item) => sum + item.stock * item.purchase_price, 0);
-  const stockRetail = statisticsProducts.reduce((sum, item) => sum + item.stock * item.sale_price, 0);
-  const productSales = statisticsSales.flatMap((sale) => sale.items).reduce<Record<number, { quantity: number; revenue: number }>>((totals, item) => {
-    const total = totals[item.product_id] ?? { quantity: 0, revenue: 0 };
-    totals[item.product_id] = { quantity: total.quantity + item.quantity, revenue: total.revenue + item.quantity * item.unit_price };
-    return totals;
-  }, {});
-  const productSalesRanking = (data?.products ?? []).map((product) => ({
-    ...product,
-    quantitySold: productSales[product.id]?.quantity ?? 0,
-    revenue: productSales[product.id]?.revenue ?? 0,
-  })).sort((left, right) => right.quantitySold - left.quantitySold || left.name.localeCompare(right.name, 'it'));
-  const categoriesSales = statisticsSales.flatMap((sale) => sale.items).reduce<Record<string, number>>((totals, item) => { const cat = data?.products.find((product) => product.id === item.product_id)?.category ?? 'Altro'; totals[cat] = (totals[cat] ?? 0) + item.quantity * item.unit_price; return totals; }, {});
-  const paymentTotals = statisticsSales.reduce<Record<string, number>>((totals, sale) => { totals[sale.payment_method] = (totals[sale.payment_method] ?? 0) + sale.total; return totals; }, {});
-  const currentMonth = new Date();
-  const monthsBetween = (currentMonth.getFullYear() - statisticsStart.getFullYear()) * 12 + currentMonth.getMonth() - statisticsStart.getMonth();
-  const monthlySales = Array.from({ length: monthsBetween + 1 }, (_, index) => {
-    const month = new Date(statisticsStart.getFullYear(), statisticsStart.getMonth() + index, 1);
-    const monthSales = statisticsSales.filter((sale) => {
-      const date = new Date(sale.created_at);
-      return date.getFullYear() === month.getFullYear() && date.getMonth() === month.getMonth();
-    });
-    return { mese: month.toLocaleDateString(appLocale, { month: 'short' }), totale: monthSales.reduce((sum, sale) => sum + sale.total, 0) };
-  });
-  const chartDays = Array.from({ length: 7 }, (_, index) => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - 6 + index); const sales = statisticsSales.filter((sale) => new Date(sale.created_at).toDateString() === date.toDateString()); return { giorno: date.toLocaleDateString(appLocale, { weekday: 'short' }), totale: sales.reduce((sum, sale) => sum + sale.total, 0) }; });
+  })).filter((product) => product.stock > 0), [data?.products, siteStockFor, unsoldSite]);
   const downloadFinancialBalance = async (respectTimeFilters: boolean) => {
     if (!data) return;
     const doc = new jsPDF({ orientation: 'portrait' });
@@ -3779,48 +3832,61 @@ export default function App() {
     });
     doc.save(filename);
   };
-  const retailSiteIds = new Set(retailSites.map((site) => site.id));
-  const retailStockFor = (productId: number) => (data?.siteStocks ?? [])
-    .filter((stock) => stock.product_id === productId && retailSiteIds.has(stock.site_id))
-    .reduce((sum, stock) => sum + stock.stock, 0);
+  const retailSiteIds = useMemo(() => new Set(retailSites.map((site) => site.id)), [retailSites]);
+  const retailStockByProduct = useMemo(() => {
+    const stockByProduct = new Map<number, number>();
+    for (const stock of data?.siteStocks ?? []) {
+      if (retailSiteIds.has(stock.site_id)) {
+        stockByProduct.set(stock.product_id, (stockByProduct.get(stock.product_id) ?? 0) + stock.stock);
+      }
+    }
+    return stockByProduct;
+  }, [data?.siteStocks, retailSiteIds]);
   const expiryLimit = new Date();
   expiryLimit.setDate(expiryLimit.getDate() + 10);
   const expiryLimitKey = localDateKey(expiryLimit);
-  const expiringProducts = data?.products.filter((product) =>
+  const expiringProducts = useMemo(() => (data?.products ?? []).filter((product) =>
     product.expiry_enabled && product.expiry_date && product.expiry_date >= todayKey && product.expiry_date <= expiryLimitKey
-      && (section !== 'available-stock' || retailStockFor(product.id) > 0)
-  ) ?? [];
-  const expiredProducts = data?.products.filter((product) =>
+      && (section === 'available-stock'
+        ? (retailStockByProduct.get(product.id) ?? 0) > 0
+        : (siteStockByProduct.get(product.id) ?? 0) > 0)
+  ), [data?.products, expiryLimitKey, retailStockByProduct, section, siteStockByProduct, todayKey]);
+  const expiredProducts = useMemo(() => (data?.products ?? []).filter((product) =>
     product.expiry_enabled && product.expiry_date && product.expiry_date < todayKey
-      && (section === 'available-stock' ? retailStockFor(product.id) > 0 : product.stock > 0)
-  ) ?? [];
-  const inventoryStockFor = (productId: number) => {
-    const siteIds = new Set(availableStockSites.map((site) => site.id));
-    return (data?.siteStocks ?? [])
-      .filter((stock) => stock.product_id === productId
-        && siteIds.has(stock.site_id)
-        && (inventorySiteId === 'all' || String(stock.site_id) === inventorySiteId))
-      .reduce((sum, stock) => sum + stock.stock, 0);
-  };
-  const inventoryList = data?.products.filter((item) => {
+      && (section === 'available-stock'
+        ? (retailStockByProduct.get(product.id) ?? 0) > 0
+        : (siteStockByProduct.get(product.id) ?? 0) > 0)
+  ), [data?.products, retailStockByProduct, section, siteStockByProduct, todayKey]);
+  const inventorySiteIds = useMemo(() => new Set(availableStockSites.map((site) => site.id)), [availableStockSites]);
+  const inventoryStockFor = (productId: number) => inventorySiteId === 'all'
+    ? availableStockSites.reduce((sum, site) => sum + siteStockFor(productId, site.id), 0)
+    : inventorySiteIds.has(Number(inventorySiteId)) ? siteStockFor(productId, Number(inventorySiteId)) : 0;
+  const inventoryList = useMemo(() => {
+    if (section !== 'inventory' && section !== 'available-stock') return [];
+    return (data?.products ?? []).filter((item) => {
     const stock = inventoryStockFor(item.id);
     return (item.name.toLowerCase().includes(inventorySearch.toLowerCase()) || item.code.includes(inventorySearch))
-      && (section !== 'available-stock' || data.siteStocks.some((siteStock) => siteStock.product_id === item.id && retailSiteIds.has(siteStock.site_id)))
+      && (section !== 'available-stock' || (retailStockByProduct.get(item.id) ?? 0) > 0)
       && (category === 'Tutte' || item.category === category)
       && (inventoryStatus === 'all' || (inventoryStatus === 'out' ? stock === 0 : stock > 0))
       && (inventoryStatus === 'all'
         || (inventoryStatus === 'available' && stock > 0)
         || (inventoryStatus === 'low' && stock > 0 && stock <= item.low_stock_threshold)
         || (inventoryStatus === 'out' && stock === 0));
-  }) ?? [];
-  const employeeList = data?.employees.filter((employee) =>
-    [employee.first_name, employee.last_name, employee.role, employee.shift, employee.operational_site, employee.email]
-      .some((value) => value.toLocaleLowerCase('it').includes(employeeSearch.trim().toLocaleLowerCase('it')))
-  ) ?? [];
-  const expenseList = data?.expenses.filter((expense) =>
-    `${expense.description} ${expense.category} ${expense.site}`.toLocaleLowerCase('it').includes(expenseSearch.trim().toLocaleLowerCase('it'))
-  ) ?? [];
-  const matchesSalesPeriod = (createdAt: string) => {
+    });
+  }, [availableStockSites, category, data?.products, inventorySearch, inventorySiteId, inventorySiteIds, inventoryStatus, retailStockByProduct, section, siteStockIndex]);
+  const employeeList = useMemo(() => section === 'employees'
+    ? data?.employees.filter((employee) =>
+      [employee.first_name, employee.last_name, employee.role, employee.shift, employee.operational_site, employee.email]
+        .some((value) => value.toLocaleLowerCase('it').includes(employeeSearch.trim().toLocaleLowerCase('it')))
+    ) ?? []
+    : [], [data?.employees, employeeSearch, section]);
+  const expenseList = useMemo(() => section === 'expenses'
+    ? data?.expenses.filter((expense) =>
+      `${expense.description} ${expense.category} ${expense.site}`.toLocaleLowerCase('it').includes(expenseSearch.trim().toLocaleLowerCase('it'))
+    ) ?? []
+    : [], [data?.expenses, expenseSearch, section]);
+  const matchesSalesPeriod = useCallback((createdAt: string) => {
     const saleDate = new Date(createdAt);
     const today = new Date();
     const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -3842,88 +3908,101 @@ export default function App() {
       rangeStart.setDate(Math.min(dayOfMonth, new Date(rangeStart.getFullYear(), rangeStart.getMonth() + 1, 0).getDate()));
     }
     return saleDate >= rangeStart;
-  };
-  const salesList = data?.sales.filter((sale) =>
-    sale.receipt_no.includes(saleSearch)
-    && (salesCategory === 'Tutte' || sale.items.some((item) => data.products.some((product) => product.id === item.product_id && product.category === salesCategory)))
-    && (salesSite === 'Tutte' || sale.site === salesSite)
-    && matchesSalesPeriod(sale.created_at)
-  ) ?? [];
-  const saleMatch = saleManagementSearch.trim()
+  }, [salesFrom, salesPeriod, salesTo, todayKey]);
+  const salesList = useMemo(() => {
+    if (section !== 'sales') return [];
+    return data?.sales.filter((sale) =>
+      sale.receipt_no.includes(saleSearch)
+      && (salesCategory === 'Tutte' || sale.items.some((item) => data.products.some((product) => product.id === item.product_id && product.category === salesCategory)))
+      && (salesSite === 'Tutte' || sale.site === salesSite)
+      && matchesSalesPeriod(sale.created_at)
+    ) ?? [];
+  }, [data?.products, data?.sales, matchesSalesPeriod, saleSearch, salesCategory, salesSite, section]);
+  const saleMatch = useMemo(() => section === 'sale-management' && saleManagementSearch.trim()
     ? data?.sales.find((sale) => sale.receipt_no === saleManagementSearch.trim())
-    : undefined;
-  const siteStatsMatchesDate = (value: string) => {
-    if (siteStatsPeriod === 'Da - A') {
-      const date = value.length === 10 ? new Date(`${value}T12:00:00`) : new Date(value);
-      const from = siteStatsFrom ? new Date(`${siteStatsFrom}T00:00:00`) : null;
-      const to = siteStatsTo ? new Date(`${siteStatsTo}T23:59:59.999`) : null;
-      return (!from || date >= from) && (!to || date <= to);
-    }
-    if (siteStatsPeriod === 'Tutto') return true;
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    const days: Record<string, number> = { Oggi: 1, 'Ultima settimana': 7 };
-    if (days[siteStatsPeriod]) start.setDate(start.getDate() - days[siteStatsPeriod] + 1);
-    else start.setMonth(start.getMonth() - (siteStatsPeriod === 'Ultimo mese' ? 1 : siteStatsPeriod === 'Ultimi 3 mesi' ? 3 : 6));
-    return new Date(value.length === 10 ? `${value}T12:00:00` : value) >= start;
-  };
-  const siteStatistics = storeSites.map((site) => {
-    const sales = (data?.sales ?? []).filter((sale) => sale.site === site.name && siteStatsMatchesDate(sale.created_at));
-    const expenses = (data?.expenses ?? []).filter((expense) => expense.site === site.name && siteStatsMatchesDate(expense.expense_date));
-    const movements = (data?.stockMovements ?? []).filter((movement) => movement.site === site.name && siteStatsMatchesDate(movement.created_at));
-    const income = sales.reduce((sum, sale) => sum + sale.total, 0);
-    const payrollCosts = (data?.payrollPayments ?? []).filter((payment) => payment.site === site.name && siteStatsMatchesDate(payment.payment_date))
-      .reduce((sum, payment) => sum + payment.amount, 0);
-    const expensesTotal = expenses.reduce((sum, expense) => sum + expense.amount, 0) + payrollCosts;
-    return { ...site, income, expenses: expensesTotal, balance: income - expensesTotal, receipts: sales.length,
-      stockIn: movements.filter((movement) => movement.movement_type === 'Carico').reduce((sum, movement) => sum + movement.quantity, 0),
-      stockOut: movements.filter((movement) => movement.movement_type === 'Scarico').reduce((sum, movement) => sum + movement.quantity, 0) };
-  });
+    : undefined, [data?.sales, saleManagementSearch, section]);
+  const siteStatistics = useMemo(() => {
+    if (section !== 'site-statistics') return [];
+    const matchesDate = (value: string) => {
+      if (siteStatsPeriod === 'Da - A') {
+        const date = value.length === 10 ? new Date(`${value}T12:00:00`) : new Date(value);
+        const from = siteStatsFrom ? new Date(`${siteStatsFrom}T00:00:00`) : null;
+        const to = siteStatsTo ? new Date(`${siteStatsTo}T23:59:59.999`) : null;
+        return (!from || date >= from) && (!to || date <= to);
+      }
+      if (siteStatsPeriod === 'Tutto') return true;
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const days: Record<string, number> = { Oggi: 1, 'Ultima settimana': 7 };
+      if (days[siteStatsPeriod]) start.setDate(start.getDate() - days[siteStatsPeriod] + 1);
+      else start.setMonth(start.getMonth() - (siteStatsPeriod === 'Ultimo mese' ? 1 : siteStatsPeriod === 'Ultimi 3 mesi' ? 3 : 6));
+      return new Date(value.length === 10 ? `${value}T12:00:00` : value) >= start;
+    };
+    return storeSites.map((site) => {
+      const sales = (data?.sales ?? []).filter((sale) => sale.site === site.name && matchesDate(sale.created_at));
+      const expenses = (data?.expenses ?? []).filter((expense) => expense.site === site.name && matchesDate(expense.expense_date));
+      const movements = (data?.stockMovements ?? []).filter((movement) => movement.site === site.name && matchesDate(movement.created_at));
+      const income = sales.reduce((sum, sale) => sum + sale.total, 0);
+      const payrollCosts = (data?.payrollPayments ?? []).filter((payment) => payment.site === site.name && matchesDate(payment.payment_date))
+        .reduce((sum, payment) => sum + payment.amount, 0);
+      const expensesTotal = expenses.reduce((sum, expense) => sum + expense.amount, 0) + payrollCosts;
+      return { ...site, income, expenses: expensesTotal, balance: income - expensesTotal, receipts: sales.length,
+        stockIn: movements.filter((movement) => movement.movement_type === 'Carico').reduce((sum, movement) => sum + movement.quantity, 0),
+        stockOut: movements.filter((movement) => movement.movement_type === 'Scarico').reduce((sum, movement) => sum + movement.quantity, 0) };
+    });
+  }, [data?.expenses, data?.payrollPayments, data?.sales, data?.stockMovements, section, siteStatsFrom, siteStatsPeriod, siteStatsTo, storeSites, todayKey]);
   const selectedSiteStats = siteStatistics.filter((site) => siteStatsFilter === 'Tutte' || site.name === siteStatsFilter);
   const siteStatsIncome = selectedSiteStats.reduce((sum, site) => sum + site.income, 0);
   const siteStatsExpenses = selectedSiteStats.reduce((sum, site) => sum + site.expenses, 0);
-  const matchesInventoryHistoryPeriod = (createdAt: string) => {
-    const movementDate = new Date(createdAt);
-    const today = new Date();
-    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    if (inventoryHistoryPeriod === 'Da - A') {
-      const from = inventoryHistoryFrom ? new Date(`${inventoryHistoryFrom}T00:00:00`) : null;
-      const to = inventoryHistoryTo ? new Date(`${inventoryHistoryTo}T23:59:59.999`) : null;
-      return (!from || movementDate >= from) && (!to || movementDate <= to);
-    }
-    if (inventoryHistoryPeriod === 'Tutti') return true;
-    if (inventoryHistoryPeriod === 'Oggi') return movementDate >= todayStart && movementDate < new Date(todayStart.getTime() + 86400000);
-    if (inventoryHistoryPeriod === 'Ieri') return movementDate >= new Date(todayStart.getTime() - 86400000) && movementDate < todayStart;
-    const rangeStart = new Date(todayStart);
-    if (inventoryHistoryPeriod === 'Ultima settimana') rangeStart.setDate(rangeStart.getDate() - 6);
-    else if (inventoryHistoryPeriod === 'Ultimo mese') rangeStart.setMonth(rangeStart.getMonth() - 1);
-    return movementDate >= rangeStart;
-  };
-  const inventoryHistoryMovements = data?.stockMovements.filter((movement) =>
-    matchesInventoryHistoryPeriod(movement.created_at)
-    && [movement.product_name, movement.person, movement.note].some((value) => value.toLowerCase().includes(inventoryHistorySearch.toLowerCase()))
-  ) ?? [];
-  const matchesActivityPeriod = (createdAt: string) => {
-    const activityDate = new Date(createdAt);
-    const today = new Date();
-    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    if (activityPeriod === 'Da - A') {
-      const from = activityFrom ? new Date(`${activityFrom}T00:00:00`) : null;
-      const to = activityTo ? new Date(`${activityTo}T23:59:59.999`) : null;
-      return (!from || activityDate >= from) && (!to || activityDate <= to);
-    }
-    if (activityPeriod === 'Tutti') return true;
-    if (activityPeriod === 'Oggi') return activityDate >= todayStart && activityDate < new Date(todayStart.getTime() + 86400000);
-    if (activityPeriod === 'Ieri') return activityDate >= new Date(todayStart.getTime() - 86400000) && activityDate < todayStart;
-    const rangeStart = new Date(todayStart);
-    if (activityPeriod === 'Ultima settimana') rangeStart.setDate(rangeStart.getDate() - 6);
-    else if (activityPeriod === 'Ultimo mese') rangeStart.setMonth(rangeStart.getMonth() - 1);
-    return activityDate >= rangeStart;
-  };
-  const employeeActivityList = data?.employeeActivities.filter((entry) =>
-    (activityEmployeeId === 'Tutti' || entry.employee_id === Number(activityEmployeeId))
-    && matchesActivityPeriod(entry.created_at)
-  ) ?? [];
+  const inventoryHistoryMovements = useMemo(() => {
+    if (section !== 'inventory-history') return [];
+    const matchesPeriod = (createdAt: string) => {
+      const movementDate = new Date(createdAt);
+      const today = new Date();
+      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      if (inventoryHistoryPeriod === 'Da - A') {
+        const from = inventoryHistoryFrom ? new Date(`${inventoryHistoryFrom}T00:00:00`) : null;
+        const to = inventoryHistoryTo ? new Date(`${inventoryHistoryTo}T23:59:59.999`) : null;
+        return (!from || movementDate >= from) && (!to || movementDate <= to);
+      }
+      if (inventoryHistoryPeriod === 'Tutti') return true;
+      if (inventoryHistoryPeriod === 'Oggi') return movementDate >= todayStart && movementDate < new Date(todayStart.getTime() + 86400000);
+      if (inventoryHistoryPeriod === 'Ieri') return movementDate >= new Date(todayStart.getTime() - 86400000) && movementDate < todayStart;
+      const rangeStart = new Date(todayStart);
+      if (inventoryHistoryPeriod === 'Ultima settimana') rangeStart.setDate(rangeStart.getDate() - 6);
+      else if (inventoryHistoryPeriod === 'Ultimo mese') rangeStart.setMonth(rangeStart.getMonth() - 1);
+      return movementDate >= rangeStart;
+    };
+    const search = inventoryHistorySearch.toLowerCase();
+    return data?.stockMovements.filter((movement) =>
+      matchesPeriod(movement.created_at)
+      && [movement.product_name, movement.person, movement.note].some((value) => value.toLowerCase().includes(search))
+    ) ?? [];
+  }, [data?.stockMovements, inventoryHistoryFrom, inventoryHistoryPeriod, inventoryHistorySearch, inventoryHistoryTo, section, todayKey]);
+  const employeeActivityList = useMemo(() => {
+    if (section !== 'employee-tracker') return [];
+    const matchesPeriod = (createdAt: string) => {
+      const activityDate = new Date(createdAt);
+      const today = new Date();
+      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      if (activityPeriod === 'Da - A') {
+        const from = activityFrom ? new Date(`${activityFrom}T00:00:00`) : null;
+        const to = activityTo ? new Date(`${activityTo}T23:59:59.999`) : null;
+        return (!from || activityDate >= from) && (!to || activityDate <= to);
+      }
+      if (activityPeriod === 'Tutti') return true;
+      if (activityPeriod === 'Oggi') return activityDate >= todayStart && activityDate < new Date(todayStart.getTime() + 86400000);
+      if (activityPeriod === 'Ieri') return activityDate >= new Date(todayStart.getTime() - 86400000) && activityDate < todayStart;
+      const rangeStart = new Date(todayStart);
+      if (activityPeriod === 'Ultima settimana') rangeStart.setDate(rangeStart.getDate() - 6);
+      else if (activityPeriod === 'Ultimo mese') rangeStart.setMonth(rangeStart.getMonth() - 1);
+      return activityDate >= rangeStart;
+    };
+    return data?.employeeActivities.filter((entry) =>
+      (activityEmployeeId === 'Tutti' || entry.employee_id === Number(activityEmployeeId))
+      && matchesPeriod(entry.created_at)
+    ) ?? [];
+  }, [activityEmployeeId, activityFrom, activityPeriod, activityTo, data?.employeeActivities, section, todayKey]);
   const sectionLabel = sectionNames[section] ?? nav.find((item) => item.section === section)?.label ?? 'Impostazioni';
   const startEmployeeCreation = () => {
     if (!data) {
@@ -3972,37 +4051,6 @@ export default function App() {
     setEmployeeAction(null);
     setEmployeeActionBarcode('');
   };
-  const confirmTrackerAccess = async (event: FormEvent) => {
-    event.preventDefault();
-    try {
-      if (!await window.gestionale.authorizeTracker(trackerAccessBarcode.trim())) {
-        notify('Per accedere al tracker serve il barcode di un Proprietario o Direttore.');
-        return;
-      }
-      setTrackerAccessOpen(false);
-      setTrackerAccessBarcode('');
-      navigateTo('employee-tracker', true);
-    } catch (error) {
-      notify(errorText(error));
-    }
-  };
-  useEffect(() => {
-    if (!trackerAccessOpen || !trackerAccessBarcode.trim()) return;
-    const barcode = trackerAccessBarcode.trim();
-    const requestId = ++trackerAccessRequestRef.current;
-    const timeout = window.setTimeout(() => {
-      void window.gestionale.authorizeTracker(barcode).then((valid) => {
-        if (!valid || requestId !== trackerAccessRequestRef.current) return;
-        setTrackerAccessOpen(false);
-        setTrackerAccessBarcode('');
-        navigateTo('employee-tracker', true);
-      }).catch((error: unknown) => notify(errorText(error)));
-    }, 500);
-    return () => {
-      window.clearTimeout(timeout);
-      trackerAccessRequestRef.current += 1;
-    };
-  }, [trackerAccessBarcode, trackerAccessOpen]);
   const printReceipt = (target: 'regular' | 'thermal' = 'regular') => {
     const printer = target === 'thermal' ? data?.settings.receipt_printer_thermal : data?.settings.receipt_printer;
     if (printer) {
@@ -4431,8 +4479,8 @@ export default function App() {
           <Metric icon={ArrowDownToLine} label="Rimborsi" value={money.format(todayRefunds)} detail="Rimborsi registrati oggi" />
           <Metric icon={TrendingUp} label="Netto vendite" value={money.format(dailyProfit)} detail="Profitto dopo sconti e costo merce" />
           <Metric icon={Package} label="Articoli venduti" value={dailyUnits.toLocaleString(appLocale)} detail="Pezzi registrati oggi" />
-          <Metric icon={CircleAlert} label="Da riordinare" value={reorderProducts.length.toLocaleString(appLocale)} detail="Articoli sotto soglia" action={<button className="text-button metric-action" type="button" onClick={() => setReorderListOpen(true)}>Vedi lista</button>} />
-          <Metric icon={CircleAlert} label="Avviso date di scadenza" value={expiringProducts.length.toLocaleString(appLocale)} detail={expiringProducts.length ? 'Articoli in scadenza entro 10 giorni' : 'Nessun articolo in scadenza nei prossimi 10 giorni'} action={canAccess('inventory') ? <button className="text-button metric-action" type="button" onClick={() => setExpiryListOpen(true)}>Vedi lista</button> : undefined} />
+          <Metric icon={CircleAlert} label="Da riordinare" value={reorderProducts.length.toLocaleString(appLocale)} detail="Articoli sotto soglia" action={<button className="text-button metric-action" type="button" onClick={() => setReorderListOpen(true)}>{localizedText('Vedi lista', language)}</button>} />
+          <Metric icon={CircleAlert} label="Avviso date di scadenza" value={expiringProducts.length.toLocaleString(appLocale)} detail={expiringProducts.length ? 'Articoli in scadenza entro 10 giorni' : 'Nessun articolo in scadenza nei prossimi 10 giorni'} action={canAccess('inventory') ? <button className="text-button metric-action" type="button" onClick={() => setExpiryListOpen(true)}>{localizedText('Vedi lista', language)}</button> : undefined} />
         </div>
         <section className="content-section"><SectionHeading icon={ClipboardList} title="Ultime vendite" detail="Transazioni più recenti" action={<button className="text-button" onClick={() => navigateTo('sales')}>{language === 'ar' ? 'كل المبيعات ←' : 'Tutte le vendite →'}</button>} /><SalesTable sales={data.sales.slice(0, 5)} onSelect={setReceipt} /></section>
       </div>}
@@ -4737,7 +4785,6 @@ export default function App() {
       </div>
       <div className="drawer-footer employee-profile-actions"><div className="employee-profile-action-row"><button className="button button-outline" onClick={() => startEmployeeAction(employeeDetails, 'edit')}><Pencil size={15} /> Modifica dipendente</button><button className="button button-outline" onClick={() => void exportEmployeePdf(employeeDetails)}><ArrowDownToLine size={15} /> Scarica</button></div><div className={`employee-profile-action-row${['proprietario', 'direttore'].includes(normalizedRole(activeRole)) ? '' : ' single-action'}`}>{['proprietario', 'direttore'].includes(normalizedRole(activeRole)) && <button className="button button-danger" onClick={() => startEmployeeAction(employeeDetails, 'delete')}><Trash2 size={15} /> Elimina dipendente</button>}<button className="button button-primary" onClick={() => setEmployeeDetails(null)}>Chiudi</button></div></div>
     </Modal>}
-    {trackerAccessOpen && <Modal title="Verifica accesso tracker" close={() => { setTrackerAccessOpen(false); setTrackerAccessBarcode(''); }}><form className="settings-form employee-action-form" onSubmit={(event) => void confirmTrackerAccess(event)}><p>Per accedere alla lista delle attività dei dipendenti, verifica un barcode valido.</p><Field label="Barcode dipendente" value={trackerAccessBarcode} onChange={(event) => setTrackerAccessBarcode(event.target.value.trim())} required autoFocus /><div className="form-actions"><button className="button button-primary"><Barcode size={16} /> Verifica barcode</button><button className="button button-outline" type="button" onClick={() => { setTrackerAccessOpen(false); setTrackerAccessBarcode(''); }}>Annulla</button></div></form></Modal>}
     {employeeAction && <Modal title={employeeAction.action === 'edit' ? 'Verifica dipendente' : 'Conferma eliminazione dipendente'} close={() => { setEmployeeAction(null); setEmployeeActionBarcode(''); }}><form className="settings-form employee-action-form" onSubmit={(event) => void confirmEmployeeAction(event)}><p>{language === 'ar' ? employeeAction.action === 'delete' ? `لحذف ${employeeAction.employee.first_name} ${employeeAction.employee.last_name}، أدخل الرمز الشريطي الخاص به. سيتم حذف سجلات الرواتب أيضًا.` : `أدخل الرمز الشريطي لـ ${employeeAction.employee.first_name} ${employeeAction.employee.last_name} للتحقق من التعديل.` : employeeAction.action === 'delete' ? `Per eliminare ${employeeAction.employee.first_name} ${employeeAction.employee.last_name}, inserisci il suo barcode. Verranno eliminate anche le registrazioni dei suoi stipendi.` : `Inserisci il barcode di ${employeeAction.employee.first_name} ${employeeAction.employee.last_name} per verificare la modifica.`}</p><Field label="Barcode dipendente" value={employeeActionBarcode} onChange={(event) => setEmployeeActionBarcode(event.target.value.trim())} required autoFocus /><div className="form-actions"><button className={`button ${employeeAction.action === 'delete' ? 'button-danger' : 'button-primary'}`}><Check size={16} />{employeeAction.action === 'delete' ? 'Conferma eliminazione' : 'Verifica barcode'}</button><button className="button button-outline" type="button" onClick={() => { setEmployeeAction(null); setEmployeeActionBarcode(''); }}>Annulla</button></div></form></Modal>}
     {voucherViewBatch && <Modal title={`Codici buono · Gruppo ${voucherViewBatch.id}`} close={() => setVoucherViewBatch(null)} wide><div className="voucher-preview-heading"><strong>{voucherViewBatch.discount_percentage}% di sconto</strong><span>{formatLocalDate(voucherViewBatch.starts_at)} — {formatLocalDate(voucherViewBatch.ends_at)}</span></div><Table headings={['Codice', 'Barcode', 'Sconto', 'Inizio', 'Scadenza']}><>{voucherViewBatch.codes.map((code) => <tr key={code}><td className="mono">{code}</td><td><BarcodeImage value={code} /></td><td>{voucherViewBatch.discount_percentage}%</td><td>{formatLocalDate(voucherViewBatch.starts_at)}</td><td>{formatLocalDate(voucherViewBatch.ends_at)}</td></tr>)}</></Table></Modal>}
     {pendingUnknownCode && <Modal title="Articolo non presente" wide close={() => { setPendingUnknownCode(''); setScannerSearch(''); }}><div className="unknown-code-message"><CircleAlert size={26} /><p>Il codice a barre <strong>{pendingUnknownCode}</strong> non è presente tra gli articoli.</p><span>Puoi aggiungerlo come nuovo articolo: il codice acquisito sarà già inserito nel modulo.</span><div className="form-actions"><button className="button button-quiet" onClick={() => { setPendingUnknownCode(''); setScannerSearch(''); }}>Annulla</button><button className="button button-primary" onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct, code: pendingUnknownCode }); setPendingUnknownCode(''); }}><Plus size={16} /> Aggiungi articolo</button></div></div></Modal>}
@@ -4823,22 +4870,23 @@ function SiteCard({ site, dailyRevenue, employeeCount, productCount, canManage, 
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const language = useContext(AppLanguageContext);
   return <article className="site-card">
-    <header className="site-card-header"><span className="site-card-icon"><Store size={20} aria-hidden="true" /></span><div><h3>{site.name}</h3><span>{site.site_role || 'Punto vendita'}</span></div></header>
+    <header className="site-card-header"><span className="site-card-icon"><Store size={20} aria-hidden="true" /></span><div><h3>{site.name}</h3><span>{localizedText(site.site_role || 'Punto vendita', language)}</span></div></header>
     <div className="site-card-info">
-      <div className="site-card-info-inline"><MapPin size={14} strokeWidth={2.5} aria-label="Indirizzo" role="img" /><span>{site.address || '—'}</span></div>
-      <div className="site-card-info-inline"><Phone size={14} strokeWidth={2.5} aria-label="Telefono" role="img" /><span>{site.phone || '—'}</span></div>
-      <div className="site-card-info-inline"><UserRound size={14} strokeWidth={2.5} aria-label="Responsabile" role="img" /><span><strong>Responsabile:</strong><span className="site-card-manager-value">{site.manager_name || '—'}</span></span></div>
-      <div className="site-card-info-inline"><CalendarDays size={14} strokeWidth={2.5} aria-label="Giorni lavorativi" role="img" /><span>{site.working_days || '—'}</span></div>
-      <div className="site-card-info-inline"><Clock size={14} strokeWidth={2.5} aria-label="Orari di apertura" role="img" /><span>{site.opening_hours || '—'}</span></div>
+      <div className="site-card-info-inline"><MapPin size={14} strokeWidth={2.5} aria-label={localizedText('Indirizzo', language)} role="img" /><span className="no-translate">{site.address || '—'}</span></div>
+      <div className="site-card-info-inline"><Phone size={14} strokeWidth={2.5} aria-label={localizedText('Telefono', language)} role="img" /><span className="no-translate">{site.phone || '—'}</span></div>
+      <div className="site-card-info-inline"><UserRound size={14} strokeWidth={2.5} aria-label={localizedText('Responsabile', language)} role="img" /><span><strong>{localizedText('Responsabile:', language)}</strong><span className="site-card-manager-value no-translate">{site.manager_name || '—'}</span></span></div>
+      <div className="site-card-info-inline"><CalendarDays size={14} strokeWidth={2.5} aria-label={localizedText('Giorni lavorativi', language)} role="img" /><span className="no-translate">{site.working_days || '—'}</span></div>
+      <div className="site-card-info-inline"><Clock size={14} strokeWidth={2.5} aria-label={localizedText('Orari di apertura', language)} role="img" /><span className="no-translate">{site.opening_hours || '—'}</span></div>
     </div>
     <div className="site-card-metrics">
-      <div className="site-card-metric"><span>Fatturato del giorno</span><strong>{money.format(dailyRevenue)}</strong></div>
-      <div className="site-card-metric"><span>Dipendenti</span><strong>{employeeCount}</strong></div>
-      <div className="site-card-metric"><span>Prodotti in sede</span><strong>{productCount}</strong></div>
+      <div className="site-card-metric"><span>{localizedText('Fatturato del giorno', language)}</span><strong>{money.format(dailyRevenue)}</strong></div>
+      <div className="site-card-metric"><span>{localizedText('Dipendenti', language)}</span><strong>{employeeCount}</strong></div>
+      <div className="site-card-metric"><span>{localizedText('Prodotti in sede', language)}</span><strong>{productCount}</strong></div>
     </div>
-    <button className="button button-outline site-card-view" type="button" onClick={onView}><Eye size={14} /> Vedi nel dettaglio</button>
-    {canManage && <div className="site-card-actions"><button className="button button-danger" type="button" onClick={onDelete}><Trash2 size={14} /> Elimina</button><button className="button button-outline" type="button" onClick={onEdit}><Pencil size={14} /> Modifica</button></div>}
+    <button className="button button-outline site-card-view" type="button" onClick={onView}><Eye size={14} /> {localizedText('Vedi nel dettaglio', language)}</button>
+    {canManage && <div className="site-card-actions"><button className="button button-danger" type="button" onClick={onDelete}><Trash2 size={14} /> {localizedText('Elimina', language)}</button><button className="button button-outline" type="button" onClick={onEdit}><Pencil size={14} /> {localizedText('Modifica', language)}</button></div>}
   </article>;
 }
 function OpeningHoursPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
@@ -4895,7 +4943,7 @@ function SiteDetailsDrawer({ site, data, close }: { site: Site; data: AppState; 
 }
 function SiteStockStatistics({ sites, siteStocks, employees, products }: { sites: Site[]; siteStocks: SiteStock[]; employees: Employee[]; products: Product[] }) {
   const language = useContext(AppLanguageContext);
-  return <section className="panel site-summary-panel"><div className="panel-heading"><div><h3>Magazzino e personale per sede</h3></div></div>
+  return <section className="panel site-summary-panel"><div className="panel-heading"><div><h3>{localizedText('Magazzino e personale per sede', language)}</h3><p>{localizedText('Quantità, personale e valore delle scorte per sede', language)}</p></div></div>
     <Table headings={['Sede', 'Dipendenti', 'Persone che lavorano', 'Articoli disponibili', 'Valore a costo', 'Valore di vendita']}>
       <>{sites.map((site) => {
         const workers = employees.filter((employee) => employee.operational_site === site.name);
@@ -4904,15 +4952,15 @@ function SiteStockStatistics({ sites, siteStocks, employees, products }: { sites
         const retail = inventory.reduce((sum, stock) => sum + stock.stock * (products.find((product) => product.id === stock.product_id)?.sale_price ?? 0), 0);
         return <tr key={site.id}>
           <td className="cell-primary">{site.name}</td>
-          <td>{workers.length}</td>
-          <td>{workers.map((employee) => `${employee.first_name} ${employee.last_name}`).join(', ') || '—'}</td>
+          <td><span className="site-stat-count">{workers.length}</span></td>
+          <td><div className="site-stat-people">{workers.map((employee) => <span className="no-translate" key={employee.id}>{employee.first_name} {employee.last_name}</span>)}</div></td>
           <td><div className="site-stock-lines">{inventory.length ? inventory.map((stock) => {
             const product = products.find((item) => item.id === stock.product_id);
             const unit = product?.unit === 'KG' ? 'kg' : product?.unit === 'LITRO' ? 'lit.' : 'pz';
-            return <span key={stock.product_id}>{product?.name ?? `#${stock.product_id}`}: {quantityFormat.format(stock.stock)} {localizedText(unit, language)}</span>;
+            return <span className="site-stat-stock-line" key={stock.product_id}><strong className="no-translate">{product?.name ?? `#${stock.product_id}`}</strong><small>{quantityFormat.format(stock.stock)} {localizedText(unit, language)}</small></span>;
           }) : '—'}</div></td>
-          <td className="align-right">{money.format(cost)}</td>
-          <td className="align-right">{money.format(retail)}</td>
+          <td className="align-right"><span className="site-stat-value">{money.format(cost)}</span></td>
+          <td className="align-right"><span className="site-stat-value">{money.format(retail)}</span></td>
         </tr>;
       })}</>
       {!sites.length && <tr><td colSpan={6} className="empty-cell">Nessuna sede trovata.</td></tr>}

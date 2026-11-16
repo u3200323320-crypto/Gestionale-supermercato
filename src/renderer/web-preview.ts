@@ -612,7 +612,6 @@ function installWebPreview(): void {
     getHomepageVideo: async () => state.settings.home_video ?? '',
     onSalesExpired: () => () => undefined,
     verifyEmployeeBarcode: async (barcode) => Boolean(employeeByBarcode(barcode)),
-    authorizeTracker: async (barcode) => ['proprietario', 'direttore'].includes((employeeByBarcode(barcode)?.role ?? '').toLocaleLowerCase('it')),
     loginEmployee: async (barcode): Promise<AuthenticatedEmployee | null> => {
       const employee = employeeByBarcode(barcode);
       activeEmployeeBarcode = employee?.barcode ?? '';
