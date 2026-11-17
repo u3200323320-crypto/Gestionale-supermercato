@@ -7,6 +7,7 @@ Var StartupCheckbox
 Var StartupSelected
 
 !macro customPageAfterChangeDir
+  !insertmacro skipPageIfUpdated
   Page custom TaskbarPinPageCreate TaskbarPinPageLeave
 !macroend
 
@@ -49,6 +50,7 @@ FunctionEnd
   FileOpen $0 "$INSTDIR\.initial-setup-done" w
   FileClose $0
 initial_setup_done:
+  ${ifNot} ${isUpdated}
   StrCmp $TaskbarPinSelected "true" 0 taskbar_pin_done
   IfFileExists "$newStartMenuLink" 0 taskbar_pin_done
   FileOpen $0 "$PLUGINSDIR\pin-taskbar.vbs" w
@@ -72,9 +74,12 @@ startup_enabled:
   CreateDirectory "$SMSTARTUP"
   CreateShortCut "$SMSTARTUP\Gestione Supermercato.lnk" "$INSTDIR\Gestione Supermercato.exe"
 startup_done:
+  ${endIf}
 !macroend
 
 !macro customUnInstall
+  ${ifNot} ${isUpdated}
   Delete "$INSTDIR\.initial-setup-done"
   Delete "$SMSTARTUP\Gestione Supermercato.lnk"
+  ${endIf}
 !macroend
