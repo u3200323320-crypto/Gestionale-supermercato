@@ -678,6 +678,30 @@ function installWebPreview(): void {
       });
       persist();
     },
+    clearInventoryHistory: async (employeeBarcode) => {
+      const activeEmployee = employeeByBarcode(activeEmployeeBarcode);
+      const employee = employeeByBarcode(employeeBarcode);
+      if (!activeEmployee || !['proprietario', 'direttore'].includes(activeEmployee.role.toLocaleLowerCase('it'))) {
+        throw new Error('Il dipendente autenticato non è autorizzato a svuotare lo storico magazzino.');
+      }
+      if (!employee) throw new Error('Il barcode non corrisponde a un dipendente registrato.');
+      if (!['proprietario', 'direttore'].includes(employee.role.toLocaleLowerCase('it'))) {
+        throw new Error('Non hai i permessi per svuotare lo storico magazzino.');
+      }
+      state.stockMovements = [{
+        id: nextId(state.stockMovements),
+        product_id: 0,
+        product_name: '',
+        movement_type: 'Scarico',
+        quantity: 0,
+        created_at: new Date().toISOString(),
+        person: `${employee.first_name} ${employee.last_name}`.trim(),
+        site: '',
+        destination: '',
+        note: 'Lista storico magazzino svuotata',
+      }];
+      persist();
+    },
     transferStock: async ({ fromSiteId, toSiteId, items }) => {
       for (const item of items) {
         const from = stockAtSite(item.productId, fromSiteId);

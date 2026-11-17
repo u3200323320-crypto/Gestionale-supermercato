@@ -1,9 +1,9 @@
-import { cloneElement, createContext, Fragment, isValidElement, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { cloneElement, createContext, Fragment, isValidElement, lazy, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, InputHTMLAttributes, ReactNode } from 'react';
-import { PageServicesProvider } from '../pages/page-services';
+import { PageServicesProvider, usePageServices } from '../pages/page-services';
 import { OpeningHoursPicker, SalesTable, SiteDetailsDrawer, SiteStockStatistics } from '../pages/site-components';
 import { createPortal } from 'react-dom';
-import { Apple, Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Beef, Bell, CalendarDays, Camera, Carrot, Check, ChevronDown, CircleAlert, ClipboardList, Clock, Cookie, CreditCard, CupSoda, Eye, Fish, FolderOpen, House, LockKeyhole, Mail, MapPin, Menu, Milk, Minus, Package, Pencil, Phone, Plus, Printer, RefreshCw, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Snowflake, SprayCan, Store, Trash2, TrendingUp, UserRound, Users, Video, X } from 'lucide-react';
+import { Apple, Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Beef, Bell, CalendarDays, Camera, Carrot, Check, ChevronDown, CircleAlert, ClipboardList, Clock, Cookie, CreditCard, CupSoda, Eye, Fish, FolderOpen, House, LockKeyhole, Mail, MapPin, Menu, Milk, Minus, Package, Pencil, Phone, Plus, Printer, RefreshCw, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Snowflake, SprayCan, Store, Trash2, TrendingUp, Truck, UserRound, Users, Video, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { jsPDF } from 'jspdf';
 import autoTable, { Table as AutoTableTable } from 'jspdf-autotable';
@@ -14,7 +14,7 @@ import supermarketBackgroundUrl from '../animazione/supermarket-bg.html?url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
 import homeBanner from './home-banner.svg';
-import type { AppDataBackup, AppState, AuthenticatedEmployee, Employee, EmployeeInput, Expense, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, RolePermission, RolePermissionMap, Sale, SaleItem, Section, Site, SiteInput, SiteStock, Supplier, SupplierInput, SupplierOrder, SupplierOrderInput } from '../shared/types';
+import type { AppDataBackup, AppState, AuthenticatedEmployee, Employee, EmployeeInput, Expense, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, RolePermission, RolePermissionMap, Sale, SaleItem, Section, Site, SiteInput, SiteStock, StockMovement, Supplier, SupplierInput, SupplierOrder, SupplierOrderInput } from '../shared/types';
 
 const HomePage = lazy(() => import('../pages/home-page').then(({ HomePage: Page }) => ({ default: Page })));
 const SalesPage = lazy(() => import('../pages/sales-page').then(({ SalesPage: Page }) => ({ default: Page })));
@@ -266,13 +266,16 @@ const arabicUiTranslations: Record<string, string> = {
   'Nessuna spesa operativa nel periodo selezionato.': 'لا توجد مصروفات تشغيلية خلال الفترة المحددة.',
   'Ricevuta pagamento affitto': 'إيصال دفع الإيجار', 'Ricevuta allegata': 'تم إرفاق الإيصال',
   'Menu principale': 'القائمة الرئيسية', 'Torna al magazzino': 'العودة إلى المخزن', 'Dettaglio articolo': 'تفاصيل المنتج', 'DETTAGLIO ARTICOLO': 'تفاصيل المنتج',
-  'Giacenza attuale:': 'المخزون الحالي:', 'Condividi': 'مشاركة', 'Vedi lista': 'عرض القائمة', 'Scarica': 'تنزيل', 'Salva nome': 'حفظ الاسم',
+  'Giacenza attuale:': 'المخزون الحالي:', 'Condividi': 'مشاركة', 'Vedi lista': 'عرض القائمة', 'Vedi': 'عرض', 'Svuota lista': 'إفراغ القائمة', 'Svuotata': 'تم الإفراغ', 'Scarica': 'تنزيل', 'Salva nome': 'حفظ الاسم',
+  'Dettaglio nota': 'تفاصيل الملاحظة', 'Dettagli movimento': 'تفاصيل الحركة',
   'Inizio': 'البداية', 'Scadenza': 'انتهاء الصلاحية', 'Sempre': 'دائمًا', 'Attivo': 'مفعل', 'Disattivo': 'معطل', 'On': 'تشغيل', 'Off': 'إيقاف',
   'Rimuovi articolo dalla vendita': 'إزالة المنتج من البيع', 'Nuova quantità': 'كمية جديدة',
   'Conferma giacenza': 'تأكيد المخزون', 'Autorizza modifica articolo': 'السماح بتعديل المنتج', 'Autorizza nuova quantità': 'السماح بالكمية الجديدة',
   'Articoli': 'المنتجات', 'Posizione': 'الموقع',
   'Conferma e salva': 'تأكيد وحفظ', 'Nuovo totale': 'الإجمالي الجديد', 'Sconto in euro': 'الخصم (€)', 'Pagamento:': 'الدفع:', 'Risparmio:': 'التوفير:',
   'Ok': 'حسنًا', 'F2': 'F2', 'ITALIANO': 'الإيطالية', 'Chiudi': 'إغلاق', 'Cancella ricerca': 'مسح البحث', 'Non applicata (massimo 1)': 'غير مطبقة (بحد أقصى 1)',
+  'Verifica barcode per svuotare lo storico magazzino': 'تحقق من الرمز الشريطي لإفراغ سجل المخزن',
+  'Lista storico magazzino svuotata': 'تم إفراغ سجل المخزن',
   'Non risultano articoli rimanenti in magazzino.': 'لا توجد منتجات متبقية في المخزن.', 'Le categorie appariranno dopo la prima vendita.': 'ستظهر الفئات بعد أول عملية بيع.',
   'Puoi aggiungerlo come nuovo articolo: il codice acquisito sarà già inserito nel modulo.': 'يمكنك إضافته كمنتج جديد؛ سيتم إدخال الرمز الممسوح مسبقًا في النموذج.',
   'Puoi usare il PIN dalla schermata di accesso.': 'يمكنك استخدام رمز PIN من شاشة تسجيل الدخول.', 'Il codice a barre': 'الرمز الشريطي',
@@ -326,6 +329,7 @@ const arabicUiTranslations: Record<string, string> = {
   'Netto stimato': 'صافي الربح التقديري', 'Ricavi meno costo del venduto e spese': 'الإيرادات مطروحًا منها تكلفة البضائع والمصروفات',
   'Quantità vendite': 'كمية المبيعات', 'Articoli venduti rispetto a quelli ancora in magazzino': 'المنتجات المباعة مقارنة بالمنتجات المتبقية في المخزن',
   'Merce in esaurimento': 'المنتجات القريبة من النفاد',
+  'Articoli in esaurimento o esauriti nelle sedi': 'منتجات منخفضة المخزون أو نافدة في الفروع',
   'Valore vendita in magazzino': 'قيمة البيع للمخزون',
   'Valore merce buttata': 'قيمة البضائع التالفة', 'Merce buttata': 'بضائع تالفة',
   'Vedi tutti': 'عرض الكل', 'Valore merce buttata nel periodo': 'قيمة البضائع التالفة خلال الفترة',
@@ -442,6 +446,8 @@ const arabicUiTranslations: Record<string, string> = {
   'Aggiungi alla lista': 'إضافة إلى القائمة', 'Modifica gruppo': 'تعديل المجموعة',
   'fornitori registrati': 'موردون مسجلون', 'Contatto': 'جهة الاتصال', 'Azioni': 'الإجراءات',
   'Salva fornitore': 'حفظ المورد', 'Permessi di accesso': 'صلاحيات الوصول',
+  'Pagine principali': 'الصفحات الرئيسية', 'Offerte': 'العروض',
+  'Clienti e fidelizzazione': 'العملاء والولاء',
   'Telefono:': 'الهاتف:', 'Email:': 'البريد الإلكتروني:', 'non disponibile': 'غير متاح',
   'Referente': 'جهة الاتصال', 'Registrato il': 'تاريخ التسجيل', 'Note': 'ملاحظات',
   'ordini registrati': 'طلبات مسجلة', 'Nessun articolo ordinato da questo fornitore.': 'لا توجد منتجات مطلوبة من هذا المورد.',
@@ -618,9 +624,51 @@ const permissionPages: Array<{ section: Section; label: string }> = [
   { section: 'loyalty-generate', label: 'Sviluppa tessere' }, { section: 'loyalty-activate', label: 'Attiva tessere' },
   { section: 'loyalty-active', label: 'Tessere attive' }, { section: 'settings', label: 'Impostazioni' },
 ];
+const permissionGroups: Array<{ label: string; sections: Section[] }> = [
+  { label: 'Pagine principali', sections: ['home', 'cash'] },
+  { label: 'Magazzino', sections: ['inventory', 'available-stock', 'expired-products', 'inventory-history', 'stock-movement', 'stock-distribution'] },
+  { label: 'Vendite', sections: ['sales', 'sale-management'] },
+  { label: 'Statistiche', sections: ['statistics', 'financial-balance', 'expenses'] },
+  { label: 'Offerte', sections: ['promotions', 'vouchers-create', 'vouchers-list'] },
+  { label: 'Dipendenti', sections: ['employees', 'employee-create', 'payroll', 'employee-tracker'] },
+  { label: 'Gestione sedi', sections: ['site-statistics', 'site-management', 'site-create', 'site-list', 'low-stock'] },
+  { label: 'Gestione fornitori', sections: ['supplier-list', 'supplier-order'] },
+  { label: 'Clienti e fidelizzazione', sections: ['customer-list', 'loyalty-generate', 'loyalty-activate', 'loyalty-active'] },
+  { label: 'Impostazioni', sections: ['settings'] },
+];
+const inventoryFeaturePermissions: Array<{ permission: RolePermission; label: string }> = [
+  { permission: 'inventory-csv', label: 'Esporta CSV' },
+  { permission: 'inventory-report', label: 'Scarica report' },
+  { permission: 'inventory-add', label: 'Aggiungi nuovo articolo' },
+  { permission: 'inventory-edit', label: 'Modifica articolo' },
+  { permission: 'inventory-quantity', label: 'Nuova quantità' },
+];
+const settingsFeaturePermissions: Array<{ permission: RolePermission; label: string }> = [
+  { permission: 'settings-shop', label: 'Info Negozio' },
+  { permission: 'settings-main-site', label: 'Sede principale' },
+  { permission: 'settings-homepage', label: 'Homepage' },
+  { permission: 'settings-devices', label: 'Dispositivi' },
+  { permission: 'settings-device-barcode', label: 'Lettore di codici a barre' },
+  { permission: 'settings-device-printer', label: 'Stampante Wi-Fi' },
+  { permission: 'settings-device-receipt', label: 'Stampante scontrini' },
+  { permission: 'settings-access', label: 'Permessi di accesso' },
+  { permission: 'settings-archive', label: 'Archivio dati' },
+  { permission: 'settings-data-management', label: 'Gestione dati app' },
+  { permission: 'settings-operational', label: 'Operativo' },
+];
+const settingsDevicePermissions = settingsFeaturePermissions.filter(({ permission }) =>
+  ['settings-device-barcode', 'settings-device-printer', 'settings-device-receipt'].includes(permission));
+const legacySettingsFeaturePermissions = new Set<RolePermission>([
+  'settings-devices', 'settings-device-barcode', 'settings-device-printer',
+  'settings-device-receipt', 'settings-operational',
+]);
+function legacySettingsPermissionsForRole(role: string): Set<RolePermission> {
+  return new Set([...legacySettingsFeaturePermissions, ...(isCashierRole(role) ? ['settings-archive' as const] : [])]);
+}
 const permissionSectionSet = new Set<RolePermission>([
   ...permissionPages.map(({ section }) => section),
   'sales-report', 'sales-csv', 'sales-tools-configured',
+  ...inventoryFeaturePermissions.map(({ permission }) => permission), 'inventory-tools-configured',
 ]);
 function parseRolePermissions(value = '{}'): RolePermissionMap {
   try {
@@ -665,20 +713,47 @@ function AccessPermissionsPanel({ roles, role, permissions, onRoleChange, onPerm
   onRoleChange: (role: string) => void;
   onPermissionChange: (role: string, section: RolePermission, enabled: boolean) => void;
 }) {
+  const [expandedGroup, setExpandedGroup] = useState<string | null>('Magazzino');
   const enabledSections = permissions[role] ?? permissionPages
     .filter(({ section }) => canAccessSection(role, section))
     .map(({ section }) => section);
+  const inventoryToolsConfigured = enabledSections.includes('inventory-tools-configured');
+  const settingsToolsConfigured = enabledSections.includes('settings-tools-configured');
+  const legacySettingsPermissions = legacySettingsPermissionsForRole(role);
   return <LocalizedNodes><>
     <div className="settings-title"><h2>Permessi di accesso</h2><p>Scegli quali pagine possono essere aperte dai dipendenti con ciascun ruolo.</p></div>
     {roles.length ? <>
+      <div className="access-permission-content">
       <label className="field access-role-picker"><span>Ruolo dipendente</span><select value={role} onChange={(event) => onRoleChange(event.target.value)}>{roles.map((item) => <option key={item}>{item}</option>)}</select></label>
-      <div className="access-permission-list">{permissionPages.map(({ section, label }) => <Fragment key={section}>
-        <label className="access-permission-row"><span>{label}</span><input type="checkbox" checked={enabledSections.includes(section)} aria-label={`Consenti ${label} al ruolo ${role}`} onChange={(event) => onPermissionChange(role, section, event.target.checked)} /></label>
-        {section === 'sales' && enabledSections.includes('sales') && <div className="access-permission-submenu">
-          <label><span>Scaricare report vendite</span><input type="checkbox" checked={!enabledSections.includes('sales-tools-configured') || enabledSections.includes('sales-report')} aria-label={`Consenti report vendite al ruolo ${role}`} onChange={(event) => onPermissionChange(role, 'sales-report', event.target.checked)} /></label>
-          <label><span>Esportare CSV</span><input type="checkbox" checked={!enabledSections.includes('sales-tools-configured') || enabledSections.includes('sales-csv')} aria-label={`Consenti esportazione CSV al ruolo ${role}`} onChange={(event) => onPermissionChange(role, 'sales-csv', event.target.checked)} /></label>
-        </div>}
-      </Fragment>)}</div>
+      <div className="access-permission-list">{permissionGroups.map(({ label: groupLabel, sections }) => {
+        const expanded = expandedGroup === groupLabel;
+        return <section className="access-permission-group" key={groupLabel}>
+          <button className="access-permission-group-toggle" type="button" aria-expanded={expanded} onClick={() => setExpandedGroup((current) => current === groupLabel ? null : groupLabel)}><span>{groupLabel}</span><ChevronDown className={expanded ? 'open' : ''} size={15} /></button>
+          {expanded && <div className="access-permission-group-pages">{sections.map((section) => {
+            const page = permissionPages.find((item) => item.section === section);
+            if (!page) return null;
+            return <Fragment key={section}>
+              <label className="access-permission-row"><span>{page.label}</span><input type="checkbox" checked={enabledSections.includes(section)} aria-label={`Consenti ${page.label} al ruolo ${role}`} onChange={(event) => onPermissionChange(role, section, event.target.checked)} /></label>
+              {section === 'sales' && enabledSections.includes('sales') && <div className="access-permission-submenu">
+                <label><span>Scaricare report vendite</span><input type="checkbox" checked={!enabledSections.includes('sales-tools-configured') || enabledSections.includes('sales-report')} aria-label={`Consenti report vendite al ruolo ${role}`} onChange={(event) => onPermissionChange(role, 'sales-report', event.target.checked)} /></label>
+                <label><span>Esportare CSV</span><input type="checkbox" checked={!enabledSections.includes('sales-tools-configured') || enabledSections.includes('sales-csv')} aria-label={`Consenti esportazione CSV al ruolo ${role}`} onChange={(event) => onPermissionChange(role, 'sales-csv', event.target.checked)} /></label>
+              </div>}
+              {section === 'inventory' && enabledSections.includes('inventory') && <div className="access-permission-submenu">
+                {inventoryFeaturePermissions.map(({ permission, label: featureLabel }) => <label key={permission}><span>{featureLabel}</span><input type="checkbox" checked={!inventoryToolsConfigured || enabledSections.includes(permission)} aria-label={`Consenti ${featureLabel} al ruolo ${role}`} onChange={(event) => onPermissionChange(role, permission, event.target.checked)} /></label>)}
+              </div>}
+              {section === 'settings' && enabledSections.includes('settings') && <div className="access-permission-submenu">
+                {settingsFeaturePermissions.filter(({ permission }) => !settingsDevicePermissions.some((device) => device.permission === permission)).map(({ permission, label: featureLabel }) => <Fragment key={permission}>
+                  <label><span>{featureLabel}</span><input type="checkbox" checked={settingsToolsConfigured ? enabledSections.includes(permission) : legacySettingsPermissions.has(permission)} aria-label={`Consenti ${featureLabel} al ruolo ${role}`} onChange={(event) => onPermissionChange(role, permission, event.target.checked)} /></label>
+                  {permission === 'settings-devices' && (settingsToolsConfigured ? enabledSections.includes('settings-devices') : legacySettingsPermissions.has('settings-devices')) && <div className="access-permission-submenu">
+                    {settingsDevicePermissions.map(({ permission: devicePermission, label: deviceLabel }) => <label key={devicePermission}><span>{deviceLabel}</span><input type="checkbox" checked={settingsToolsConfigured ? enabledSections.includes(devicePermission) : legacySettingsPermissions.has(devicePermission)} aria-label={`Consenti ${deviceLabel} al ruolo ${role}`} onChange={(event) => onPermissionChange(role, devicePermission, event.target.checked)} /></label>)}
+                  </div>}
+                </Fragment>)}
+              </div>}
+            </Fragment>;
+          })}</div>}
+        </section>;
+      })}</div>
+      </div>
     </> : <p className="help-copy">Non ci sono ruoli dipendente da configurare.</p>}
   </></LocalizedNodes>;
 }
@@ -1009,6 +1084,9 @@ export default function App() {
   const [inventoryHistoryFrom, setInventoryHistoryFrom] = useState('');
   const [inventoryHistoryTo, setInventoryHistoryTo] = useState('');
   const [inventoryHistorySearch, setInventoryHistorySearch] = useState('');
+  const [inventoryHistoryClearOpen, setInventoryHistoryClearOpen] = useState(false);
+  const [inventoryHistoryClearBarcode, setInventoryHistoryClearBarcode] = useState('');
+  const [inventoryHistoryClearing, setInventoryHistoryClearing] = useState(false);
   const [activityPeriod, setActivityPeriod] = useState('Tutti');
   const [activityFrom, setActivityFrom] = useState('');
   const [activityTo, setActivityTo] = useState('');
@@ -1017,7 +1095,7 @@ export default function App() {
   const [statisticsSite, setStatisticsSite] = useState('Tutte');
   const [unsoldSite, setUnsoldSite] = useState('Tutto');
   const [unsoldListOpen, setUnsoldListOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<string | null>(null);
+  const [settingsTab, setSettingsTabValue] = useState<string | null>(null);
   const [dataImporting, setDataImporting] = useState(false);
   const dataImportFileRef = useRef<HTMLInputElement>(null);
   const [permissionsRole, setPermissionsRole] = useState('');
@@ -1026,7 +1104,7 @@ export default function App() {
   const [protectedSettingsTarget, setProtectedSettingsTarget] = useState<'Permessi di accesso' | 'Gestione dati app'>('Permessi di accesso');
   const [mainSiteDraft, setMainSiteDraft] = useState('');
   const [homeMediaWidthCm, setHomeMediaWidthCm] = useState(0);
-  const [deviceTab, setDeviceTab] = useState<string | null>(null);
+  const [deviceTab, setDeviceTabValue] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [language, setLanguage] = useState<AppLanguage>(() => window.localStorage.getItem('app-language') === 'ar' ? 'ar' : 'it');
   const [savedCategories, setSavedCategories] = useState<string[]>(() => {
@@ -1062,7 +1140,6 @@ export default function App() {
   const previousLowStockKeys = useRef<Set<string> | null>(null);
   const [lowStockExportAction, setLowStockExportAction] = useState<'download' | 'share' | null>(null);
   const [lowStockExportSite, setLowStockExportSite] = useState('all');
-  const [reorderListOpen, setReorderListOpen] = useState(false);
   const [expiryListOpen, setExpiryListOpen] = useState(false);
   const [cashierMenuOpen, setCashierMenuOpen] = useState(false);
   const [productForm, setProductForm] = useState<ProductInput | null>(null);
@@ -1325,16 +1402,61 @@ export default function App() {
   const warehouseStockFor = (productId: number) => warehouseSites.reduce((sum, site) => sum + siteStockFor(productId, site.id), 0);
   const lowStockProductsForSite = (siteId: number) => (data?.products ?? [])
     .map((product) => ({ ...product, siteStock: siteStockFor(product.id, siteId) }))
-    .filter((product) => product.siteStock > 0 && product.siteStock <= product.low_stock_threshold);
-  const reorderProducts = useMemo(() => (data?.products ?? [])
-    .map((product) => ({ ...product, stock: siteStockByProduct.get(product.id) ?? 0 }))
-    .filter((product) => product.stock <= product.low_stock_threshold), [data?.products, siteStockByProduct]);
+    .filter((product) => siteStockIndex.has(`${siteId}:${product.id}`)
+      && product.siteStock <= product.low_stock_threshold);
+  const lowStockProductCount = useMemo(() => {
+    const productIds = new Set<number>();
+    for (const product of data?.products ?? []) {
+      if ((data?.sites ?? []).some((site) => {
+        const key = `${site.id}:${product.id}`;
+        return siteStockIndex.has(key) && (siteStockIndex.get(key) ?? 0) <= product.low_stock_threshold;
+      })) {
+        productIds.add(product.id);
+      }
+    }
+    return productIds.size;
+  }, [data?.products, data?.sites, siteStockIndex]);
   const canAccess = (target: Section) => canAccessSection(activeRole, target, rolePermissions);
   const canAccessSalesFeature = (feature: 'sales-report' | 'sales-csv') => {
     if (normalizedRole(activeRole) === 'proprietario') return true;
     const permissions = rolePermissions[activeRole];
     if (!permissions) return canAccess('sales');
     return permissions.includes('sales') && (!permissions.includes('sales-tools-configured') || permissions.includes(feature));
+  };
+  const canAccessInventoryFeature = (feature: 'inventory-csv' | 'inventory-report' | 'inventory-add' | 'inventory-edit' | 'inventory-quantity') => {
+    if (!canAccess('inventory') && !canAccess('available-stock')) return false;
+    if (normalizedRole(activeRole) === 'proprietario') return true;
+    const permissions = rolePermissions[activeRole];
+    return !permissions || !permissions.includes('inventory-tools-configured') || permissions.includes(feature);
+  };
+  const canAccessSettingsFeature = (feature: RolePermission) => {
+    if (!canAccess('settings')) return false;
+    if (normalizedRole(activeRole) === 'proprietario') return true;
+    const permissions = rolePermissions[activeRole];
+    return !permissions || !permissions.includes('settings-tools-configured') || permissions.includes(feature);
+  };
+  const canAccessSettingsPage = (page: string) => {
+    if (!canAccess('settings')) return false;
+    if (page === 'Permessi di accesso' || page === 'Gestione dati app') return normalizedRole(activeRole) === 'proprietario';
+    const feature = page === 'Lettore barcode' ? 'settings-device-barcode'
+      : page === 'Stampante documenti' ? 'settings-device-printer'
+        : page === 'Stampante scontrini' ? 'settings-device-receipt'
+          : settingsFeaturePermissions.find(({ label }) => label === page)?.permission;
+    if (!feature) return false;
+    if (normalizedRole(activeRole) === 'proprietario') return true;
+    const permissions = rolePermissions[activeRole];
+    if (permissions?.includes('settings-tools-configured')) {
+      if (['Lettore barcode', 'Stampante documenti', 'Stampante scontrini'].includes(page) && !permissions.includes('settings-devices')) return false;
+      return canAccessSettingsFeature(feature);
+    }
+    if (['Info Negozio', 'Sede principale', 'Homepage'].includes(page)) return false;
+    return page !== 'Archivio dati' || isCashierRole(activeRole);
+  };
+  const setSettingsTab = (tab: string | null) => {
+    if (tab === null || canAccessSettingsPage(tab)) setSettingsTabValue(tab);
+  };
+  const setDeviceTab = (tab: string | null) => {
+    if (tab === null || canAccessSettingsPage(tab)) setDeviceTabValue(tab);
   };
   const permissionRoles = [...new Map([...defaultEmployeeRoles.filter((role) => normalizedRole(role) !== 'proprietario'), ...(data?.employees ?? []).map((employee) => employee.role)]
     .filter((role) => normalizedRole(role) !== 'proprietario')
@@ -1359,6 +1481,30 @@ export default function App() {
       }
     } else if (page === 'sales-report' || page === 'sales-csv') {
       nextRoleSections.add('sales-tools-configured');
+      if (enabled) nextRoleSections.add(page);
+      else nextRoleSections.delete(page);
+    } else if (page === 'settings') {
+      const settingsPermissions = settingsFeaturePermissions.map(({ permission }) => permission);
+      if (enabled) {
+        nextRoleSections.add('settings');
+        nextRoleSections.add('settings-tools-configured');
+        settingsPermissions.forEach((permission) => nextRoleSections.add(permission));
+      } else {
+        nextRoleSections.delete('settings');
+        nextRoleSections.delete('settings-tools-configured');
+        settingsPermissions.forEach((permission) => nextRoleSections.delete(permission));
+      }
+    } else if (settingsFeaturePermissions.some(({ permission }) => permission === page)) {
+      if (!nextRoleSections.has('settings-tools-configured')) {
+        nextRoleSections.add('settings-tools-configured');
+        legacySettingsPermissionsForRole(role).forEach((permission) => nextRoleSections.add(permission));
+      }
+      nextRoleSections.add('settings');
+      if (enabled) nextRoleSections.add(page);
+      else nextRoleSections.delete(page);
+      if (page === 'settings-devices' && !enabled) settingsDevicePermissions.forEach(({ permission }) => nextRoleSections.delete(permission));
+    } else if (inventoryFeaturePermissions.some(({ permission }) => permission === page)) {
+      nextRoleSections.add('inventory-tools-configured');
       if (enabled) nextRoleSections.add(page);
       else nextRoleSections.delete(page);
     } else if (enabled) nextRoleSections.add(page);
@@ -1919,7 +2065,13 @@ export default function App() {
       setPermissionsAuthorizationOpen(false);
       setPermissionsAuthorizationBarcode('');
     }
-  }, [isOwner, settingsTab]);
+    if (section === 'settings' && settingsTab && !canAccessSettingsPage(settingsTab)) {
+      setSettingsTabValue(null);
+      setDeviceTabValue(null);
+    } else if (section === 'settings' && settingsTab === 'Dispositivi' && deviceTab && !canAccessSettingsPage(deviceTab)) {
+      setDeviceTabValue(null);
+    }
+  }, [activeRole, deviceTab, isOwner, rolePermissions, section, settingsTab]);
   useEffect(() => {
     if (settingsTab === 'Homepage' && data) setHomepageMediaDraft(null);
   }, [settingsTab]);
@@ -2122,10 +2274,11 @@ export default function App() {
     else if (isCashierRole(activeRole)) notify(`Il codice a barre ${normalized} non è presente tra gli articoli. Contatta un responsabile.`);
     else setPendingUnknownCode(normalized);
   };
-  const saveProduct = async (item: ProductInput, siteId?: number, isEditing = true) => { try { await window.gestionale.saveProduct(item, siteId); trackActivity('Magazzino', 'Articolo salvato', item.name); await refresh(); setSelectedProduct(null); setProductEditingId(null); if (!isEditing) setInventorySearch(''); notify('Articolo salvato'); } catch (error) { notify(errorText(error)); throw error; } };
+  const saveProduct = async (item: ProductInput, siteId?: number, isEditing = true) => { try { if (!canAccessInventoryFeature(isEditing ? 'inventory-edit' : 'inventory-add')) throw new Error('Non hai i permessi per modificare il magazzino.'); await window.gestionale.saveProduct(item, siteId); trackActivity('Magazzino', 'Articolo salvato', item.name); await refresh(); setSelectedProduct(null); setProductEditingId(null); if (!isEditing) setInventorySearch(''); notify('Articolo salvato'); } catch (error) { notify(errorText(error)); throw error; } };
   const saveStock = async (event: FormEvent) => {
     event.preventDefault();
     if (!stockProduct) return;
+    if (!canAccessInventoryFeature('inventory-quantity')) { notify('Non hai i permessi per modificare le quantità in magazzino.'); return; }
     const quantity = Number(stockInput);
     if (!Number.isInteger(quantity) || quantity <= 0) { notify('Inserisci una quantità intera maggiore di zero.'); return; }
     if (!stockMovementEmployeeBarcode) { notify('Scansiona il barcode del personale prima di registrare il carico.'); return; }
@@ -2140,8 +2293,33 @@ export default function App() {
       notify(errorText(error));
     }
   };
+  const confirmInventoryHistoryClear = async (event: FormEvent) => {
+    event.preventDefault();
+    const barcode = inventoryHistoryClearBarcode.trim();
+    if (!barcode || inventoryHistoryClearing) return;
+    setInventoryHistoryClearing(true);
+    try {
+      await window.gestionale.clearInventoryHistory(barcode);
+      await refresh();
+      setInventoryHistoryPeriod('Tutti');
+      setInventoryHistoryFrom('');
+      setInventoryHistoryTo('');
+      setInventoryHistorySearch('');
+      setInventoryHistoryClearOpen(false);
+      setInventoryHistoryClearBarcode('');
+      notify('Storico magazzino svuotato.');
+    } catch (error) {
+      notify(errorText(error));
+    } finally {
+      setInventoryHistoryClearing(false);
+    }
+  };
   const authorizeProductAction = async (barcode: string) => {
     const authorization = productAuthorization;
+    if (authorization && !canAccessInventoryFeature(authorization.action === 'edit' ? 'inventory-edit' : 'inventory-quantity')) {
+      notify('Non hai i permessi per questa operazione di magazzino.');
+      return;
+    }
     const normalized = barcode.trim();
     if (!authorization || !normalized) return;
     try {
@@ -3034,6 +3212,10 @@ export default function App() {
   };
   const exportInventoryCsv = () => {
     if (!data) return;
+    if (!canAccessInventoryFeature('inventory-csv')) {
+      notify('Non hai i permessi per esportare il CSV del magazzino.');
+      return;
+    }
     const reportProducts = data.products
       .map((item) => ({ ...item, stock: inventoryStockFor(item.id) }))
       .filter((item) => item.stock > 0);
@@ -3078,6 +3260,10 @@ export default function App() {
   };
   const exportInventoryReport = async (share = false, siteOverride?: Site) => {
     if (!data) return;
+    if (!canAccessInventoryFeature('inventory-report')) {
+      notify('Non hai i permessi per scaricare il report del magazzino.');
+      return;
+    }
     try {
       const selectedSite = siteOverride ?? (inventorySiteId === 'all' ? undefined : availableStockSites.find((site) => String(site.id) === inventorySiteId));
       const sitesToExport = selectedSite ? [selectedSite] : availableStockSites;
@@ -4184,60 +4370,6 @@ export default function App() {
       notify(`Impossibile ${lowStockExportAction === 'download' ? 'scaricare' : 'condividere'} la lista: ${errorText(error)}`);
     }
   };
-  const downloadReorderListPdf = async () => {
-    if (!data) return;
-    try {
-      const rtl = language === 'ar';
-      const doc = new jsPDF({ orientation: 'portrait' });
-      if (rtl) await addArabicPdfFont(doc);
-      doc.setR2L(rtl);
-      const font = rtl ? 'DejaVuSans' : 'helvetica';
-      const title = rtl ? 'قائمة المنتجات المطلوب إعادة طلبها' : 'Lista articoli da riordinare';
-      const headings = rtl
-        ? ['الحد الأدنى', 'المخزون', 'الفئة', 'الرمز', 'المنتج']
-        : ['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Soglia minima'];
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const latinShopName = rtl && /^[\x20-\x7E]*$/.test(data.settings.shop_name);
-      const textX = rtl ? pageWidth - (data.settings.shop_logo ? 42 : 12) : data.settings.shop_logo ? 43 : 12;
-      doc.setFillColor(22, 133, 220);
-      doc.rect(0, 0, pageWidth, 36, 'F');
-      if (data.settings.shop_logo) {
-        doc.addImage(await imageAsPng(data.settings.shop_logo), 'PNG', rtl ? pageWidth - 36 : 12, 5, 24, 24);
-      }
-      doc.setTextColor(255, 255, 255);
-      doc.setFont(font, 'bold');
-      doc.setFontSize(15);
-      doc.text(rtl ? doc.processArabic(title) : title, textX, 15, rtl ? { align: 'right' } : undefined);
-      doc.setFont(font, 'normal');
-      doc.setFontSize(9);
-      const dateLabel = `${data.settings.shop_name} · ${receiptDate.format(new Date())}`;
-      if (latinShopName) doc.setR2L(false);
-      doc.text(rtl ? doc.processArabic(dateLabel) : dateLabel, textX, 26, rtl ? { align: 'right' } : undefined);
-      if (latinShopName) doc.setR2L(true);
-      autoTable(doc, {
-        startY: 42,
-        head: [rtl ? [...headings].reverse() : headings],
-        body: reorderProducts.map((product) => {
-          const row = [
-            product.name,
-            product.code,
-            localizedText(product.category, language),
-            `${quantityFormat.format(product.stock)} ${product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}`,
-            `${quantityFormat.format(product.low_stock_threshold)} ${product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}`,
-          ];
-          return rtl ? row.reverse().map((value) => doc.processArabic(value)) : row;
-        }),
-        theme: 'striped',
-        styles: { font, fontSize: 8, cellPadding: 2, overflow: 'linebreak', halign: rtl ? 'right' : 'left' },
-        headStyles: { fillColor: [22, 133, 220], textColor: [255, 255, 255], fontStyle: 'bold', halign: rtl ? 'right' : 'left' },
-        margin: { left: 10, right: 10, bottom: 14 },
-      });
-      doc.save(`articoli-da-riordinare-${todayKey}.pdf`);
-      setReorderListOpen(false);
-    } catch (error) {
-      notify(`Impossibile scaricare la lista: ${errorText(error)}`);
-    }
-  };
   const downloadExpiryListPdf = async () => {
     if (!data) return;
     try {
@@ -4315,11 +4447,15 @@ export default function App() {
       const headers = rtl
         ? ['ملاحظة', 'الشخص', 'الكمية', 'الحركة', 'المنتج', 'التاريخ والوقت']
         : ['Data e ora', 'Articolo', 'Movimento', 'Quantità', 'Persona', 'Nota'];
-      const rows = inventoryHistoryMovements.map((movement) => [
-        dateTimeText(new Date(movement.created_at)), movement.product_name,
-        localizedText(movement.movement_type, language), quantityFormat.format(movement.quantity),
-        movement.person || '—', localizedStockNote(movement.note || '—', language),
-      ]);
+      const rows = inventoryHistoryMovements.map((movement) => {
+        const isClearEvent = movement.product_id === 0;
+        return [
+          dateTimeText(new Date(movement.created_at)), isClearEvent ? '—' : movement.product_name,
+          isClearEvent ? localizedText('Svuotata', language) : localizedText(movement.movement_type, language),
+          isClearEvent ? '—' : quantityFormat.format(movement.quantity),
+          movement.person || '—', localizedStockNote(movement.note || '—', language),
+        ];
+      });
       autoTable(doc, {
         startY: 34,
         head: [headers.map(reportText)],
@@ -4425,10 +4561,10 @@ export default function App() {
           </>}
           {(canAccess('site-statistics') || canAccess('site-management') || canAccess('site-create') || canAccess('site-list') || canAccess('low-stock')) && <>
             <button aria-expanded={siteMenuOpen} className={`nav-item${['site-statistics', 'site-management', 'site-create', 'site-list', 'low-stock', 'available-stock'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'sites' ? null : 'sites')}><Store size={18} /><span>Gestione sedi</span><ChevronDown className={`nav-chevron${siteMenuOpen ? ' open' : ''}`} size={15} /></button>
-            {siteMenuOpen && <div className="sidebar-submenu">{canAccess('low-stock') && <button className={`sidebar-subitem${section === 'low-stock' ? ' selected' : ''}`} onClick={() => navigateTo('low-stock')}>Merce in esaurimento</button>}{canAccess('site-list') && <button className={`sidebar-subitem${section === 'site-list' ? ' selected' : ''}`} onClick={() => navigateTo('site-list')}>Lista sedi</button>}{canAccess('site-statistics') && <button className={`sidebar-subitem${section === 'site-statistics' ? ' selected' : ''}`} onClick={() => navigateTo('site-statistics')}>Statistiche sedi</button>}</div>}
+            {siteMenuOpen && <div className="sidebar-submenu">{canAccess('site-list') && <button className={`sidebar-subitem${section === 'site-list' ? ' selected' : ''}`} onClick={() => navigateTo('site-list')}>Lista sedi</button>}{canAccess('site-statistics') && <button className={`sidebar-subitem${section === 'site-statistics' ? ' selected' : ''}`} onClick={() => navigateTo('site-statistics')}>Statistiche sedi</button>}{canAccess('low-stock') && <button className={`sidebar-subitem${section === 'low-stock' ? ' selected' : ''}`} onClick={() => navigateTo('low-stock')}>Merce in esaurimento</button>}</div>}
           </>}
           {(canAccess('supplier-list') || canAccess('supplier-order')) && <>
-            <button aria-expanded={openSidebarMenu === 'suppliers'} className={`nav-item${['supplier-list', 'supplier-order'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'suppliers' ? null : 'suppliers')}><Store size={18} /><span>Gestione Fornitori</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'suppliers' ? ' open' : ''}`} size={15} /></button>
+            <button aria-expanded={openSidebarMenu === 'suppliers'} className={`nav-item${['supplier-list', 'supplier-order'].includes(section) ? ' active' : ''}`} onClick={() => setOpenSidebarMenu((current) => current === 'suppliers' ? null : 'suppliers')}><Truck size={18} /><span>Gestione Fornitori</span><ChevronDown className={`nav-chevron${openSidebarMenu === 'suppliers' ? ' open' : ''}`} size={15} /></button>
             {openSidebarMenu === 'suppliers' && <div className="sidebar-submenu">{canAccess('supplier-list') && <button className={`sidebar-subitem${section === 'supplier-list' ? ' selected' : ''}`} onClick={() => navigateTo('supplier-list')}>Lista fornitori</button>}{canAccess('supplier-order') && <button className={`sidebar-subitem${section === 'supplier-order' ? ' selected' : ''}`} onClick={() => navigateTo('supplier-order')}>Registra ordine</button>}</div>}
           </>}
         </>}
@@ -4450,14 +4586,14 @@ export default function App() {
           setLoginBarcode('');
         }}>Esci</button></nav>}
       </div>}
-      <h1>{sectionLabel}</h1>
+      {section !== 'site-list' && <h1>{sectionLabel}</h1>}
       {data.settings.shop_logo ? <img className="topbar-logo" src={data.settings.shop_logo} alt="Logo negozio" /> : <div className="topbar-logo-fallback"><Store size={19} /></div>}
       <div className="topbar-right"><div className="today-date">{navbarDate.format(currentTime)} · {navbarTime.format(currentTime)}</div>{!isCashierRole(activeRole) && <div className="notification-center" ref={notificationCenterRef}><button className="icon-button notification-trigger" type="button" aria-label={`Notifiche${lowStockNotifications.filter((item) => !item.read).length ? `: ${lowStockNotifications.filter((item) => !item.read).length} nuove` : ''}`} aria-expanded={notificationsOpen} onClick={() => { setNotificationsOpen((open) => !open); setSelectedNotification(null); }}><Bell size={18} />{lowStockNotifications.some((item) => !item.read) && <span className="notification-badge">{lowStockNotifications.filter((item) => !item.read).length > 99 ? '99+' : lowStockNotifications.filter((item) => !item.read).length}</span>}</button>{notificationsOpen && <section className="notification-panel" aria-label="Notifiche"><div className="notification-panel-heading">{selectedNotification ? <button className="notification-back" type="button" onClick={() => setSelectedNotification(null)}><ArrowLeft size={14} /> Indietro</button> : <strong>Notifiche</strong>}<button className="icon-button small" type="button" aria-label="Chiudi notifiche" onClick={() => { setNotificationsOpen(false); setSelectedNotification(null); }}><X size={15} /></button></div>{selectedNotification ? <article className={`notification-detail${selectedNotification.read ? '' : ' unread'}`}><strong>{selectedNotification.productName}</strong><span>Scorta in esaurimento · {selectedNotification.siteName}</span><small>Disponibili: {quantityFormat.format(selectedNotification.stock)} · Soglia: {quantityFormat.format(selectedNotification.threshold)}</small><time>{dateTimeText(new Date(selectedNotification.createdAt))}</time></article> : lowStockNotifications.length ? <div className="notification-items">{lowStockNotifications.map((item) => <button className={`notification-item${item.read ? ' ' : ' unread'}`} type="button" key={`${item.id}-${item.createdAt}`} onClick={() => { setSelectedNotification({ ...item, read: true }); setLowStockNotifications((items) => items.map((notification) => notification.id === item.id && notification.createdAt === item.createdAt ? { ...notification, read: true } : notification)); }}><strong>{item.productName}</strong><span>Scorta in esaurimento · {item.siteName}</span><small>Disponibili: {quantityFormat.format(item.stock)} · Soglia: {quantityFormat.format(item.threshold)}</small></button>)}</div> : <p className="notification-empty">Nessuna notifica.</p>}</section>}</div>}{isCashierRole(activeRole) && data.employees.length > 0 && <button className="icon-button" type="button" title="Blocca e cambia utente" aria-label="Blocca e cambia utente" onClick={() => { trackActivity('Accesso', 'Uscita dal gestionale'); setCurrentUser(null); setLocked(true); setLoginBarcode(''); }}><LockKeyhole size={17} /></button>}</div>
     </header>
       <Suspense fallback={null}>
       {section === 'home' && data.settings.home_video && <video className="home-banner-overlay" src={data.settings.home_video} autoPlay muted loop playsInline />}
 
-      {section === 'home' && <HomePage image={data.settings.home_image || homeBanner} dailyGross={dailyGross} salesCount={todaySales.length} todayRefunds={todayRefunds} dailyProfit={dailyProfit} dailyUnitsLabel={dailyUnits.toLocaleString(appLocale)} reorderCount={reorderProducts.length} reorderCountLabel={reorderProducts.length.toLocaleString(appLocale)} expiringCount={expiringProducts.length} expiringCountLabel={expiringProducts.length.toLocaleString(appLocale)} canOpenExpiryList={canAccess('inventory')} recentSales={data.sales.slice(0, 5)} onOpenReorderList={() => setReorderListOpen(true)} onOpenExpiryList={() => setExpiryListOpen(true)} onOpenSales={() => navigateTo('sales')} onSelectSale={setReceipt} />}
+      {section === 'home' && <HomePage image={data.settings.home_image || homeBanner} dailyGross={dailyGross} salesCount={todaySales.length} todayRefunds={todayRefunds} dailyProfit={dailyProfit} dailyUnitsLabel={dailyUnits.toLocaleString(appLocale)} lowStockCountLabel={lowStockProductCount.toLocaleString(appLocale)} expiringCount={expiringProducts.length} expiringCountLabel={expiringProducts.length.toLocaleString(appLocale)} canOpenLowStock={canAccess('low-stock')} canOpenExpiryList={canAccess('inventory')} recentSales={data.sales.slice(0, 5)} onOpenLowStock={() => navigateTo('low-stock')} onOpenExpiryList={() => setExpiryListOpen(true)} onOpenSales={() => navigateTo('sales')} onSelectSale={setReceipt} />}
       {expiryListOpen && <Modal title="Articoli in scadenza" close={() => setExpiryListOpen(false)} wide>
         <div className="reorder-list-modal-content">
           <Table headings={['Articolo', 'Data di scadenza']}><>
@@ -4470,21 +4606,8 @@ export default function App() {
           </div>
         </div>
       </Modal>}
-      {reorderListOpen && <Modal title="Lista articoli da riordinare" close={() => setReorderListOpen(false)} wide>
-        <div className="reorder-list-modal-content">
-          <Table headings={['Articolo', 'Codice', 'Categoria', 'Giacenza', 'Soglia minima']}><>
-            {reorderProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td className="mono">{product.code}</td><td>{product.category}</td><td>{quantityFormat.format(product.stock)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}</td><td>{quantityFormat.format(product.low_stock_threshold)} {product.unit === 'KG' ? 'kg' : product.unit === 'LITRO' ? 'L' : 'pz'}</td></tr>)}
-            {!reorderProducts.length && <tr><td colSpan={5} className="empty-cell">Nessun articolo da riordinare.</td></tr>}
-          </></Table>
-          <div className="reorder-list-actions">
-            <button className="button button-outline" type="button" onClick={() => setReorderListOpen(false)}>Chiudi</button>
-            <button className="button button-primary" type="button" onClick={() => void downloadReorderListPdf()}><ArrowDownToLine size={16} /> Scarica lista</button>
-          </div>
-        </div>
-      </Modal>}
-
       {(section === 'inventory' || section === 'available-stock') && <div className={`page-content inventory-scope-page${section === 'available-stock' ? ' available-stock-page' : ''}`}>
-        <div className="page-toolbar inventory-toolbar"><div><h2>{section === 'available-stock' ? 'Merce nelle sedi' : 'Articoli in magazzino'}</h2><p>{data.products.length} articoli registrati{!availableStockSites.length && (section === 'available-stock' ? ' · Registra un punto vendita per visualizzare le giacenze' : ' · Registra una sede Magazzino per visualizzare le giacenze')}</p></div>{!isCashierRole(activeRole) && <div className="toolbar-actions"><button className="button button-outline" onClick={exportInventoryCsv}><ArrowDownToLine size={16} /> {language === 'ar' ? 'تصدير CSV' : 'Esporta CSV'}</button><button className="button button-outline" onClick={() => void exportInventoryReport()}><ArrowDownToLine size={16} /> Scarica report</button>{section === 'available-stock' ? <button className="button button-outline" disabled={!availableStockSites.length} onClick={() => void exportInventoryReport(true)}><Share2 size={16} /> Condividi</button> : <button className="button button-primary" disabled={!warehouseSites.length} onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct }); }}><Plus size={16} /> Aggiungi nuovo articolo</button>}</div>}</div>
+        <div className="page-toolbar inventory-toolbar"><div><h2>{section === 'available-stock' ? 'Merce nelle sedi' : 'Articoli in magazzino'}</h2><p>{data.products.length} articoli registrati{!availableStockSites.length && (section === 'available-stock' ? ' · Registra un punto vendita per visualizzare le giacenze' : ' · Registra una sede Magazzino per visualizzare le giacenze')}</p></div>{!isCashierRole(activeRole) && <div className="toolbar-actions">{canAccessInventoryFeature('inventory-csv') && <button className="button button-outline" onClick={exportInventoryCsv}><ArrowDownToLine size={16} /> {language === 'ar' ? 'تصدير CSV' : 'Esporta CSV'}</button>}{canAccessInventoryFeature('inventory-report') && <button className="button button-outline" onClick={() => void exportInventoryReport()}><ArrowDownToLine size={16} /> Scarica report</button>}{section === 'available-stock' ? canAccessInventoryFeature('inventory-report') && <button className="button button-outline" disabled={!availableStockSites.length} onClick={() => void exportInventoryReport(true)}><Share2 size={16} /> Condividi</button> : canAccessInventoryFeature('inventory-add') && <button className="button button-primary" disabled={!warehouseSites.length} onClick={() => { setProductEditingId(null); setProductForm({ ...blankProduct }); }}><Plus size={16} /> Aggiungi nuovo articolo</button>}</div>}</div>
         <div className="filter-row"><SearchInput value={inventorySearch} onChange={setInventorySearch} placeholder="Cerca per nome o codice…" /><details className="inventory-filter-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Categoria: {category}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra prodotti per categoria">{['Tutte', ...categories].map((item) => <button key={item} className={`status-filter${category === item ? ' active' : ''}`} aria-pressed={category === item} onClick={(event) => { setCategory(item); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{item}</button>)}</div></details><details className="inventory-filter-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Disponibilità: {inventoryFilters.find((item) => item.value === inventoryStatus)?.label}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra prodotti per disponibilità">{inventoryFilters.map(({ value, label }) => <button key={value} className={`status-filter${inventoryStatus === value ? ' active' : ''}`} aria-pressed={inventoryStatus === value} onClick={(event) => { setInventoryStatus(value); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{label}</button>)}</div></details><details className="inventory-filter-dropdown filter-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.filter-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Sede: {inventorySiteId === 'all' ? 'Tutte' : availableStockSites.find((site) => String(site.id) === inventorySiteId)?.name}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra prodotti per sede"><button className={`status-filter${inventorySiteId === 'all' ? ' active' : ''}`} aria-pressed={inventorySiteId === 'all'} onClick={(event) => { setInventorySiteId('all'); event.currentTarget.closest('details')?.removeAttribute('open'); }}>Tutte</button>{availableStockSites.map((site) => <button key={site.id} className={`status-filter${inventorySiteId === String(site.id) ? ' active' : ''}`} aria-pressed={inventorySiteId === String(site.id)} onClick={(event) => { setInventorySiteId(String(site.id)); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{site.name}</button>)}</div></details></div>
         {!isCashierRole(activeRole) && <div className="expiry-panels">
           <section className="expiry-alert"><div className="expiry-alert-heading"><CircleAlert size={18} /><div><strong>Avviso date di scadenza</strong><span>{expiringProducts.length ? `${expiringProducts.length} ${expiringProducts.length === 1 ? 'articolo' : 'articoli'} in scadenza entro 10 giorni` : 'Nessun articolo in scadenza nei prossimi 10 giorni'}</span></div></div>{expiringProducts.length > 0 && <div className="expiry-list">{expiringProducts.map((product) => <button key={product.id} onClick={() => setSelectedProduct(product)}><span>{product.name}</span><strong>{receiptDate.format(new Date(`${product.expiry_date}T00:00:00`))}</strong></button>)}</div>}</section>
@@ -4496,8 +4619,12 @@ export default function App() {
       {section === 'expired-products' && <ExpiredProductsPage products={expiredProducts} onExport={exportExpiredProductsCsv} onBack={() => navigateTo('inventory')} onDispose={(product) => void disposeExpiredProduct(product)} />}
 
       {section === 'inventory-history' && <div className="page-content"><div id="inventory-history-print">
-        <div className="inventory-history-actions no-print"><FilterSelectField label="Periodo" value={inventoryHistoryPeriod} onChange={setInventoryHistoryPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Da - A']} />{inventoryHistoryPeriod === 'Da - A' && <><Field label="Da" type="date" value={inventoryHistoryFrom} onChange={(event) => setInventoryHistoryFrom(event.target.value)} /><Field label="A" type="date" value={inventoryHistoryTo} onChange={(event) => setInventoryHistoryTo(event.target.value)} /></>}<SearchInput value={inventoryHistorySearch} onChange={setInventoryHistorySearch} placeholder="Cerca articolo, persona o nota…" /><button className="button button-outline" onClick={() => void exportInventoryHistoryPdf()}><ArrowDownToLine size={16} /> Esporta lista</button></div>
-        <Table headings={['Data e ora', 'Articolo', 'Movimento', 'Quantità', 'Persona', 'Nota']}><>{inventoryHistoryMovements.map((movement, index) => <tr className={index === 0 ? 'inventory-history-first-row' : undefined} key={movement.id}><td>{dateTimeText(new Date(movement.created_at))}</td><td className="cell-primary">{movement.product_name}</td><td><span className={`movement-badge ${movement.movement_type === 'Carico' ? 'movement-in' : 'movement-out'}`}>{movement.movement_type}</span></td><td>{quantityFormat.format(movement.quantity)}</td><td>{movement.person || '—'}</td><td>{localizedStockNote(movement.note || '—', language)}</td></tr>)}</>{!inventoryHistoryMovements.length && <tr><td colSpan={6} className="empty-cell">Nessun movimento nel periodo selezionato.</td></tr>}</Table></div></div>}
+        <div className="inventory-history-actions no-print"><FilterSelectField label="Periodo" value={inventoryHistoryPeriod} onChange={setInventoryHistoryPeriod} options={['Tutti', 'Oggi', 'Ieri', 'Ultima settimana', 'Ultimo mese', 'Da - A']} />{inventoryHistoryPeriod === 'Da - A' && <><Field label="Da" type="date" value={inventoryHistoryFrom} onChange={(event) => setInventoryHistoryFrom(event.target.value)} /><Field label="A" type="date" value={inventoryHistoryTo} onChange={(event) => setInventoryHistoryTo(event.target.value)} /></>}<SearchInput value={inventoryHistorySearch} onChange={setInventoryHistorySearch} placeholder="Cerca articolo, persona o nota…" /><button className="button button-outline" type="button" onClick={() => { setInventoryHistoryClearBarcode(''); setInventoryHistoryClearOpen(true); }}><Trash2 size={16} /> Svuota lista</button><button className="button button-outline" onClick={() => void exportInventoryHistoryPdf()}><ArrowDownToLine size={16} /> Esporta lista</button></div>
+        <Table headings={['Data e ora', 'Articolo', 'Movimento', 'Quantità', 'Persona', 'Nota']}><>{inventoryHistoryMovements.map((movement, index) => {
+          const isClearEvent = movement.product_id === 0;
+          return <tr className={index === 0 ? 'inventory-history-first-row' : undefined} key={movement.id}><td>{dateTimeText(new Date(movement.created_at))}</td><td className="cell-primary">{isClearEvent ? '—' : movement.product_name}</td><td>{isClearEvent ? localizedText('Svuotata', language) : <span className={`movement-badge ${movement.movement_type === 'Carico' ? 'movement-in' : 'movement-out'}`}>{localizedText(movement.movement_type, language)}</span>}</td><td>{isClearEvent ? '—' : quantityFormat.format(movement.quantity)}</td><td>{movement.person || '—'}</td><td><StockHistoryNote movement={movement} /></td></tr>;
+        })}{!inventoryHistoryMovements.length && <tr><td colSpan={6} className="empty-cell">Nessun movimento nel periodo selezionato.</td></tr>}</></Table></div></div>}
+      {section === 'inventory-history' && inventoryHistoryClearOpen && <Modal title="Verifica barcode per svuotare lo storico magazzino" close={() => { setInventoryHistoryClearOpen(false); setInventoryHistoryClearBarcode(''); }}><form className="form-grid inventory-history-clear-form" onSubmit={(event) => void confirmInventoryHistoryClear(event)}><p>Scansiona o inserisci il barcode del dipendente autorizzato per svuotare lo storico magazzino.</p><Field label="Barcode dipendente" value={inventoryHistoryClearBarcode} onChange={(event) => setInventoryHistoryClearBarcode(event.target.value)} required autoFocus /><div className="form-actions"><button className="button button-outline" type="button" onClick={() => { setInventoryHistoryClearOpen(false); setInventoryHistoryClearBarcode(''); }}>Annulla</button><button className="button button-primary" disabled={inventoryHistoryClearing || !inventoryHistoryClearBarcode.trim()}><Check size={16} /> Verifica barcode</button></div></form></Modal>}
 
       {section === 'stock-distribution' && <div className="page-content accounting-page">
         <div className="distribution-layout">
@@ -4584,7 +4711,7 @@ export default function App() {
       {section === 'site-statistics' && <SiteStatisticsPage period={siteStatsPeriod} onPeriodChange={setSiteStatsPeriod} siteFilter={siteStatsFilter} onSiteFilterChange={setSiteStatsFilter} from={siteStatsFrom} onFromChange={setSiteStatsFrom} to={siteStatsTo} onToChange={setSiteStatsTo} sites={data.sites} selectedStats={selectedSiteStats} income={siteStatsIncome} expenses={siteStatsExpenses} siteStocks={data.siteStocks} employees={data.employees} products={data.products} />}
       {section === 'low-stock' && <LowStockPage sites={data.sites} getProductsForSite={lowStockProductsForSite} onDownload={() => { setLowStockExportSite('all'); setLowStockExportAction('download'); }} onShare={() => { setLowStockExportSite('all'); setLowStockExportAction('share'); }} />}
       {lowStockExportAction && <Modal title={lowStockExportAction === 'download' ? 'Scarica lista articoli in esaurimento' : 'Condividi lista articoli in esaurimento'} close={() => setLowStockExportAction(null)}><div className="form-grid low-stock-export-form"><label className="field"><span>Seleziona le sedi</span><select value={lowStockExportSite} onChange={(event) => setLowStockExportSite(event.target.value)}><option value="all">Tutte le sedi</option>{storeSites.map((site) => <option key={site.id} value={String(site.id)}>{site.name}</option>)}</select></label><div className="form-actions"><button className="button button-quiet" type="button" onClick={() => setLowStockExportAction(null)}>Annulla</button><button className="button button-primary" type="button" onClick={() => void confirmLowStockExport()}>{lowStockExportAction === 'download' ? <><ArrowDownToLine size={16} /> Scarica</> : <><Share2 size={16} /> Condividi</>}</button></div></div></Modal>}
-      {section === 'site-create' && siteDraft && <SiteCreatePage draft={siteDraft} managers={data.employees.filter((employee) => normalizedRole(employee.role) === 'responsabile sede')} roles={siteRoleOptions} workingDays={workingDayOptions} showCustomRole={showSiteCustomRole} customRole={siteCustomRole} onDraftChange={setSiteDraft} onRoleChange={(role) => { if (role === '__other__') { setShowSiteCustomRole(true); setSiteCustomRole(''); } else { setSiteDraft({ ...siteDraft, site_role: role }); setShowSiteCustomRole(false); } }} onCustomRoleChange={setSiteCustomRole} onAddCustomRole={() => { const enteredRole = siteCustomRole.trim(); const role = siteRoleOptions.find((item) => item.toLocaleLowerCase('it') === enteredRole.toLocaleLowerCase('it')) ?? enteredRole; const next = [...new Set([...siteRoleOptions, role])]; setSiteRoleOptions(next); window.localStorage.setItem('site-roles', JSON.stringify(next.filter((item) => !defaultSiteRoles.includes(item)))); setSiteDraft((current) => current ? { ...current, site_role: role } : current); setSiteCustomRole(''); setShowSiteCustomRole(false); }} onBack={() => navigateTo('site-list')} onCancel={() => { setSiteDraft(null); navigateTo('site-list'); }} onSave={(event) => void saveSite(event)} />}
+      {section === 'site-create' && siteDraft && <SiteCreatePage draft={siteDraft} managers={data.employees.filter((employee) => ['responsabile sede', 'proprietario'].includes(normalizedRole(employee.role)))} roles={siteRoleOptions} workingDays={workingDayOptions} showCustomRole={showSiteCustomRole} customRole={siteCustomRole} onDraftChange={setSiteDraft} onRoleChange={(role) => { if (role === '__other__') { setShowSiteCustomRole(true); setSiteCustomRole(''); } else { setSiteDraft({ ...siteDraft, site_role: role }); setShowSiteCustomRole(false); } }} onCustomRoleChange={setSiteCustomRole} onAddCustomRole={() => { const enteredRole = siteCustomRole.trim(); const role = siteRoleOptions.find((item) => item.toLocaleLowerCase('it') === enteredRole.toLocaleLowerCase('it')) ?? enteredRole; const next = [...new Set([...siteRoleOptions, role])]; setSiteRoleOptions(next); window.localStorage.setItem('site-roles', JSON.stringify(next.filter((item) => !defaultSiteRoles.includes(item)))); setSiteDraft((current) => current ? { ...current, site_role: role } : current); setSiteCustomRole(''); setShowSiteCustomRole(false); }} onBack={() => navigateTo('site-list')} onCancel={() => { setSiteDraft(null); navigateTo('site-list'); }} onSave={(event) => void saveSite(event)} />}
       {(section === 'site-list' || section === 'site-management') && (selectedSiteMerchandise
         ? <SiteMerchandisePage site={selectedSiteMerchandise} products={siteMerchandiseProducts(selectedSiteMerchandise.id)} onBack={() => setSelectedSiteMerchandise(null)} onDownload={() => void exportInventoryReport(false, selectedSiteMerchandise)} />
         : <SiteListPage section={section} sites={data.sites} sales={data.sales} employees={data.employees} siteStocks={data.siteStocks} canManage={canAccess('site-management')} onCreate={() => { setSiteDraft({ name: '', address: '', phone: '', site_role: 'Punto vendita' }); navigateTo('site-create'); }} onView={setSelectedSiteDetails} onMerchandise={setSelectedSiteMerchandise} onEdit={(site) => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'edit' }); }} onDelete={(site) => { setSiteAuthorizationBarcode(''); setSiteAuthorization({ site, action: 'delete' }); }} />)}
@@ -4684,7 +4811,25 @@ export default function App() {
         <section className="panel category-panel"><div className="panel-heading"><div><h3>Vendite per categoria</h3><p>Valore degli articoli venduti nel periodo selezionato</p></div></div><div className="category-chart"><ResponsiveContainer width="100%" height={230}><PieChart><Pie data={Object.entries(categoriesSales).map(([name, value]) => ({ name, value }))} dataKey="value" nameKey="name" innerRadius={57} outerRadius={88} paddingAngle={3}>{Object.keys(categoriesSales).map((name, i) => <Cell key={name} fill={colors[i % colors.length]} />)}</Pie><Tooltip formatter={(value) => money.format(Number(value))} /></PieChart></ResponsiveContainer><div className="chart-legend">{Object.entries(categoriesSales).length ? Object.entries(categoriesSales).map(([name, value], i) => <div key={name}><span style={{ backgroundColor: colors[i % colors.length] }} /><span>{name}</span><strong>{money.format(value)}</strong></div>) : <span className="muted">Le categorie appariranno dopo la prima vendita.</span>}</div></div></section>
       </div>}
 
-      {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">{settingsTab === null ? <nav className="settings-nav">{[{ name: 'Info Negozio', icon: Store }, { name: 'Sede principale', icon: Package }, { name: 'Homepage', icon: House }, { name: 'Dispositivi', icon: Barcode }, { name: 'Permessi di accesso', icon: ShieldCheck }, { name: 'Archivio dati', icon: Archive }, { name: 'Gestione dati app', icon: Archive }, { name: 'Operativo', icon: Check }].filter(({ name }) => (name !== 'Gestione dati app' || normalizedRole(activeRole) === 'proprietario') && (normalizedRole(activeRole) === 'proprietario' || !['Info Negozio', 'Sede principale', 'Archivio dati', 'Homepage', 'Permessi di accesso'].includes(name))).map(({ name, icon: Icon }) => <button key={name} onClick={() => { setDeviceTab(null); if (name === 'Permessi di accesso' || name === 'Gestione dati app') { setProtectedSettingsTarget(name); setPermissionsAuthorizationBarcode(''); setPermissionsAuthorizationOpen(true); return; } setSettingsTab(name); if (name === 'Sede principale') setMainSiteDraft(mainStockSiteId); }}><Icon size={17} />{name === 'Homepage' ? 'Immagine Homepage' : name}</button>)}</nav> : <section className="settings-panel"><button className="settings-back" onClick={() => { if (settingsTab === 'Dispositivi' && deviceTab) setDeviceTab(null); else { setSettingsTab(null); setDeviceTab(null); } }}><ArrowLeft size={15} />{settingsTab === 'Dispositivi' && deviceTab ? 'Dispositivi' : 'Impostazioni'}</button>
+      {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">
+        {settingsTab === null ? <nav className="settings-nav">
+          {[{ name: 'Info Negozio', icon: Store }, { name: 'Sede principale', icon: Package }, { name: 'Homepage', icon: House }, { name: 'Dispositivi', icon: Barcode }, { name: 'Permessi di accesso', icon: ShieldCheck }, { name: 'Archivio dati', icon: Archive }, { name: 'Gestione dati app', icon: Archive }, { name: 'Operativo', icon: Check }]
+            .filter(({ name }) => canAccessSettingsPage(name))
+            .map(({ name, icon: Icon }) => <button key={name} onClick={() => {
+              setDeviceTab(null);
+              if (name === 'Permessi di accesso' || name === 'Gestione dati app') {
+                setProtectedSettingsTarget(name);
+                setPermissionsAuthorizationBarcode('');
+                setPermissionsAuthorizationOpen(true);
+                return;
+              }
+              setSettingsTab(name);
+              if (name === 'Sede principale') setMainSiteDraft(mainStockSiteId);
+            }}><Icon size={17} />{name === 'Homepage' ? 'Immagine Homepage' : name}</button>)}
+        </nav> : <section className="settings-panel"><button className="settings-back" onClick={() => {
+          if (settingsTab === 'Dispositivi' && deviceTab) setDeviceTab(null);
+          else { setSettingsTab(null); setDeviceTab(null); }
+        }}><ArrowLeft size={15} />{settingsTab === 'Dispositivi' && deviceTab ? 'Dispositivi' : 'Impostazioni'}</button>
         {settingsTab === 'Info Negozio' && <><div className="settings-title"><h2>Info Negozio</h2><p>Nome, logo e moneta utilizzata dal negozio.</p></div><form className="settings-form store-info-form" onSubmit={saveStoreName}><Field label="Nome attività" value={shopName} onChange={(e) => setShopName(e.target.value)} required /><Field label="Numero negozio" value={shopNumber} onChange={(e) => setShopNumber(e.target.value)} /><label className="field"><span>{language === 'ar' ? 'العملة المستخدمة' : 'Moneta utilizzata'}</span><select value={currencyCode} onChange={(event) => void changeCurrency(event.target.value)}>{currencyChoices.map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select></label><div className="receipt-preview"><Store size={17} /><span>{shopName || 'Nome negozio'}</span><small>Anteprima intestazione scontrino</small></div><div className="shop-logo-setting store-info-logo"><span className="field-label">Logo del negozio</span>{data.settings.shop_logo && <img src={data.settings.shop_logo} alt="Logo attuale" />}<button className="button button-outline" type="button" onClick={() => void chooseShopLogo()}><Store size={15} /> {data.settings.shop_logo ? 'Sostituisci logo' : 'Scegli logo'}</button></div><button className="button button-primary"><Check size={16} /> {language === 'ar' ? 'حفظ الإعدادات' : 'Salva impostazioni'}</button></form></>}
         {settingsTab === 'Sede principale' && <><div className="settings-title"><h2>Sede principale</h2><p>Scegli il magazzino in cui registrare inizialmente le nuove giacenze. Potrai poi distribuire la merce ai punti vendita.</p></div><form className="settings-form" onSubmit={(event) => void applyMainSite(event)}><SelectField label="Sede principale" value={mainSiteDraft} onChange={setMainSiteDraft} options={warehouseSites.map((site) => String(site.id))} labels={warehouseSites.map((site) => site.name)} /><button className="button button-primary" type="submit" disabled={!mainSiteDraft || mainSiteDraft === data.settings.main_site_id}><Check size={16} /> Applica sede principale</button></form></>}
         {settingsTab === 'Archivio dati' && <><div className="settings-title"><h2>Archivio locale</h2><p>Database SQLite e copie giornaliere dei dati.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Archivio locale attivo</div><div className="database-card"><div className="security-icon"><Archive size={20} /></div><div><strong>Database SQLite</strong><span className="database-path">{data.settings.database_file}</span></div><span className="stock-badge">Attivo</span></div><div className="settings-form"><label className="field"><span>Cartella esportazioni giornaliere</span><div className="folder-input"><input value={archiveFolder} readOnly /><button className="button button-outline" type="button" onClick={() => void chooseFolder()}>Scegli cartella</button></div></label><p className="help-copy">Ogni giorno a mezzanotte vengono aggiornati file TXT e PDF nelle cartelle Magazzino, Cassa, Vendite e Statistiche.</p></div></>}
@@ -4701,7 +4846,11 @@ export default function App() {
     {permissionsAuthorizationOpen && isOwner && <Modal title="Verifica barcode Proprietario" close={() => { setPermissionsAuthorizationOpen(false); setPermissionsAuthorizationBarcode(''); }}><form className="site-authorization" onSubmit={(event) => void confirmPermissionsAuthorization(event)}><p>{localizedText(`Scansiona o inserisci il barcode del Proprietario per aprire ${protectedSettingsTarget === 'Gestione dati app' ? 'la gestione dati app' : 'i permessi di accesso'}.`, language)}</p><Field label="Barcode del Proprietario" value={permissionsAuthorizationBarcode} onChange={(event) => setPermissionsAuthorizationBarcode(event.target.value.trim())} autoFocus required /><div className="form-actions"><button className="button button-outline" type="button" onClick={() => { setPermissionsAuthorizationOpen(false); setPermissionsAuthorizationBarcode(''); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Verifica barcode</button></div></form></Modal>}
 
     {section === 'cash' && isOwner && !ownerCashSiteId && <div className="cash-site-prompt-backdrop"><section className="panel cash-site-prompt" role="dialog" aria-modal="true" aria-labelledby="cash-site-prompt-title"><div className="security-icon"><ShoppingBasket size={20} /></div><h2 id="cash-site-prompt-title">Quale cassa vuoi aprire?</h2><div className="cash-site-options" role="group" aria-label="Seleziona la sede">{cashSites.map((site) => <button className={`cash-site-option${ownerCashSiteDraft === String(site.id) ? ' selected' : ''}`} key={site.id} type="button" aria-pressed={ownerCashSiteDraft === String(site.id)} onClick={() => setOwnerCashSiteDraft(String(site.id))}><Store size={17} /><span>{site.name}</span></button>)}</div><div className="cash-site-actions"><button className="button button-primary full-width" type="button" disabled={!ownerCashSiteDraft} onClick={() => { setOwnerCashSiteId(ownerCashSiteDraft); setScannerSearch(''); }}>Apri cassa</button><button className="button button-outline full-width" type="button" onClick={() => { setOwnerCashSiteDraft(''); navigateTo('home'); }}>Annulla</button></div>{!cashSites.length && <p className="help-copy">Registra prima una sede per aprire la cassa.</p>}</section></div>}
-    {section === 'settings' && isCashierRole(activeRole) && settingsTab === null && <div className="cashier-settings-backdrop"><nav className="settings-nav cashier-settings-nav" aria-label="Impostazioni"><button type="button" onClick={() => { setSettingsTab('Dispositivi'); setDeviceTab(null); }}><Barcode size={17} />Dispositivi</button><button type="button" onClick={() => setSettingsTab('Archivio dati')}><Archive size={17} />Archivio dati</button><button type="button" onClick={() => setSettingsTab('Operativo')}><Check size={17} />Operatività</button></nav></div>}
+    {section === 'settings' && isCashierRole(activeRole) && settingsTab === null && ['Dispositivi', 'Archivio dati', 'Operativo'].some(canAccessSettingsPage) && <div className="cashier-settings-backdrop"><nav className="settings-nav cashier-settings-nav" aria-label="Impostazioni">
+      {canAccessSettingsPage('Dispositivi') && <button type="button" onClick={() => { setSettingsTab('Dispositivi'); setDeviceTab(null); }}><Barcode size={17} />Dispositivi</button>}
+      {canAccessSettingsPage('Archivio dati') && <button type="button" onClick={() => setSettingsTab('Archivio dati')}><Archive size={17} />Archivio dati</button>}
+      {canAccessSettingsPage('Operativo') && <button type="button" onClick={() => setSettingsTab('Operativo')}><Check size={17} />Operatività</button>}
+    </nav></div>}
     {unsoldListOpen && <Modal title="Articoli ancora in magazzino" close={() => setUnsoldListOpen(false)} wide><details className="statistics-period-dropdown unsold-site-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.statistics-period-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Sede: {unsoldSite === 'Tutto' ? 'Tutto' : storeSites.find((site) => String(site.id) === unsoldSite)?.name ?? 'Tutto'}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra articoli per sede">{['Tutto', ...storeSites.map((site) => String(site.id))].map((siteId) => { const name = siteId === 'Tutto' ? 'Tutto' : storeSites.find((site) => String(site.id) === siteId)?.name ?? ''; return <button key={siteId} className={`status-filter${unsoldSite === siteId ? ' active' : ''}`} aria-pressed={unsoldSite === siteId} onClick={(event) => { setUnsoldSite(siteId); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{name}</button>; })}</div></details><div id="unsold-list-print"><Table headings={['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']}><>{unsoldListProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td>{product.category}</td><td>{product.stock} {product.unit ?? 'PEZZO'}</td><td>{money.format(product.sale_price)}</td></tr>)}</>{!unsoldListProducts.length && <tr><td colSpan={4} className="empty-cell">Non risultano articoli rimanenti in magazzino.</td></tr>}</Table></div><div className="unsold-list-actions no-print"><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa</button><button className="button button-primary" onClick={() => void shareUnsoldList()}><Share2 size={16} /> Condividi</button></div></Modal>}
     {reportExportOpen && <Modal title={reportExportType.startsWith('sales') ? 'Esporta report vendite' : 'Esporta report contabilità e finanza'} close={() => setReportExportOpen(false)}><div className="report-export-options"><p>Vuoi applicare al report il filtro temporale selezionato ({reportExportType.startsWith('sales') ? salesPeriod : balancePeriod}) o includere tutto il periodo disponibile?</p><button className="button button-primary" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(true); else if (reportExportType === 'sales-xlsx') void exportSalesXlsx(true); else void downloadFinancialBalance(true); }}><Check size={15} /> Rispetta il filtro di tempo</button><button className="button button-outline" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(false); else if (reportExportType === 'sales-xlsx') void exportSalesXlsx(false); else void downloadFinancialBalance(false); }}><ArrowDownToLine size={15} /> Esporta tutto</button></div></Modal>}
     {employeeDetails && <Modal title={`${employeeDetails.first_name} ${employeeDetails.last_name}`} close={() => setEmployeeDetails(null)} rightHalf>
@@ -4724,7 +4873,7 @@ export default function App() {
       <Field label="Nuova quantità" type="number" min="1" step="1" value={stockInput} onChange={(event) => setStockInput(event.target.value)} required placeholder="Quantità da aggiungere" />
       <Field fieldClassName="movement-barcode-field" label="Barcode del personale verificato" value={stockMovementEmployeeBarcode} readOnly />
       <div className="form-actions"><button className="button button-quiet full-width" type="button" onClick={() => { setStockProduct(null); setStockMovementEmployeeBarcode(''); }}>Annulla</button><button className="button button-primary full-width" disabled={!stockMovementEmployeeBarcode}><Check size={16} /> Conferma giacenza</button></div>
-    </form></Modal>}{selectedProduct && !isCashierRole(activeRole) && <div className="drawer-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedProduct(null); }}><aside className="detail-drawer"><header className="drawer-header"><div><p className="eyebrow">DETTAGLIO ARTICOLO</p><h2>{selectedProduct.name}</h2></div><button className="icon-button" onClick={() => setSelectedProduct(null)}><X size={18} /></button></header><div className="drawer-content"><div className="detail-icon"><Package size={26} /></div><span className="stock-badge">{selectedProduct.category}</span><div className="detail-list"><Detail label="Codice a barre" value={selectedProduct.code} /><Detail label="Prezzo vendita" value={money.format(selectedProduct.sale_price)} /><Detail label="Prezzo acquisto" value={money.format(selectedProduct.purchase_price)} /><Detail label="Giacenza" value={`${selectedProduct.stock} ${localizedText(selectedProduct.unit ?? 'PEZZO', language)}`} /><Detail label="Giacenza nei magazzini" value={`${quantityFormat.format(warehouseStockFor(selectedProduct.id))} ${localizedText(selectedProduct.unit ?? 'PEZZO', language)}`} /><Detail label="Soglia minima" value={`${selectedProduct.low_stock_threshold} ${localizedText(selectedProduct.unit ?? 'PEZZO', language)}`} />{selectedProduct.expiry_enabled && selectedProduct.expiry_date && <Detail label="Data di scadenza" value={receiptDate.format(new Date(`${selectedProduct.expiry_date}T00:00:00`))} />}<Detail label="Margine unitario" value={money.format(selectedProduct.sale_price - selectedProduct.purchase_price)} /></div></div><footer className="drawer-footer"><button className="button button-outline full-width" onClick={() => { setProductAuthorizationBarcode(''); setProductAuthorization({ product: selectedProduct, action: 'edit' }); }}><Settings size={15} /> Modifica articolo</button><button className="button button-outline full-width" onClick={() => { setProductAuthorizationBarcode(''); setProductAuthorization({ product: selectedProduct, action: 'quantity' }); }}><Package size={15} /> Nuova quantità</button></footer></aside></div>}
+    </form></Modal>}{selectedProduct && !isCashierRole(activeRole) && <div className="drawer-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedProduct(null); }}><aside className="detail-drawer"><header className="drawer-header"><div><p className="eyebrow">DETTAGLIO ARTICOLO</p><h2>{selectedProduct.name}</h2></div><button className="icon-button" onClick={() => setSelectedProduct(null)}><X size={18} /></button></header><div className="drawer-content"><div className="detail-icon"><Package size={26} /></div><span className="stock-badge">{selectedProduct.category}</span><div className="detail-list"><Detail label="Codice a barre" value={selectedProduct.code} /><Detail label="Prezzo vendita" value={money.format(selectedProduct.sale_price)} /><Detail label="Prezzo acquisto" value={money.format(selectedProduct.purchase_price)} /><Detail label="Giacenza" value={`${selectedProduct.stock} ${localizedText(selectedProduct.unit ?? 'PEZZO', language)}`} /><Detail label="Giacenza nei magazzini" value={`${quantityFormat.format(warehouseStockFor(selectedProduct.id))} ${localizedText(selectedProduct.unit ?? 'PEZZO', language)}`} /><Detail label="Soglia minima" value={`${selectedProduct.low_stock_threshold} ${localizedText(selectedProduct.unit ?? 'PEZZO', language)}`} />{selectedProduct.expiry_enabled && selectedProduct.expiry_date && <Detail label="Data di scadenza" value={receiptDate.format(new Date(`${selectedProduct.expiry_date}T00:00:00`))} />}<Detail label="Margine unitario" value={money.format(selectedProduct.sale_price - selectedProduct.purchase_price)} /></div></div><footer className="drawer-footer">{canAccessInventoryFeature('inventory-edit') && <button className="button button-outline full-width" onClick={() => { setProductAuthorizationBarcode(''); setProductAuthorization({ product: selectedProduct, action: 'edit' }); }}><Settings size={15} /> Modifica articolo</button>}{canAccessInventoryFeature('inventory-quantity') && <button className="button button-outline full-width" onClick={() => { setProductAuthorizationBarcode(''); setProductAuthorization({ product: selectedProduct, action: 'quantity' }); }}><Package size={15} /> Nuova quantità</button>}</footer></aside></div>}
     {checkoutOpen && <Modal title="Pagamento" close={() => { setCheckoutOpen(false); setVoucherCode(''); setVoucherMessage(''); setVoucherDiscountPercentage(0); }} rightHalf narrowPanel><div className="payment-content">
       <section className="payment-promotion-info payment-promotion-always-visible">
         <strong>Offerte automatiche applicate</strong>
@@ -4786,6 +4935,75 @@ function SectionHeading({ icon: Icon, title, detail, action }: { icon: typeof Ho
 function Table({ headings, children }: { headings: string[]; children: ReactNode }) {
   const language = useContext(AppLanguageContext);
   return <div className="table-wrap"><table><thead><tr>{headings.map((heading) => <th key={heading}>{localizedText(heading, language)}</th>)}</tr></thead><tbody><LocalizedNodes>{children}</LocalizedNodes></tbody></table></div>;
+}
+function StockHistoryNote({ movement }: { movement: StockMovement }) {
+  const language = useContext(AppLanguageContext);
+  const { quantityFormat, dateTimeText } = usePageServices();
+  const isClearEvent = movement.product_id === 0;
+  const [open, setOpen] = useState(false);
+  const container = useRef<HTMLSpanElement>(null);
+  const popup = useRef<HTMLSpanElement>(null);
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!container.current?.contains(target) && !popup.current?.contains(target)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    return () => document.removeEventListener('pointerdown', closeOnOutsideClick);
+  }, [open]);
+  useLayoutEffect(() => {
+    if (!open) {
+      setPosition(null);
+      return;
+    }
+    const updatePosition = () => {
+      const trigger = container.current?.getBoundingClientRect();
+      const notePopup = popup.current?.getBoundingClientRect();
+      if (!trigger || !notePopup) return;
+      const rtl = document.documentElement.dir === 'rtl';
+      const gap = 8;
+      const margin = 12;
+      const towardSidebar = rtl ? trigger.right + gap : trigger.left - notePopup.width - gap;
+      const awayFromSidebar = rtl ? trigger.left - notePopup.width - gap : trigger.right + gap;
+      const preferredLeft = rtl
+        ? (towardSidebar + notePopup.width <= window.innerWidth - margin ? towardSidebar : awayFromSidebar)
+        : (towardSidebar >= margin ? towardSidebar : awayFromSidebar);
+      setPosition({
+        top: Math.max(margin, Math.min(trigger.top, window.innerHeight - notePopup.height - margin)),
+        left: Math.max(margin, Math.min(preferredLeft, window.innerWidth - notePopup.width - margin)),
+      });
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open, movement, language]);
+  return <span className="stock-history-note" ref={container}>
+    <button className="text-button stock-history-note-trigger" type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)}>{localizedText('Vedi', language)}</button>
+    {open && createPortal(
+      <section className="stock-history-note-popup" ref={popup} role="dialog" aria-label={localizedText('Dettaglio nota', language)} style={{ top: position?.top ?? 0, left: position?.left ?? 0, visibility: position ? 'visible' : 'hidden' }}>
+        <strong className="stock-history-note-title">{localizedText('Nota', language)}</strong>
+        <p className="stock-history-note-content">{localizedStockNote(movement.note || '—', language)}</p>
+        <div className="stock-history-note-details">
+          <strong>{localizedText('Dettagli movimento', language)}</strong>
+          <dl>
+            <div><dt>{localizedText('Articolo', language)}</dt><dd>{isClearEvent ? '—' : movement.product_name || '—'}</dd></div>
+            <div><dt>{localizedText('Movimento', language)}</dt><dd>{localizedText(isClearEvent ? 'Svuotata' : movement.movement_type, language)}</dd></div>
+            <div><dt>{localizedText('Quantità', language)}</dt><dd>{isClearEvent ? '—' : quantityFormat.format(movement.quantity)}</dd></div>
+            <div><dt>{localizedText('Persona', language)}</dt><dd>{movement.person || '—'}</dd></div>
+            <div><dt>{localizedText('Sede', language)}</dt><dd>{movement.site || '—'}</dd></div>
+            <div><dt>{localizedText('Data e ora', language)}</dt><dd>{dateTimeText(new Date(movement.created_at))}</dd></div>
+          </dl>
+        </div>
+      </section>,
+      document.body,
+    )}
+  </span>;
 }
 function SearchInput({ value, onChange, placeholder, numericOnly = false }: { value: string; onChange: (value: string) => void; placeholder: string; numericOnly?: boolean }) {
   const language = useContext(AppLanguageContext);

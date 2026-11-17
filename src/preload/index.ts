@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('gestionale', {
   saveProduct: (product: ProductInput, siteId?: number) => ipcRenderer.invoke('product:save', product, siteId),
   updateStock: (productId: number, stock: number) => ipcRenderer.invoke('product:stock', productId, stock),
   moveStock: (movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; employee_barcode: string; destination?: string; note: string }) => ipcRenderer.invoke('product:move-stock', movement),
+  clearInventoryHistory: (employeeBarcode: string): Promise<void> => ipcRenderer.invoke('inventory-history:clear', employeeBarcode),
   transferStock: (movement: { fromSiteId: number; toSiteId: number; recipientEmployeeId: number; items: Array<{ productId: number; quantity: number }>; employee_barcode: string }, language?: 'it' | 'ar') => ipcRenderer.invoke('product:transfer-stock', movement, language),
   openDistributionRecord: (id: number, language?: 'it' | 'ar') => ipcRenderer.invoke('distribution:open-record', id, language),
   deleteDistribution: (id: number, employeeBarcode: string) => ipcRenderer.invoke('distribution:delete', id, employeeBarcode),

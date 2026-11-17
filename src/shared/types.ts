@@ -1,5 +1,10 @@
 export type Section = 'home' | 'inventory' | 'available-stock' | 'expired-products' | 'inventory-history' | 'stock-movement' | 'stock-distribution' | 'cash' | 'sales' | 'statistics' | 'sale-management' | 'promotions' | 'vouchers-create' | 'vouchers-list' | 'expenses' | 'financial-balance' | 'employees' | 'employee-create' | 'payroll' | 'employee-tracker' | 'site-statistics' | 'site-management' | 'site-create' | 'site-list' | 'low-stock' | 'supplier-list' | 'supplier-order' | 'customer-list' | 'loyalty-generate' | 'loyalty-activate' | 'loyalty-active' | 'settings';
-export type RolePermission = Section | 'sales-report' | 'sales-csv' | 'sales-tools-configured';
+export type RolePermission = Section | 'sales-report' | 'sales-csv' | 'sales-tools-configured'
+  | 'inventory-csv' | 'inventory-report' | 'inventory-add' | 'inventory-edit' | 'inventory-quantity' | 'inventory-tools-configured'
+  | 'settings-shop' | 'settings-main-site' | 'settings-homepage' | 'settings-devices'
+  | 'settings-device-barcode' | 'settings-device-printer' | 'settings-device-receipt'
+  | 'settings-access' | 'settings-archive' | 'settings-data-management' | 'settings-operational'
+  | 'settings-tools-configured';
 export type RolePermissionMap = Partial<Record<string, RolePermission[]>>;
 export type ProductUnit = 'KG' | 'LITRO' | 'PEZZO';
 export type Printer = { name: string; displayName: string };
@@ -306,6 +311,7 @@ declare global {
     saveProduct: (product: ProductInput, siteId?: number) => Promise<void>;
     updateStock: (productId: number, stock: number) => Promise<void>;
     moveStock: (movement: { productId: number; type: 'Carico' | 'Scarico'; quantity: number; employee_barcode: string; destination?: string; note: string }) => Promise<void>;
+    clearInventoryHistory: (employeeBarcode: string) => Promise<void>;
     transferStock: (movement: { fromSiteId: number; toSiteId: number; recipientEmployeeId: number; items: Array<{ productId: number; quantity: number }>; employee_barcode: string }, language?: 'it' | 'ar') => Promise<void>;
     openDistributionRecord: (id: number, language?: 'it' | 'ar') => Promise<void>;
     deleteDistribution: (id: number, employeeBarcode: string) => Promise<void>;

@@ -403,11 +403,20 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .voucher-create-actions .button { flex: 1 1 0; min-width: 0; justify-content: center; }
 .settings-back { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 15px; padding: 0; border: 0; background: transparent; color: var(--green); cursor: pointer; font-size: 10px; font-weight: 600; }
 .settings-panel { min-height: 475px; padding: 25px; border: 1px solid var(--line); border-radius: 5px; background: white; }
+.settings-panel:has(.access-permission-content) { min-height: 0; padding: 0; border: 0; background: transparent; }
+.settings-panel:has(.access-permission-content) > .settings-title { margin-bottom: 12px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); }
+.access-permission-content { display: grid; gap: 12px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); }
 .settings-title { padding-bottom: 17px; border-bottom: 1px solid var(--line); }
 .access-role-picker { max-width: 360px; margin: 18px 0 12px; }
-.access-permission-list { display: grid; max-height: 60vh; overflow: auto; border-top: 1px solid var(--line); }
+.access-permission-content .access-role-picker { margin: 0; }
+.access-permission-list { display: grid; gap: 10px; }
+.access-permission-group { border: 1px solid var(--line); border-radius: 5px; background: white; }
+.access-permission-group-toggle { display: flex; width: 100%; min-height: 40px; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border: 0; background: #f4f7f4; color: var(--ink); cursor: pointer; font-size: 11px; font-weight: 700; text-align: left; }
+.access-permission-group-toggle svg { transition: transform .16s ease; }
+.access-permission-group-toggle svg.open { transform: rotate(180deg); }
+.access-permission-group-pages { padding-inline-start: 10px; }
 .access-permission-row { display: flex; min-height: 42px; align-items: center; justify-content: space-between; gap: 14px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: white; color: var(--ink); cursor: pointer; font-size: 11px; }
-.access-permission-row:nth-child(odd) { background: #f2f7fc; }
+.access-permission-row:nth-child(odd) { background: white; }
 .access-permission-row input { width: 16px; height: 16px; flex: 0 0 16px; accent-color: #1685dc; }
 .settings-title h2 { font-size: 15px; }
 .settings-title p { margin-top: 5px; color: var(--muted); font-size: 10px; }
@@ -493,6 +502,11 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .stock-current strong { color: var(--ink); }
 .stock-form .form-actions { display: grid; grid-template-columns: 1fr; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 20px; }
+.inventory-history-clear-form { grid-template-columns: minmax(0, 1fr); }
+.inventory-history-clear-form > p, .inventory-history-clear-form > .field, .inventory-history-clear-form > .form-actions { box-sizing: border-box; grid-column: 1; width: 100%; min-width: 0; }
+.inventory-history-clear-form > .field input { box-sizing: border-box; width: 100%; }
+.inventory-history-clear-form > .form-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.inventory-history-clear-form > .form-actions > .button { width: 100%; min-width: 0; justify-content: center; }
 .low-stock-export-form > .field, .low-stock-export-form > .form-actions { grid-column: 1 / -1; width: 100%; }
 .low-stock-export-form > .form-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .low-stock-export-form > .form-actions > .button { width: 100%; }
@@ -1475,7 +1489,7 @@ body svg text, body svg tspan { fill: #000 !important; }
 .supplier-ordered-products article { display: grid; gap: 4px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 4px; background: #f8fafc; }
 .supplier-ordered-products article strong { font-size: 11px; }
 .supplier-ordered-products article span { color: var(--muted); font-size: 9px; }
-.access-permission-submenu { display: grid; gap: 0; margin: 0 12px 7px 22px; border-left: 2px solid #1685dc; background: #f8fbff; }
+.access-permission-submenu { display: grid; gap: 0; margin: 0 12px 7px 22px; border-left: 2px solid #1685dc; background: white; }
 .access-permission-submenu label { display: flex; min-height: 36px; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 12px; color: var(--ink); cursor: pointer; font-size: 10px; }
 .access-permission-submenu input { width: 15px; height: 15px; accent-color: #1685dc; }
 .low-stock-site-panel table thead th { background: #1685dc !important; color: #fff !important; }
@@ -1574,3 +1588,16 @@ html[dir='rtl'] .notification-panel { right: auto; left: 0; }
 @media print {
   #inventory-history-print .table-wrap, #employee-tracker-print .table-wrap { max-height: none; overflow: visible; }
 }
+.stock-history-note { position: relative; display: inline-flex; }
+.stock-history-note-trigger { min-width: 42px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); }
+.stock-history-note-popup { position: fixed; z-index: 20; width: min(360px, calc(100vw - 24px)); max-height: min(65vh, 480px); overflow: auto; padding: 14px; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); color: var(--ink); box-shadow: var(--shadow); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.stock-history-note-title, .stock-history-note-details > strong { display: block; font-size: 12px; }
+.stock-history-note-content { min-height: 54px; margin-top: 8px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--canvas); white-space: pre-wrap; overflow-wrap: anywhere; }
+.stock-history-note-details { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.stock-history-note-details dl { display: grid; gap: 7px; margin: 8px 0 0; }
+.stock-history-note-details dl > div { display: grid; grid-template-columns: minmax(88px, .7fr) minmax(0, 1.3fr); gap: 10px; }
+.stock-history-note-details dt { color: var(--muted); }
+.stock-history-note-details dd { margin: 0; font-weight: 600; }
+.inventory-history-actions > .button { flex: 0 0 auto; }
+html[dir='ltr'] #inventory-history-print table th, html[dir='ltr'] #inventory-history-print table td { text-align: left; }
+html[dir='rtl'] #inventory-history-print table th, html[dir='rtl'] #inventory-history-print table td { text-align: right; }

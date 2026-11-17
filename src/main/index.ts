@@ -31,6 +31,10 @@ const validPermissionSections = new Set<RolePermission>([
   'financial-balance', 'employees', 'employee-create', 'payroll', 'employee-tracker', 'site-statistics',
   'site-management', 'site-create', 'site-list', 'low-stock', 'supplier-list', 'supplier-order', 'customer-list', 'loyalty-generate', 'loyalty-activate',
   'loyalty-active', 'settings', 'sales-report', 'sales-csv', 'sales-tools-configured',
+  'inventory-csv', 'inventory-report', 'inventory-add', 'inventory-edit', 'inventory-quantity', 'inventory-tools-configured',
+  'settings-shop', 'settings-main-site', 'settings-homepage', 'settings-devices',
+  'settings-device-barcode', 'settings-device-printer', 'settings-device-receipt',
+  'settings-access', 'settings-archive', 'settings-data-management', 'settings-operational', 'settings-tools-configured',
 ]);
 
 function localDate(date: Date): string {
@@ -1386,6 +1390,22 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         movement.type === 'Scarico' ? movement.destination?.trim() ?? '' : '',
         movementSite.name,
       );
+    })();
+  });
+  ipcMain.handle('inventory-history:clear', (event, employeeBarcode: string) => {
+    requireSession(event.sender.id, ['proprietario', 'direttore']);
+    const barcode = typeof employeeBarcode === 'string' ? employeeBarcode.trim() : '';
+    const employee = employeeForLogin(barcode);
+    if (!employee) throw new Error('Il barcode non corrisponde a un dipendente registrato.');
+    if (!['proprietario', 'direttore'].includes(normalizedEmployeeRole(employee.role))) {
+      throw new Error('Non hai i permessi per svuotare lo storico magazzino.');
+    }
+    database.transaction(() => {
+      database.prepare('DELETE FROM stock_movements').run();
+      database.prepare(`INSERT INTO stock_movements
+        (product_id, product_name, movement_type, quantity, created_at, person, destination, note, site)
+        VALUES (0, '', 'Scarico', 0, ?, ?, '', 'Lista storico magazzino svuotata', '')`)
+        .run(new Date().toISOString(), `${employee.first_name} ${employee.last_name}`.trim());
     })();
   });
   ipcMain.handle('product:transfer-stock', async (event, movement: {
