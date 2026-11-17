@@ -7,8 +7,14 @@ Var StartupCheckbox
 Var StartupSelected
 
 !macro customPageAfterChangeDir
-  Page custom TaskbarPinPageCreate TaskbarPinPageLeave
+  Page custom TaskbarPinPageCreate TaskbarPinPageLeave TaskbarPinPagePre
 !macroend
+
+Function TaskbarPinPagePre
+  ${if} ${isUpdated}
+    Abort
+  ${endif}
+FunctionEnd
 
 Function TaskbarPinPageCreate
   nsDialogs::Create 1018
@@ -49,7 +55,7 @@ FunctionEnd
   FileOpen $0 "$INSTDIR\.initial-setup-done" w
   FileClose $0
 initial_setup_done:
-  StrCmp $TaskbarPinSelected "" taskbar_pin_done
+  ${ifNot} ${isUpdated}
   StrCmp $TaskbarPinSelected "true" 0 taskbar_pin_done
   IfFileExists "$newStartMenuLink" 0 taskbar_pin_done
   FileOpen $0 "$PLUGINSDIR\pin-taskbar.vbs" w
@@ -66,7 +72,6 @@ initial_setup_done:
   FileClose $0
   ExecWait '"$SYSDIR\wscript.exe" "$PLUGINSDIR\pin-taskbar.vbs" "$newStartMenuLink"' $1
 taskbar_pin_done:
-  StrCmp $StartupSelected "" startup_done
   StrCmp $StartupSelected "true" startup_enabled
   Delete "$SMSTARTUP\Gestione Supermercato.lnk"
   Goto startup_done
@@ -74,14 +79,12 @@ startup_enabled:
   CreateDirectory "$SMSTARTUP"
   CreateShortCut "$SMSTARTUP\Gestione Supermercato.lnk" "$INSTDIR\Gestione Supermercato.exe"
 startup_done:
+  ${endIf}
 !macroend
 
 !macro customUnInstall
-  ${GetParameters} $R0
-  ClearErrors
-  ${GetOptions} $R0 "--updated" $R1
-  IfErrors custom_uninstall_complete
+  ${ifNot} ${isUpdated}
   Delete "$INSTDIR\.initial-setup-done"
   Delete "$SMSTARTUP\Gestione Supermercato.lnk"
-custom_uninstall_complete:
+  ${endIf}
 !macroend
