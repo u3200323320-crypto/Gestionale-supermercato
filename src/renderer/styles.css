@@ -421,6 +421,15 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .settings-title h2 { font-size: 15px; }
 .settings-title p { margin-top: 5px; color: var(--muted); font-size: 10px; }
 .shop-logo-setting { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 18px; }
+.app-version-current { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); }
+.app-version-current span { color: var(--muted); font-size: 11px; }
+.app-version-current strong { color: var(--ink); font-size: 15px; }
+.app-update-panel { margin-top: 12px; }
+.app-update-panel .panel-heading { min-height: auto; }
+.app-update-panel > p { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.app-update-panel > .app-update-error { color: #b42318; }
+.app-update-hint { margin-top: 8px; }
+.app-update-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .shop-logo-setting img { max-width: min(100%, 360px); max-height: 150px; object-fit: contain; }
 .shop-logo-setting img { max-width: min(100%, 360px); max-height: 150px; border: 1px solid #000; object-fit: contain; }
 .shop-logo-setting .field-label { flex-basis: 100%; }

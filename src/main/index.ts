@@ -1,14 +1,18 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import Database from 'better-sqlite3';
 import PDFDocument from 'pdfkit';
-import { randomInt, randomBytes, randomUUID, scryptSync } from 'node:crypto';
-import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { createHash, randomInt, randomBytes, randomUUID, scryptSync } from 'node:crypto';
+import { copyFileSync, createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { once } from 'node:events';
 import { basename, dirname, extname, join } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { pathToFileURL } from 'node:url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
-import type { AuthenticatedEmployee, CheckoutInput, CustomerInput, Employee, EmployeeActivity, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, RolePermission, RolePermissionMap, Sale, SaleItem, Section, Site, SiteInput, SiteStock, StockDistributionRecord, Supplier, SupplierInput, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
+import type { AppUpdateInfo, AuthenticatedEmployee, CheckoutInput, CustomerInput, Employee, EmployeeActivity, EmployeeInput, Expense, PayrollPayment, PayrollPaymentInput, Product, ProductInput, Promotion, PromotionInput, RolePermission, RolePermissionMap, Sale, SaleItem, Section, Site, SiteInput, SiteStock, StockDistributionRecord, Supplier, SupplierInput, VoucherBatch, VoucherBatchInput, VoucherValidation } from '../shared/types';
 import { ApplicationController } from './application-controller';
 import { ApplicationEventBus } from './application-events';
 import { SupplierOrderRepository, type SupplierOrderMovementWriter } from './data/supplier-order-repository';
@@ -25,6 +29,8 @@ const authenticatedSessions = new Map<number, AuthenticatedEmployee>();
 const trialSessions = new Set<number>();
 const saleActionAuthorizations = new Map<number, { barcode: string; expiresAt: number }>();
 const loginFailures = new Map<number, { attempts: number; windowStartedAt: number; lockedUntil: number }>();
+const applicationReleaseApi = 'https://api.github.com/repos/u3200323320-crypto/Gestionale-supermercato/releases/latest';
+const applicationReleaseBase = 'https://github.com/u3200323320-crypto/Gestionale-supermercato/releases';
 const validPermissionSections = new Set<RolePermission>([
   'home', 'inventory', 'available-stock', 'expired-products', 'inventory-history', 'stock-movement', 'stock-distribution',
   'cash', 'sales', 'statistics', 'sale-management', 'promotions', 'vouchers-create', 'vouchers-list', 'expenses',
@@ -34,8 +40,128 @@ const validPermissionSections = new Set<RolePermission>([
   'inventory-csv', 'inventory-report', 'inventory-add', 'inventory-edit', 'inventory-quantity', 'inventory-tools-configured',
   'settings-shop', 'settings-main-site', 'settings-homepage', 'settings-devices',
   'settings-device-barcode', 'settings-device-printer', 'settings-device-receipt',
-  'settings-access', 'settings-archive', 'settings-data-management', 'settings-operational', 'settings-tools-configured',
+  'settings-access', 'settings-archive', 'settings-data-management', 'settings-operational', 'settings-version', 'settings-tools-configured',
 ]);
+
+type LatestAppRelease = {
+  version: string;
+  releaseUrl: string;
+  publishedAt: string | null;
+  installerUrl: string;
+  installerDigest: string;
+  installerSize: number;
+};
+
+function versionParts(version: string): number[] {
+  if (!/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(version)) {
+    throw new Error(`Formato versione non supportato: ${version}.`);
+  }
+  return version.split('.').map(Number);
+}
+
+function compareVersions(left: string, right: string): number {
+  const leftParts = versionParts(left);
+  const rightParts = versionParts(right);
+  for (let index = 0; index < leftParts.length; index += 1) {
+    if (leftParts[index] !== rightParts[index]) return leftParts[index] > rightParts[index] ? 1 : -1;
+  }
+  return 0;
+}
+
+async function* responseChunks(body: ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array> {
+  const reader = body.getReader();
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) return;
+      yield chunk.value;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+async function fetchLatestAppRelease(): Promise<LatestAppRelease> {
+  const response = await fetch(applicationReleaseApi, {
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'Gestionale-supermercato',
+    },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!response.ok) throw new Error(`Verifica aggiornamenti non riuscita (GitHub: ${response.status}).`);
+  const payload: unknown = await response.json();
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    throw new Error('La risposta del servizio aggiornamenti non è valida.');
+  }
+  const release = payload as Record<string, unknown>;
+  const tagName = release.tag_name;
+  if (typeof tagName !== 'string' || !/^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(tagName)) {
+    throw new Error('La versione della build più recente non è valida.');
+  }
+  const version = tagName.slice(1);
+  const installerName = `Gestione-Supermercato-Setup-${version}.exe`;
+  const releaseUrl = `${applicationReleaseBase}/tag/${tagName}`;
+  if (release.html_url !== releaseUrl || !Array.isArray(release.assets)) {
+    throw new Error('La release più recente non contiene i dati attesi.');
+  }
+  const installer = release.assets.find((asset): asset is Record<string, unknown> =>
+    typeof asset === 'object' && asset !== null
+      && !Array.isArray(asset) && asset.name === installerName);
+  if (!installer || typeof installer.browser_download_url !== 'string'
+    || installer.browser_download_url !== `${applicationReleaseBase}/download/${tagName}/${installerName}`
+    || typeof installer.digest !== 'string' || !/^sha256:[a-f0-9]{64}$/i.test(installer.digest)
+    || typeof installer.size !== 'number' || !Number.isSafeInteger(installer.size)
+    || installer.size <= 0 || installer.size > 500 * 1024 * 1024) {
+    throw new Error('La release non contiene un installer valido con checksum SHA-256.');
+  }
+  return {
+    version,
+    releaseUrl,
+    publishedAt: typeof release.published_at === 'string' ? release.published_at : null,
+    installerUrl: installer.browser_download_url,
+    installerDigest: installer.digest.slice('sha256:'.length).toLowerCase(),
+    installerSize: installer.size,
+  };
+}
+
+async function downloadAndLaunchAppUpdate(release: LatestAppRelease): Promise<void> {
+  if (process.platform !== 'win32' || !app.isPackaged) {
+    throw new Error('L’aggiornamento automatico è disponibile solo nell’app Windows installata.');
+  }
+  const response = await fetch(release.installerUrl, { signal: AbortSignal.timeout(10 * 60_000) });
+  if (!response.ok || !response.body) {
+    throw new Error(`Download dell’aggiornamento non riuscito (HTTP ${response.status}).`);
+  }
+  const downloadHost = new URL(response.url).hostname;
+  if (!['github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com'].includes(downloadHost)) {
+    throw new Error('Il download è stato reindirizzato a un host non autorizzato.');
+  }
+  const contentLength = response.headers.get('content-length');
+  if (contentLength && Number(contentLength) !== release.installerSize) {
+    throw new Error('La dimensione dell’installer non corrisponde a quella pubblicata.');
+  }
+  const installerPath = join(app.getPath('temp'), `gestionale-update-${release.version}-${randomUUID()}.exe`);
+  try {
+    await pipeline(Readable.from(responseChunks(response.body)), createWriteStream(installerPath, { flags: 'wx' }));
+    if (statSync(installerPath).size !== release.installerSize) {
+      throw new Error('Il download dell’installer è incompleto.');
+    }
+    const checksum = createHash('sha256');
+    for await (const chunk of createReadStream(installerPath)) checksum.update(chunk);
+    if (checksum.digest('hex') !== release.installerDigest) {
+      throw new Error('Il checksum dell’installer non corrisponde. L’aggiornamento è stato annullato.');
+    }
+    const installerProcess = spawn(installerPath, [], { detached: true, stdio: 'ignore' });
+    await once(installerProcess, 'spawn');
+    installerProcess.unref();
+    setTimeout(() => app.quit(), 750).unref();
+  } catch (error) {
+    if (existsSync(installerPath)) unlinkSync(installerPath);
+    throw error;
+  }
+}
 
 function localDate(date: Date): string {
   const year = date.getFullYear();
@@ -1199,6 +1325,32 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     applicationEvents,
   );
   new ApplicationController(supplierOrderService).register(ipcMain);
+  ipcMain.handle('app-version:get', (event) => {
+    requireMainWindowSender(event.sender.id);
+    return app.getVersion();
+  });
+  ipcMain.handle('app-update:check', async (event): Promise<AppUpdateInfo> => {
+    requireSession(event.sender.id);
+    const release = await fetchLatestAppRelease();
+    const currentVersion = app.getVersion();
+    return {
+      currentVersion,
+      latestVersion: release.version,
+      updateAvailable: compareVersions(release.version, currentVersion) > 0,
+      releaseUrl: release.releaseUrl,
+      publishedAt: release.publishedAt,
+      installerSize: release.installerSize,
+      canInstall: app.isPackaged && process.platform === 'win32',
+    };
+  });
+  ipcMain.handle('app-update:install', async (event) => {
+    requireSession(event.sender.id);
+    const release = await fetchLatestAppRelease();
+    if (compareVersions(release.version, app.getVersion()) <= 0) {
+      throw new Error('Questa è già l’ultima versione disponibile.');
+    }
+    await downloadAndLaunchAppUpdate(release);
+  });
   ipcMain.handle('state:get', (event) => {
     requireMainWindowSender(event.sender.id);
     return stateForSession(sessionForSender(event.sender.id));

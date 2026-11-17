@@ -1,11 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AppDataBackup, AppState, ApplicationCommand, AuthenticatedEmployee, CheckoutInput, CustomerInput, EmployeeActivity, EmployeeInput, Expense, PayrollPaymentInput, Printer, ProductInput, PromotionInput, SaleItem, SiteInput, SupplierInput, VoucherBatchInput } from '../shared/types';
+import type { AppDataBackup, AppState, ApplicationCommand, AppUpdateInfo, AuthenticatedEmployee, CheckoutInput, CustomerInput, EmployeeActivity, EmployeeInput, Expense, PayrollPaymentInput, Printer, ProductInput, PromotionInput, SaleItem, SiteInput, SupplierInput, VoucherBatchInput } from '../shared/types';
 
 let stateRequest: Promise<AppState> | null = null;
 let homepageVideoRequest: Promise<string> | null = null;
 
 contextBridge.exposeInMainWorld('gestionale', {
   isDemo: false,
+  getAppVersion: (): Promise<string> => ipcRenderer.invoke('app-version:get'),
+  checkAppUpdate: (): Promise<AppUpdateInfo> => ipcRenderer.invoke('app-update:check'),
+  installAppUpdate: (): Promise<void> => ipcRenderer.invoke('app-update:install'),
   getState: () => {
     if (!stateRequest) {
       stateRequest = ipcRenderer.invoke('state:get').finally(() => { stateRequest = null; });

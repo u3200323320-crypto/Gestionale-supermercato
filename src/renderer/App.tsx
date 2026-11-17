@@ -3,7 +3,7 @@ import type { FormEvent, InputHTMLAttributes, ReactNode } from 'react';
 import { PageServicesProvider, usePageServices } from '../pages/page-services';
 import { OpeningHoursPicker, SalesTable, SiteDetailsDrawer, SiteStockStatistics } from '../pages/site-components';
 import { createPortal } from 'react-dom';
-import { Apple, Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Beef, Bell, CalendarDays, Camera, Carrot, Check, ChevronDown, CircleAlert, ClipboardList, Clock, Cookie, CreditCard, CupSoda, Eye, Fish, FolderOpen, House, LockKeyhole, Mail, MapPin, Menu, Milk, Minus, Package, Pencil, Phone, Plus, Printer, RefreshCw, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Snowflake, SprayCan, Store, Trash2, TrendingUp, Truck, UserRound, Users, Video, X } from 'lucide-react';
+import { Apple, Archive, ArrowDownToLine, ArrowLeft, BarChart3, Banknote, Barcode, Beef, Bell, CalendarDays, Camera, Carrot, Check, ChevronDown, CircleAlert, ClipboardList, Clock, Cookie, CreditCard, CupSoda, Eye, Fish, FolderOpen, House, Info, LockKeyhole, Mail, MapPin, Menu, Milk, Minus, Package, Pencil, Phone, Plus, Printer, RefreshCw, Search, Settings, Share2, ShieldCheck, ShoppingBasket, ShoppingCart, Snowflake, SprayCan, Store, Trash2, TrendingUp, Truck, UserRound, Users, Video, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { jsPDF } from 'jspdf';
 import autoTable, { Table as AutoTableTable } from 'jspdf-autotable';
@@ -14,7 +14,7 @@ import supermarketBackgroundUrl from '../animazione/supermarket-bg.html?url';
 import { calculatePromotionDiscounts } from '../shared/promotions';
 import { voucherCodePrefix } from '../shared/vouchers';
 import homeBanner from './home-banner.svg';
-import type { AppDataBackup, AppState, AuthenticatedEmployee, Employee, EmployeeInput, Expense, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, RolePermission, RolePermissionMap, Sale, SaleItem, Section, Site, SiteInput, SiteStock, StockMovement, Supplier, SupplierInput, SupplierOrder, SupplierOrderInput } from '../shared/types';
+import type { AppDataBackup, AppState, AppUpdateInfo, AuthenticatedEmployee, Employee, EmployeeInput, Expense, Printer as PrinterDevice, Product, ProductInput, ProductUnit, Promotion, PromotionInput, RolePermission, RolePermissionMap, Sale, SaleItem, Section, Site, SiteInput, SiteStock, StockMovement, Supplier, SupplierInput, SupplierOrder, SupplierOrderInput } from '../shared/types';
 
 const HomePage = lazy(() => import('../pages/home-page').then(({ HomePage: Page }) => ({ default: Page })));
 const SalesPage = lazy(() => import('../pages/sales-page').then(({ SalesPage: Page }) => ({ default: Page })));
@@ -247,6 +247,15 @@ const arabicUiTranslations: Record<string, string> = {
   'Configura un PIN da 4 a 8 cifre come alternativa al barcode.': 'قم بإعداد رمز PIN من 4 إلى 8 أرقام كبديل للرمز الشريطي.',
   'All’avvio viene richiesto il barcode di un dipendente; puoi mantenere il PIN come alternativa.': 'يُطلب عند التشغيل الرمز الشريطي للموظف؛ ويمكنك الاحتفاظ برمز PIN كبديل.',
   'Operativo': 'يعمل', 'Operatività': 'العمليات', 'Stato operativo': 'حالة التشغيل', 'Stato corrente del gestionale.': 'الحالة الحالية للنظام.',
+  'Versione attuale': 'الإصدار الحالي', 'Versione installata': 'الإصدار المثبت', 'Controlla aggiornamenti': 'التحقق من وجود تحديثات',
+  'Aggiornamenti': 'التحديثات',
+  'Controllo aggiornamenti…': 'جارٍ التحقق من التحديثات…', 'Aggiorna': 'تحديث',
+  'Conferma aggiornamento': 'تأكيد التحديث', 'Conferma e aggiorna': 'تأكيد وتحديث',
+  'Verifica e installa le nuove versioni pubblicate per il gestionale.': 'تحقق من الإصدارات الجديدة المنشورة للنظام وثبّتها.',
+  'Questa è l’ultima versione disponibile.': 'هذا هو أحدث إصدار متاح.',
+  'Controlla se è disponibile una nuova build.': 'تحقق مما إذا كان هناك إصدار جديد متاح.',
+  'L’aggiornamento automatico è disponibile solo nell’app Windows installata.': 'التحديث التلقائي متاح فقط في تطبيق Windows المثبت.',
+  'Aggiornamento in download e installazione…': 'جارٍ تنزيل التحديث وتثبيته…',
   'Database SQLite': 'قاعدة بيانات SQLite', 'Archivio locale': 'الأرشيف المحلي', 'Archivio locale attivo': 'الأرشيف المحلي نشط',
   'Database SQLite e copie giornaliere dei dati.': 'قاعدة بيانات SQLite ونسخ يومية من البيانات.', 'Scegli cartella': 'اختيار مجلد',
   'Cartella esportazioni giornaliere': 'مجلد التصدير اليومي', 'Ogni giorno a mezzanotte vengono aggiornati file TXT e PDF nelle cartelle Magazzino, Cassa, Vendite e Statistiche.': 'يتم تحديث ملفات TXT وPDF يوميًا عند منتصف الليل في مجلدات المخزن ونقطة البيع والمبيعات والإحصاءات.',
@@ -655,12 +664,13 @@ const settingsFeaturePermissions: Array<{ permission: RolePermission; label: str
   { permission: 'settings-archive', label: 'Archivio dati' },
   { permission: 'settings-data-management', label: 'Gestione dati app' },
   { permission: 'settings-operational', label: 'Operativo' },
+  { permission: 'settings-version', label: 'Versione attuale' },
 ];
 const settingsDevicePermissions = settingsFeaturePermissions.filter(({ permission }) =>
   ['settings-device-barcode', 'settings-device-printer', 'settings-device-receipt'].includes(permission));
 const legacySettingsFeaturePermissions = new Set<RolePermission>([
   'settings-devices', 'settings-device-barcode', 'settings-device-printer',
-  'settings-device-receipt', 'settings-operational',
+  'settings-device-receipt', 'settings-operational', 'settings-version',
 ]);
 function legacySettingsPermissionsForRole(role: string): Set<RolePermission> {
   return new Set([...legacySettingsFeaturePermissions, ...(isCashierRole(role) ? ['settings-archive' as const] : [])]);
@@ -669,6 +679,7 @@ const permissionSectionSet = new Set<RolePermission>([
   ...permissionPages.map(({ section }) => section),
   'sales-report', 'sales-csv', 'sales-tools-configured',
   ...inventoryFeaturePermissions.map(({ permission }) => permission), 'inventory-tools-configured',
+  ...settingsFeaturePermissions.map(({ permission }) => permission), 'settings-tools-configured',
 ]);
 function parseRolePermissions(value = '{}'): RolePermissionMap {
   try {
@@ -1096,6 +1107,12 @@ export default function App() {
   const [unsoldSite, setUnsoldSite] = useState('Tutto');
   const [unsoldListOpen, setUnsoldListOpen] = useState(false);
   const [settingsTab, setSettingsTabValue] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState(window.gestionale.isDemo ? 'Anteprima web' : '');
+  const [appUpdateInfo, setAppUpdateInfo] = useState<AppUpdateInfo | null>(null);
+  const [appUpdateChecking, setAppUpdateChecking] = useState(false);
+  const [appUpdateInstalling, setAppUpdateInstalling] = useState(false);
+  const [appUpdateConfirmOpen, setAppUpdateConfirmOpen] = useState(false);
+  const [appUpdateError, setAppUpdateError] = useState('');
   const [dataImporting, setDataImporting] = useState(false);
   const dataImportFileRef = useRef<HTMLInputElement>(null);
   const [permissionsRole, setPermissionsRole] = useState('');
@@ -1519,6 +1536,29 @@ export default function App() {
         : currentData);
     } catch (error) {
       notify(`Impossibile salvare i permessi: ${errorText(error)}`);
+    }
+  };
+  const checkAppUpdates = async () => {
+    setAppUpdateChecking(true);
+    setAppUpdateError('');
+    try {
+      const updateInfo = await window.gestionale.checkAppUpdate();
+      setAppVersion(updateInfo.currentVersion);
+      setAppUpdateInfo(updateInfo);
+    } catch (error) {
+      setAppUpdateError(errorText(error));
+    } finally {
+      setAppUpdateChecking(false);
+    }
+  };
+  const installAppUpdate = async () => {
+    setAppUpdateInstalling(true);
+    setAppUpdateError('');
+    try {
+      await window.gestionale.installAppUpdate();
+    } catch (error) {
+      setAppUpdateError(errorText(error));
+      setAppUpdateInstalling(false);
     }
   };
   const trackActivity = (sectionName: string, action: string, detail = '', barcode = currentUser?.barcode) => {
@@ -2072,6 +2112,15 @@ export default function App() {
       setDeviceTabValue(null);
     }
   }, [activeRole, deviceTab, isOwner, rolePermissions, section, settingsTab]);
+  useEffect(() => {
+    if (window.gestionale.isDemo) return;
+    void window.gestionale.getAppVersion()
+      .then(setAppVersion)
+      .catch((error: unknown) => setAppUpdateError(errorText(error)));
+  }, []);
+  useEffect(() => {
+    if (settingsTab === 'Versione attuale' && !window.gestionale.isDemo) void checkAppUpdates();
+  }, [settingsTab]);
   useEffect(() => {
     if (settingsTab === 'Homepage' && data) setHomepageMediaDraft(null);
   }, [settingsTab]);
@@ -4813,7 +4862,7 @@ export default function App() {
 
       {section === 'settings' && <div className="page-content settings-page"><div className="settings-layout">
         {settingsTab === null ? <nav className="settings-nav">
-          {[{ name: 'Info Negozio', icon: Store }, { name: 'Sede principale', icon: Package }, { name: 'Homepage', icon: House }, { name: 'Dispositivi', icon: Barcode }, { name: 'Permessi di accesso', icon: ShieldCheck }, { name: 'Archivio dati', icon: Archive }, { name: 'Gestione dati app', icon: Archive }, { name: 'Operativo', icon: Check }]
+          {[{ name: 'Info Negozio', icon: Store }, { name: 'Sede principale', icon: Package }, { name: 'Homepage', icon: House }, { name: 'Dispositivi', icon: Barcode }, { name: 'Permessi di accesso', icon: ShieldCheck }, { name: 'Archivio dati', icon: Archive }, { name: 'Gestione dati app', icon: Archive }, { name: 'Operativo', icon: Check }, { name: 'Versione attuale', icon: Info }]
             .filter(({ name }) => canAccessSettingsPage(name))
             .map(({ name, icon: Icon }) => <button key={name} onClick={() => {
               setDeviceTab(null);
@@ -4838,6 +4887,49 @@ export default function App() {
         {settingsTab === 'Permessi di accesso' && isOwner && <AccessPermissionsPanel roles={permissionRoles} role={permissionsRole} permissions={rolePermissions} onRoleChange={setPermissionsRole} onPermissionChange={(role, page, enabled) => void updateRolePermission(role, page, enabled)} />}
         {settingsTab === 'Gestione dati app' && isOwner && <><div className="settings-title"><h2>Gestione dati app</h2><p>{window.gestionale.isDemo ? 'Nell’anteprima web puoi salvare e importare solo i dati dimostrativi memorizzati in questo browser.' : 'Esporta o importa l’archivio completo del gestionale. In importazione i dati già presenti vengono riconosciuti per evitare duplicati.'}</p></div><div className="data-management-warning"><ShieldCheck size={18} /><span>{window.gestionale.isDemo ? 'Il backup dell’anteprima web non contiene i dati dell’app desktop e non è compatibile con essa.' : 'Il file contiene dati personali e informazioni operative. Conservalo in un luogo sicuro.'}</span></div><div className="data-management-actions"><button className="button button-outline" type="button" onClick={() => void exportApplicationData()}><ArrowDownToLine size={16} /> {window.gestionale.isDemo ? 'Esporta dati demo' : 'Esporta dati'}</button><button className="button button-primary" type="button" disabled={dataImporting} onClick={() => dataImportFileRef.current?.click()}><FolderOpen size={16} /> {dataImporting ? 'Analisi e importazione…' : window.gestionale.isDemo ? 'Importa dati demo' : 'Importa dati'}</button><input ref={dataImportFileRef} type="file" accept=".json,application/json" hidden onChange={(event) => { void importApplicationData(event.currentTarget.files?.[0]); }} /></div></>}
         {settingsTab === 'Operativo' && <><div className="settings-title"><h2>Stato operativo</h2><p>Stato corrente del gestionale.</p></div><div className="connection-status settings-connection"><span className="status-dot" />Operativo</div></>}
+        {settingsTab === 'Versione attuale' && <>
+          <div className="settings-title"><h2>Versione attuale</h2><p>Verifica e installa le nuove versioni pubblicate per il gestionale.</p></div>
+          <div className="app-version-current"><span>Versione installata</span><strong>{appVersion || '…'}</strong></div>
+          <section className="panel app-update-panel" aria-live="polite">
+            <div className="panel-heading"><div><h3>Aggiornamenti</h3></div></div>
+            <p className={appUpdateError ? 'app-update-error' : 'app-update-status'}>
+              {appUpdateError
+                ? appUpdateError
+                : window.gestionale.isDemo
+                  ? 'L’aggiornamento automatico è disponibile solo nell’app Windows installata.'
+                  : appUpdateChecking
+                    ? 'Controllo aggiornamenti…'
+                    : appUpdateInstalling
+                      ? 'Aggiornamento in download e installazione…'
+                    : appUpdateInfo?.updateAvailable
+                      ? `${language === 'ar' ? 'يتوفر إصدار جديد:' : 'È disponibile la versione'} ${appUpdateInfo.latestVersion}`
+                      : appUpdateInfo
+                        ? 'Questa è l’ultima versione disponibile.'
+                        : 'Controlla se è disponibile una nuova build.'}
+            </p>
+            {appUpdateInfo?.updateAvailable && !appUpdateInfo.canInstall && <p className="app-update-hint">L’aggiornamento automatico è disponibile solo nell’app Windows installata.</p>}
+            <div className="app-update-actions">
+              {!window.gestionale.isDemo && <button className="button button-outline" type="button" disabled={appUpdateChecking || appUpdateInstalling} onClick={() => void checkAppUpdates()}>
+                <RefreshCw size={15} />{appUpdateChecking ? 'Controllo aggiornamenti…' : 'Controlla aggiornamenti'}
+              </button>}
+              {appUpdateInfo?.updateAvailable && appUpdateInfo.canInstall && <button className="button button-primary" type="button" disabled={appUpdateInstalling} onClick={() => setAppUpdateConfirmOpen(true)}>
+                <ArrowDownToLine size={15} />{appUpdateInstalling ? 'Aggiornamento in download e installazione…' : 'Aggiorna'}
+              </button>}
+            </div>
+          </section>
+          {appUpdateConfirmOpen && <Modal title="Conferma aggiornamento" close={() => setAppUpdateConfirmOpen(false)}>
+            <p>{language === 'ar'
+              ? `يتوفر الإصدار ${appUpdateInfo?.latestVersion}. هل تريد تنزيله وتثبيته الآن؟ سيتم إغلاق التطبيق أثناء التحديث.`
+              : `È disponibile la versione ${appUpdateInfo?.latestVersion}. Vuoi scaricarla e installarla ora? L’app verrà chiusa durante l’aggiornamento.`}</p>
+            <div className="form-actions">
+              <button className="button button-outline" type="button" onClick={() => setAppUpdateConfirmOpen(false)}>Annulla</button>
+              <button className="button button-primary" type="button" onClick={() => {
+                setAppUpdateConfirmOpen(false);
+                void installAppUpdate();
+              }}><Check size={16} />Conferma e aggiorna</button>
+            </div>
+          </Modal>}
+        </>}
       </section>}</div></div>}
       {section === 'supplier-list' && canAccess('supplier-list') && <SupplierListPage suppliers={data.suppliers} orders={data.supplierOrders} notify={notify} onSave={async (supplier) => { await window.gestionale.saveSupplier(supplier); await refresh(); notify('Fornitore salvato.'); }} />}
       {section === 'supplier-order' && canAccess('supplier-order') && <SupplierOrderPage suppliers={data.suppliers} products={data.products} sites={warehouseSites} orders={data.supplierOrders} notify={notify} onSave={async (order) => { await window.gestionale.application.execute({ type: 'supplier-order.save', input: order }); await refresh(); notify('Ordine registrato.'); }} onReceive={async (orderId, itemId, barcode) => { await window.gestionale.application.execute({ type: 'supplier-order.receive', orderId, itemId, employeeBarcode: barcode }); await refresh(); notify(itemId === null ? 'Ricevimento dell’ordine confermato.' : 'Ricevimento dell’articolo confermato.'); }} onItemUpdate={async (orderId, itemId, quantity, unitCost, barcode) => { await window.gestionale.application.execute({ type: 'supplier-order.update-item', orderId, itemId, quantity, unitCost, employeeBarcode: barcode }); await refresh(); notify('Articolo dell’ordine modificato.'); }} onItemDelete={async (orderId, itemId, barcode) => { await window.gestionale.application.execute({ type: 'supplier-order.delete-item', orderId, itemId, employeeBarcode: barcode }); await refresh(); notify('Articolo dell’ordine eliminato.'); }} />}
@@ -4846,10 +4938,11 @@ export default function App() {
     {permissionsAuthorizationOpen && isOwner && <Modal title="Verifica barcode Proprietario" close={() => { setPermissionsAuthorizationOpen(false); setPermissionsAuthorizationBarcode(''); }}><form className="site-authorization" onSubmit={(event) => void confirmPermissionsAuthorization(event)}><p>{localizedText(`Scansiona o inserisci il barcode del Proprietario per aprire ${protectedSettingsTarget === 'Gestione dati app' ? 'la gestione dati app' : 'i permessi di accesso'}.`, language)}</p><Field label="Barcode del Proprietario" value={permissionsAuthorizationBarcode} onChange={(event) => setPermissionsAuthorizationBarcode(event.target.value.trim())} autoFocus required /><div className="form-actions"><button className="button button-outline" type="button" onClick={() => { setPermissionsAuthorizationOpen(false); setPermissionsAuthorizationBarcode(''); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Verifica barcode</button></div></form></Modal>}
 
     {section === 'cash' && isOwner && !ownerCashSiteId && <div className="cash-site-prompt-backdrop"><section className="panel cash-site-prompt" role="dialog" aria-modal="true" aria-labelledby="cash-site-prompt-title"><div className="security-icon"><ShoppingBasket size={20} /></div><h2 id="cash-site-prompt-title">Quale cassa vuoi aprire?</h2><div className="cash-site-options" role="group" aria-label="Seleziona la sede">{cashSites.map((site) => <button className={`cash-site-option${ownerCashSiteDraft === String(site.id) ? ' selected' : ''}`} key={site.id} type="button" aria-pressed={ownerCashSiteDraft === String(site.id)} onClick={() => setOwnerCashSiteDraft(String(site.id))}><Store size={17} /><span>{site.name}</span></button>)}</div><div className="cash-site-actions"><button className="button button-primary full-width" type="button" disabled={!ownerCashSiteDraft} onClick={() => { setOwnerCashSiteId(ownerCashSiteDraft); setScannerSearch(''); }}>Apri cassa</button><button className="button button-outline full-width" type="button" onClick={() => { setOwnerCashSiteDraft(''); navigateTo('home'); }}>Annulla</button></div>{!cashSites.length && <p className="help-copy">Registra prima una sede per aprire la cassa.</p>}</section></div>}
-    {section === 'settings' && isCashierRole(activeRole) && settingsTab === null && ['Dispositivi', 'Archivio dati', 'Operativo'].some(canAccessSettingsPage) && <div className="cashier-settings-backdrop"><nav className="settings-nav cashier-settings-nav" aria-label="Impostazioni">
+    {section === 'settings' && isCashierRole(activeRole) && settingsTab === null && ['Dispositivi', 'Archivio dati', 'Operativo', 'Versione attuale'].some(canAccessSettingsPage) && <div className="cashier-settings-backdrop"><nav className="settings-nav cashier-settings-nav" aria-label="Impostazioni">
       {canAccessSettingsPage('Dispositivi') && <button type="button" onClick={() => { setSettingsTab('Dispositivi'); setDeviceTab(null); }}><Barcode size={17} />Dispositivi</button>}
       {canAccessSettingsPage('Archivio dati') && <button type="button" onClick={() => setSettingsTab('Archivio dati')}><Archive size={17} />Archivio dati</button>}
       {canAccessSettingsPage('Operativo') && <button type="button" onClick={() => setSettingsTab('Operativo')}><Check size={17} />Operatività</button>}
+      {canAccessSettingsPage('Versione attuale') && <button type="button" onClick={() => setSettingsTab('Versione attuale')}><Info size={17} />Versione attuale</button>}
     </nav></div>}
     {unsoldListOpen && <Modal title="Articoli ancora in magazzino" close={() => setUnsoldListOpen(false)} wide><details className="statistics-period-dropdown unsold-site-dropdown" onToggle={(event) => { if (event.currentTarget.open) document.querySelectorAll<HTMLDetailsElement>('.statistics-period-dropdown[open]').forEach((dropdown) => { if (dropdown !== event.currentTarget) dropdown.open = false; }); }}><summary className="select-wrap"><span>Sede: {unsoldSite === 'Tutto' ? 'Tutto' : storeSites.find((site) => String(site.id) === unsoldSite)?.name ?? 'Tutto'}</span><ChevronDown size={14} /></summary><div className="statistics-period-options" role="group" aria-label="Filtra articoli per sede">{['Tutto', ...storeSites.map((site) => String(site.id))].map((siteId) => { const name = siteId === 'Tutto' ? 'Tutto' : storeSites.find((site) => String(site.id) === siteId)?.name ?? ''; return <button key={siteId} className={`status-filter${unsoldSite === siteId ? ' active' : ''}`} aria-pressed={unsoldSite === siteId} onClick={(event) => { setUnsoldSite(siteId); event.currentTarget.closest('details')?.removeAttribute('open'); }}>{name}</button>; })}</div></details><div id="unsold-list-print"><Table headings={['Articolo', 'Categoria', 'Quantità non venduta', 'Prezzo vendita']}><>{unsoldListProducts.map((product) => <tr key={product.id}><td className="cell-primary">{product.name}</td><td>{product.category}</td><td>{product.stock} {product.unit ?? 'PEZZO'}</td><td>{money.format(product.sale_price)}</td></tr>)}</>{!unsoldListProducts.length && <tr><td colSpan={4} className="empty-cell">Non risultano articoli rimanenti in magazzino.</td></tr>}</Table></div><div className="unsold-list-actions no-print"><button className="button button-outline" onClick={() => window.print()}><Printer size={16} /> Stampa</button><button className="button button-primary" onClick={() => void shareUnsoldList()}><Share2 size={16} /> Condividi</button></div></Modal>}
     {reportExportOpen && <Modal title={reportExportType.startsWith('sales') ? 'Esporta report vendite' : 'Esporta report contabilità e finanza'} close={() => setReportExportOpen(false)}><div className="report-export-options"><p>Vuoi applicare al report il filtro temporale selezionato ({reportExportType.startsWith('sales') ? salesPeriod : balancePeriod}) o includere tutto il periodo disponibile?</p><button className="button button-primary" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(true); else if (reportExportType === 'sales-xlsx') void exportSalesXlsx(true); else void downloadFinancialBalance(true); }}><Check size={15} /> Rispetta il filtro di tempo</button><button className="button button-outline" onClick={() => { setReportExportOpen(false); if (reportExportType === 'sales-pdf') exportReport(false); else if (reportExportType === 'sales-xlsx') void exportSalesXlsx(false); else void downloadFinancialBalance(false); }}><ArrowDownToLine size={15} /> Esporta tutto</button></div></Modal>}

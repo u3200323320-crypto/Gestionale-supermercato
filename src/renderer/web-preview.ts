@@ -1,5 +1,6 @@
 import type {
   ApplicationCommand,
+  AppUpdateInfo,
   AppDataBackup,
   AppState,
   AuthenticatedEmployee,
@@ -619,6 +620,13 @@ function installWebPreview(): void {
   };
   const api: Window['gestionale'] = {
     isDemo: true,
+    getAppVersion: async () => 'Anteprima web',
+    checkAppUpdate: async (): Promise<AppUpdateInfo> => {
+      throw new Error('La verifica degli aggiornamenti non è disponibile nell’anteprima web.');
+    },
+    installAppUpdate: async () => {
+      throw new Error('L’aggiornamento è disponibile solo nell’app desktop installata.');
+    },
     getState: async () => structuredClone(state),
     getEmployeeActivities: async () => structuredClone(state.employeeActivities),
     getHomepageVideo: async () => state.settings.home_video ?? '',

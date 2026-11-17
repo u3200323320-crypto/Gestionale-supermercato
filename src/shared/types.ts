@@ -3,9 +3,18 @@ export type RolePermission = Section | 'sales-report' | 'sales-csv' | 'sales-too
   | 'inventory-csv' | 'inventory-report' | 'inventory-add' | 'inventory-edit' | 'inventory-quantity' | 'inventory-tools-configured'
   | 'settings-shop' | 'settings-main-site' | 'settings-homepage' | 'settings-devices'
   | 'settings-device-barcode' | 'settings-device-printer' | 'settings-device-receipt'
-  | 'settings-access' | 'settings-archive' | 'settings-data-management' | 'settings-operational'
+  | 'settings-access' | 'settings-archive' | 'settings-data-management' | 'settings-operational' | 'settings-version'
   | 'settings-tools-configured';
 export type RolePermissionMap = Partial<Record<string, RolePermission[]>>;
+export interface AppUpdateInfo {
+  currentVersion: string;
+  latestVersion: string;
+  updateAvailable: boolean;
+  releaseUrl: string;
+  publishedAt: string | null;
+  installerSize: number;
+  canInstall: boolean;
+}
 export type ProductUnit = 'KG' | 'LITRO' | 'PEZZO';
 export type Printer = { name: string; displayName: string };
 export interface Site { id: number; name: string; site_role: string; address: string; phone: string; email: string; tax_id: string; manager_name: string; working_days: string; opening_hours: string; notes: string; site_type: 'store' | 'warehouse'; recognition_code: string; created_at: string }
@@ -301,6 +310,9 @@ declare global {
   interface Window {
   gestionale: {
     isDemo: boolean;
+    getAppVersion: () => Promise<string>;
+    checkAppUpdate: () => Promise<AppUpdateInfo>;
+    installAppUpdate: () => Promise<void>;
     getState: () => Promise<AppState>;
     getEmployeeActivities: () => Promise<EmployeeActivity[]>;
     getHomepageVideo: () => Promise<string>;
