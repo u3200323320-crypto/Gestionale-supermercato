@@ -1,6 +1,6 @@
 {
   "name": "gestionale-supermercato",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Gestionale desktop per supermercati",
   "main": "./out/main/index.js",
