@@ -153,7 +153,7 @@ async function downloadAndLaunchAppUpdate(release: LatestAppRelease): Promise<vo
     if (checksum.digest('hex') !== release.installerDigest) {
       throw new Error('Il checksum dell’installer non corrisponde. L’aggiornamento è stato annullato.');
     }
-    const installerProcess = spawn(installerPath, ['/S'], { detached: true, stdio: 'ignore' });
+    const installerProcess = spawn(installerPath, [], { detached: true, stdio: 'ignore' });
     await once(installerProcess, 'spawn');
     installerProcess.unref();
     setTimeout(() => app.quit(), 750).unref();
