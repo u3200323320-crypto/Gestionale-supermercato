@@ -234,7 +234,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .inventory-history-actions > .statistics-period-dropdown:first-child { flex: 0 0 132px; }
 .inventory-history-actions > .button { flex: 0 0 auto; }
 .inventory-history-actions > .search-field { min-width: 220px; }
-#inventory-history-print table thead th { height: 55px; color: #000; font-size: 15px; font-weight: 700; text-transform: uppercase; }
+#inventory-history-print table thead th { height: 54px; color: #000; font-size: 15px; font-weight: 700; text-transform: uppercase; }
 #inventory-history-print table tbody td:not(:nth-child(3)) { color: #37433a; font-size: 11px; }
 .toolbar-actions { display: flex; align-items: center; gap: 8px; }
 .inventory-toolbar .button, .filter-row .select-wrap { width: 180px; flex: 0 0 180px; }
@@ -899,7 +899,6 @@ html[dir='rtl'] .stats-metrics > .metric-card:last-child .metric-action { flex: 
 #employee-tracker-print table tbody tr:nth-child(odd) { background-color: #eaf3ff; }
 #employee-tracker-print table tbody tr:nth-child(even) { background-color: #fff; }
 #sales-list-table thead th { background: #1685dc; color: #fff !important; }
-#sales-list-table thead tr { height: 55px; }
 #sales-list-table th, #sales-list-table td { text-align: start; }
 #sales-list-table tbody tr:nth-child(odd) { background-color: #eaf3ff; }
 #sales-list-table tbody tr:nth-child(even) { background-color: #fff; }
@@ -932,8 +931,7 @@ html[dir='rtl'] .stats-metrics > .metric-card:last-child .metric-action { flex: 
 .payment-promotion-always-visible > strong { display: block; margin-bottom: 8px; color: #536b58; font-size: 11px; }
 .employee-tracker-actions { flex-wrap: wrap; }
 #employee-tracker-print table { min-width: 100%; font-size: 12px; }
-#employee-tracker-print thead tr { height: 55px; }
-#employee-tracker-print th { height: 55px; color: #000; font-size: 14px; font-weight: 700; }
+#employee-tracker-print th { height: 48px; color: #000; font-size: 14px; font-weight: 700; }
 #employee-tracker-print td { font-size: 12px; }
 
 body { color: var(--ink); }
