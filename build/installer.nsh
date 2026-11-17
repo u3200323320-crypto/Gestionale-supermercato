@@ -7,14 +7,9 @@ Var StartupCheckbox
 Var StartupSelected
 
 !macro customPageAfterChangeDir
-  Page custom TaskbarPinPageCreate TaskbarPinPageLeave TaskbarPinPagePre
+  !insertmacro skipPageIfUpdated
+  Page custom TaskbarPinPageCreate TaskbarPinPageLeave
 !macroend
-
-Function TaskbarPinPagePre
-  ${if} ${isUpdated}
-    Abort
-  ${endif}
-FunctionEnd
 
 Function TaskbarPinPageCreate
   nsDialogs::Create 1018
