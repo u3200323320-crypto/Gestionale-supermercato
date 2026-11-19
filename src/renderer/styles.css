@@ -217,6 +217,8 @@ td { height: 41px; padding: 0 14px; border-bottom: 1px solid #eff1ee; color: #72
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:not(:has(.empty-cell)) { cursor: pointer; }
 tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
+.inventory-scope-page table thead th,
+#inventory-history-print table thead th { height: 55px; }
 .cell-primary { color: #37433a; font-weight: 600; }
 .mono, .receipt-number { font-family: 'DM Mono', 'Consolas', monospace; font-size: 10px; }
 .receipt-number { color: var(--green); font-weight: 700; }
@@ -234,7 +236,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .inventory-history-actions > .statistics-period-dropdown:first-child { flex: 0 0 132px; }
 .inventory-history-actions > .button { flex: 0 0 auto; }
 .inventory-history-actions > .search-field { min-width: 220px; }
-#inventory-history-print table thead th { height: 54px; color: #000; font-size: 15px; font-weight: 700; text-transform: uppercase; }
+#inventory-history-print table thead th { height: 55px; color: #000; font-size: 15px; font-weight: 700; text-transform: uppercase; }
 #inventory-history-print table tbody td:not(:nth-child(3)) { color: #37433a; font-size: 11px; }
 .toolbar-actions { display: flex; align-items: center; gap: 8px; }
 .inventory-toolbar .button, .filter-row .select-wrap { width: 180px; flex: 0 0 180px; }
@@ -890,6 +892,8 @@ html[dir='rtl'] .stats-metrics > .metric-card:last-child .metric-action { flex: 
 #employee-tracker-print table tbody tr:nth-child(odd) { background-color: #eaf3ff; }
 #employee-tracker-print table tbody tr:nth-child(even) { background-color: #fff; }
 #sales-list-table thead th { background: #1685dc; color: #fff !important; }
+#sales-list-table thead th { height: 55px; }
+#sales-list-table thead th { font-size: 15px; font-weight: 700; }
 #sales-list-table th, #sales-list-table td { text-align: start; }
 #sales-list-table tbody tr:nth-child(odd) { background-color: #eaf3ff; }
 #sales-list-table tbody tr:nth-child(even) { background-color: #fff; }
@@ -1072,6 +1076,8 @@ body { color: var(--ink); }
 .expense-actions { display: flex; grid-column: 1 / -1; gap: 9px; }
 .expense-actions .button { min-width: 0; min-height: 37px; flex: 1; }
 .product-sales-panel { margin-bottom: 16px; }
+.product-sales-panel .panel-heading { justify-content: center; text-align: center; }
+.product-sales-panel .panel-heading > div { width: 100%; }
 
 .theme-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-top: 18px; }
 .theme-option { display: flex; min-height: 56px; align-items: center; gap: 10px; padding: 0 13px; border: 1px solid var(--line); border-radius: 5px; background: white; color: var(--ink); cursor: pointer; font-size: 11px; text-align: left; }
@@ -1248,6 +1254,24 @@ body { color: var(--ink); }
 .balance-breakdown .detail-row:last-child { border-bottom: 0; }
 .balance-breakdown .detail-row:last-child strong { color: var(--green-dark); font-weight: 700; }
 .balance-monthly-panel { margin-top: 14px; }
+.balance-operating-expenses-panel table thead th,
+.balance-monthly-panel table thead th,
+.expense-list-table table thead th { height: 55px; background: #1685dc; color: #fff !important; }
+.balance-operating-expenses-panel table thead th,
+.balance-monthly-panel table thead th,
+.expense-list-table table thead th { font-size: 15px; font-weight: 700; }
+.balance-operating-expenses-panel table th,
+.balance-operating-expenses-panel table td,
+.balance-monthly-panel table th,
+.balance-monthly-panel table td { text-align: left; }
+.balance-operating-expenses-panel table th.align-right,
+.balance-operating-expenses-panel table td.align-right,
+.balance-monthly-panel table th.align-right,
+.balance-monthly-panel table td.align-right { text-align: left; }
+html[dir='rtl'] .balance-operating-expenses-panel table th,
+html[dir='rtl'] .balance-operating-expenses-panel table td,
+html[dir='rtl'] .balance-monthly-panel table th,
+html[dir='rtl'] .balance-monthly-panel table td { text-align: right; }
 .balance-pie-panel { margin-top: 14px; }
 .balance-operating-expenses-panel { margin-top: 14px; }
 .balance-operating-expenses-panel .table-wrap { margin-top: 12px; }
