@@ -1425,8 +1425,8 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     const fromSite = database.prepare('SELECT name, site_role FROM sites WHERE id = ?').get(movement.fromSiteId) as { name: string; site_role: string } | undefined;
     const toSite = database.prepare('SELECT name, site_role FROM sites WHERE id = ?').get(movement.toSiteId) as { name: string; site_role: string } | undefined;
     if (!fromSite || !toSite) throw new Error('Sede di partenza o di destinazione non trovata.');
-    if (fromSite.site_role !== 'Magazzino' || toSite.site_role !== 'Punto vendita') {
-      throw new Error('La distribuzione deve partire da una sede Magazzino ed essere destinata a un Punto vendita.');
+    if (toSite.site_role !== 'Punto vendita') {
+      throw new Error('La distribuzione deve essere destinata a un Punto vendita.');
     }
     const employee = database.prepare('SELECT id, first_name, last_name, role FROM employees WHERE barcode = ?')
       .get(movement.employee_barcode.trim()) as { id: number; first_name: string; last_name: string; role: string } | undefined;
@@ -1472,7 +1472,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
           .get(recipient.id) as typeof recipient;
         if (!currentFromSite || !currentToSite || !currentRecipient
           || currentFromSite.name !== fromSite.name || currentToSite.name !== toSite.name
-          || currentFromSite.site_role !== 'Magazzino' || currentToSite.site_role !== 'Punto vendita'
+          || currentFromSite.site_role !== fromSite.site_role || currentToSite.site_role !== 'Punto vendita'
           || `${currentRecipient.first_name} ${currentRecipient.last_name}`.trim() !== recipientName
           || (normalizedEmployeeRole(currentRecipient.role) !== 'proprietario' && currentRecipient.operational_site !== toSite.name)) {
           throw new Error('I dati della distribuzione sono cambiati. Riprova la conferma.');

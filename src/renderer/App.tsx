@@ -1377,10 +1377,10 @@ export default function App() {
     : String([...warehouseSites].sort((a, b) => a.id - b.id)[0]?.id ?? '');
   const availableStockSites = section === 'available-stock' ? retailSites : warehouseSites;
   useEffect(() => {
-    if (section === 'stock-distribution' && !distributionFromSiteId && warehouseSites.length) {
-      setDistributionFromSiteId(mainStockSiteId);
+    if (section === 'stock-distribution' && !distributionFromSiteId && storeSites.length) {
+      setDistributionFromSiteId(mainStockSiteId || String(storeSites[0].id));
     }
-  }, [distributionFromSiteId, mainStockSiteId, section, warehouseSites.length]);
+  }, [distributionFromSiteId, mainStockSiteId, section, storeSites]);
   const currencySymbol = new Intl.NumberFormat(language === 'ar' ? 'ar-EG-u-nu-latn' : 'it-IT', {
     style: 'currency',
     currency: data?.settings.currency ?? 'EUR',
@@ -4629,7 +4629,7 @@ export default function App() {
       {section === 'stock-distribution' && <div className="page-content accounting-page">
         <div className="distribution-layout">
           <form className="panel distribution-form" onSubmit={(event) => { event.preventDefault(); addDistributionItem(); }}>
-            <SelectField label="Sede di partenza" value={distributionFromSiteId} onChange={(value) => { setDistributionFromSiteId(value); setDistributionOrder([]); setDistributionProductId(''); setDistributionProductSearch(''); setDistributionQuantity(''); }} options={['', ...warehouseSites.map((site) => String(site.id))]} labels={['Seleziona sede', ...warehouseSites.map((site) => site.name)]} />
+            <SelectField label="Sede di partenza" value={distributionFromSiteId} onChange={(value) => { setDistributionFromSiteId(value); setDistributionOrder([]); setDistributionProductId(''); setDistributionProductSearch(''); setDistributionQuantity(''); }} options={['', ...storeSites.map((site) => String(site.id))]} labels={['Seleziona sede', ...storeSites.map((site) => site.name)]} />
             <SelectField label="Sede di destinazione" value={distributionToSiteId} onChange={(value) => { setDistributionToSiteId(value); setDistributionRecipientEmployeeId(''); }} options={['', ...retailSites.map((site) => String(site.id))]} labels={['Seleziona sede', ...retailSites.map((site) => site.name)]} />
             <Field label="Persona che invia" value={currentUser ? `${currentUser.first_name} ${currentUser.last_name}`.trim() : ''} readOnly />
             <SelectField label="Persona che riceverà la merce" value={distributionRecipientEmployeeId} onChange={setDistributionRecipientEmployeeId} options={['', ...distributionRecipients.map((employee) => String(employee.id))]} labels={['Seleziona persona', ...distributionRecipients.map((employee) => `${employee.first_name} ${employee.last_name}`)]} />
