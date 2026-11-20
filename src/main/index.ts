@@ -14,7 +14,7 @@ import { ApplicationEventBus } from './application-events';
 import { SupplierOrderRepository, type SupplierOrderMovementWriter } from './data/supplier-order-repository';
 import { exportAppData, mergeAppData } from './data/app-data-transfer';
 import { SupplierOrderService } from './supplier-order-service';
-import { deleteSite, migrateSites, saveSite } from './site-service';
+import { deleteSite, forceDeleteSite, migrateSites, saveSite } from './site-service';
 
 let database: Database.Database;
 let supplierOrderRepository: SupplierOrderRepository;
@@ -1425,8 +1425,8 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     const fromSite = database.prepare('SELECT name, site_role FROM sites WHERE id = ?').get(movement.fromSiteId) as { name: string; site_role: string } | undefined;
     const toSite = database.prepare('SELECT name, site_role FROM sites WHERE id = ?').get(movement.toSiteId) as { name: string; site_role: string } | undefined;
     if (!fromSite || !toSite) throw new Error('Sede di partenza o di destinazione non trovata.');
-    if (fromSite.site_role !== 'Magazzino' || toSite.site_role !== 'Punto vendita') {
-      throw new Error('La distribuzione deve partire da una sede Magazzino ed essere destinata a un Punto vendita.');
+    if (toSite.site_role !== 'Punto vendita') {
+      throw new Error('La distribuzione può partire da qualsiasi sede, ma deve essere destinata a un Punto vendita.');
     }
     const employee = database.prepare('SELECT id, first_name, last_name, role FROM employees WHERE barcode = ?')
       .get(movement.employee_barcode.trim()) as { id: number; first_name: string; last_name: string; role: string } | undefined;
@@ -1472,7 +1472,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
           .get(recipient.id) as typeof recipient;
         if (!currentFromSite || !currentToSite || !currentRecipient
           || currentFromSite.name !== fromSite.name || currentToSite.name !== toSite.name
-          || currentFromSite.site_role !== 'Magazzino' || currentToSite.site_role !== 'Punto vendita'
+          || currentToSite.site_role !== 'Punto vendita'
           || `${currentRecipient.first_name} ${currentRecipient.last_name}`.trim() !== recipientName
           || (normalizedEmployeeRole(currentRecipient.role) !== 'proprietario' && currentRecipient.operational_site !== toSite.name)) {
           throw new Error('I dati della distribuzione sono cambiati. Riprova la conferma.');
@@ -1896,12 +1896,41 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     if (!requester || normalizedEmployeeRole(requester.role) !== 'proprietario') throw new Error('Solo il Proprietario può gestire le sedi.');
     saveSite(database, input);
   });
+  ipcMain.handle('site:delete:confirm', async (event, siteId: number, requesterBarcode: string): Promise<'cancel' | 'delete' | 'force'> => {
+    const session = requireSession(event.sender.id, ['proprietario']);
+    if (session.barcode !== requesterBarcode?.trim()) throw new Error('La sessione non corrisponde al proprietario che gestisce le sedi.');
+    const requester = employeeForLogin(requesterBarcode);
+    if (!requester || normalizedEmployeeRole(requester.role) !== 'proprietario') throw new Error('Solo il Proprietario può gestire le sedi.');
+    if (!Number.isInteger(siteId) || siteId < 1) throw new Error('Sede non valida.');
+    const site = database.prepare('SELECT name FROM sites WHERE id = ?').get(siteId) as { name: string } | undefined;
+    if (!site) throw new Error('Sede non trovata.');
+    const confirmation = await dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      title: 'Elimina sede',
+      message: `Eliminare la sede "${site.name}"?`,
+      detail: 'Se la sede contiene dati associati, scegli “Elimina comunque” per rimuovere definitivamente la giacenza e la sede. Lo storico e i dipendenti saranno conservati.',
+      buttons: ['Annulla', 'Elimina comunque', 'Elimina sede'],
+      defaultId: 2,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (confirmation.response === 1) return 'force';
+    if (confirmation.response === 2) return 'delete';
+    return 'cancel';
+  });
   ipcMain.handle('site:delete', (event, siteId: number, requesterBarcode: string) => {
     const session = requireSession(event.sender.id, ['proprietario']);
     if (session.barcode !== requesterBarcode?.trim()) throw new Error('La sessione non corrisponde al proprietario che gestisce le sedi.');
     const requester = employeeForLogin(requesterBarcode);
     if (!requester || normalizedEmployeeRole(requester.role) !== 'proprietario') throw new Error('Solo il Proprietario può gestire le sedi.');
     deleteSite(database, siteId);
+  });
+  ipcMain.handle('site:delete-force', (event, siteId: number, requesterBarcode: string) => {
+    const session = requireSession(event.sender.id, ['proprietario']);
+    if (session.barcode !== requesterBarcode?.trim()) throw new Error('La sessione non corrisponde al proprietario che gestisce le sedi.');
+    const requester = employeeForLogin(requesterBarcode);
+    if (!requester || normalizedEmployeeRole(requester.role) !== 'proprietario') throw new Error('Solo il Proprietario può gestire le sedi.');
+    forceDeleteSite(database, siteId);
   });
   ipcMain.handle('site:setup', (_event, input: SiteInput) => {
     requireMainWindowSender(_event.sender.id);

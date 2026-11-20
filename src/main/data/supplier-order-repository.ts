@@ -23,8 +23,12 @@ export class SupplierOrderRepository {
   initialize(): void {
     const columns = this.database.prepare('PRAGMA table_info(supplier_orders)').all() as Array<{ name: string }>;
     if (!columns.some((column) => column.name === 'site_id')) this.database.exec('ALTER TABLE supplier_orders ADD COLUMN site_id INTEGER');
+    if (!columns.some((column) => column.name === 'site_name')) this.database.exec('ALTER TABLE supplier_orders ADD COLUMN site_name TEXT');
     if (!columns.some((column) => column.name === 'expected_arrival_date')) this.database.exec('ALTER TABLE supplier_orders ADD COLUMN expected_arrival_date TEXT');
     if (!columns.some((column) => column.name === 'received_at')) this.database.exec('ALTER TABLE supplier_orders ADD COLUMN received_at TEXT');
+    this.database.prepare(`UPDATE supplier_orders SET site_name = (
+      SELECT name FROM sites WHERE sites.id = supplier_orders.site_id
+    ) WHERE site_name IS NULL AND site_id IS NOT NULL`).run();
     const itemColumns = this.database.prepare('PRAGMA table_info(supplier_order_items)').all() as Array<{ name: string }>;
     if (!itemColumns.some((column) => column.name === 'received_at')) this.database.exec('ALTER TABLE supplier_order_items ADD COLUMN received_at TEXT');
     this.database.prepare(`UPDATE supplier_order_items
@@ -37,7 +41,7 @@ export class SupplierOrderRepository {
 
   all(): SupplierOrder[] {
     const orders = this.database.prepare(`SELECT orders.id, orders.supplier_id, suppliers.name AS supplier_name,
-        orders.site_id, sites.name AS site_name, orders.created_at, orders.expected_arrival_date,
+        orders.site_id, COALESCE(sites.name, orders.site_name) AS site_name, orders.created_at, orders.expected_arrival_date,
         orders.received_at, orders.notes
       FROM supplier_orders orders JOIN suppliers ON suppliers.id = orders.supplier_id
       LEFT JOIN sites ON sites.id = orders.site_id
@@ -74,8 +78,8 @@ export class SupplierOrderRepository {
     return this.database.transaction(() => {
       const receivedAt = input.received ? createdAt : null;
       const result = this.database.prepare(`INSERT INTO supplier_orders
-        (supplier_id, site_id, expected_arrival_date, received_at, created_at, notes)
-        VALUES (?, ?, ?, ?, ?, ?)`).run(supplierId, site.id, input.expected_arrival_date, receivedAt, createdAt, input.notes.trim());
+        (supplier_id, site_id, site_name, expected_arrival_date, received_at, created_at, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`).run(supplierId, site.id, site.name, input.expected_arrival_date, receivedAt, createdAt, input.notes.trim());
       const orderId = Number(result.lastInsertRowid);
       const insertItem = this.database.prepare(`INSERT INTO supplier_order_items
         (order_id, product_id, product_name, product_code, unit, quantity, unit_cost, received_at)

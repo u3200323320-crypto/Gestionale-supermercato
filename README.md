@@ -1,5 +1,7 @@
 # Gestionale-supermercato
 
+العربية: [README.ar.md](./README.ar.md)
+
 Gestione Supermercato è un'applicazione desktop Windows realizzata con Electron. Gestisce catalogo, cassa, scontrini, promozioni, statistiche e archivio locale.
 
 ## Avvio in sviluppo
