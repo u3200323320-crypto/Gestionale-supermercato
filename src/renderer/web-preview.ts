@@ -932,11 +932,6 @@ function installWebPreview(): void {
       persist();
     },
     setupSite: async (input) => api.saveSite(input, demoOwnerBarcode),
-    confirmSiteDeletion: async (id) => {
-      const site = state.sites.find((item) => item.id === id);
-      if (!site) throw new Error('Sede non trovata.');
-      return window.confirm(`Eliminare la sede "${site.name}"?`) ? 'delete' : 'cancel';
-    },
     deleteSite: async (id) => {
       const site = state.sites.find((item) => item.id === id);
       if (site) {
@@ -955,28 +950,6 @@ function installWebPreview(): void {
         if (dependencies.length) {
           throw new Error(`Impossibile eliminare la sede "${site.name}". Prima elimina o riassegna i dati associati: ${dependencies.map(([label, count]) => `${label} (${count})`).join(', ')}.`);
         }
-        state.supplierOrders.forEach((order) => {
-          if (order.site_id === id) order.site_id = null;
-        });
-        state.siteStocks = state.siteStocks.filter((stock) => stock.site_id !== id);
-        state.sites = state.sites.filter((item) => item.id !== id);
-        if (state.settings.main_site_id === String(id)) state.settings.main_site_id = String(fallback?.id ?? '');
-        state.products.forEach((product) => refreshProductStock(product.id));
-        persist();
-      }
-    },
-    forceDeleteSite: async (id) => {
-      const site = state.sites.find((item) => item.id === id);
-      if (site) {
-        state.employees.forEach((employee) => {
-          if (employee.operational_site === site.name) employee.operational_site = 'Non assegnata';
-        });
-        state.supplierOrders.forEach((order) => {
-          if (order.site_id === id) {
-            order.site_id = null;
-          }
-        });
-        const fallback = state.sites.filter((item) => item.id !== id).sort((a, b) => a.id - b.id)[0];
         state.siteStocks = state.siteStocks.filter((stock) => stock.site_id !== id);
         state.sites = state.sites.filter((item) => item.id !== id);
         if (state.settings.main_site_id === String(id)) state.settings.main_site_id = String(fallback?.id ?? '');

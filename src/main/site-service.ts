@@ -177,31 +177,16 @@ export function deleteSite(database: Database.Database, siteId: number): void {
   if (dependencies.length) {
     throw new Error(`Impossibile eliminare la sede "${site.name}". Prima elimina o riassegna i dati associati: ${dependencies.map(({ label, count }) => `${label} (${count})`).join(', ')}.`);
   }
-  database.transaction(() => removeSiteAndRefreshStock(database, siteId))();
-}
-
-export function forceDeleteSite(database: Database.Database, siteId: number): void {
-  if (!Number.isInteger(siteId) || siteId < 1) throw new Error('Sede non valida.');
-  const site = database.prepare('SELECT id, name FROM sites WHERE id = ?').get(siteId) as
-    { id: number; name: string } | undefined;
-  if (!site) throw new Error('Sede non trovata.');
-
   database.transaction(() => {
-    database.prepare("UPDATE employees SET operational_site = 'Non assegnata' WHERE operational_site = ?").run(site.name);
-    removeSiteAndRefreshStock(database, siteId);
+    database.prepare('DELETE FROM sites WHERE id = ?').run(siteId);
+    const configuredMainSite = (database.prepare("SELECT value FROM settings WHERE key = 'main_site_id'").get() as { value?: string } | undefined)?.value;
+    if (configuredMainSite === String(siteId)) {
+      const fallbackSite = database.prepare('SELECT id FROM sites ORDER BY id LIMIT 1').get() as { id: number } | undefined;
+      database.prepare(`INSERT INTO settings (key, value) VALUES ('main_site_id', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(fallbackSite ? String(fallbackSite.id) : '');
+    }
+    database.prepare(`UPDATE products SET stock = (
+      SELECT COALESCE(SUM(stock), 0) FROM site_inventory WHERE site_inventory.product_id = products.id
+    )`).run();
   })();
-}
-
-function removeSiteAndRefreshStock(database: Database.Database, siteId: number): void {
-  const configuredMainSite = (database.prepare("SELECT value FROM settings WHERE key = 'main_site_id'").get() as { value?: string } | undefined)?.value;
-  const fallbackSite = database.prepare('SELECT id FROM sites WHERE id != ? ORDER BY id LIMIT 1').get(siteId) as { id: number } | undefined;
-  database.prepare('UPDATE supplier_orders SET site_id = NULL WHERE site_id = ?').run(siteId);
-  database.prepare('DELETE FROM sites WHERE id = ?').run(siteId);
-  if (configuredMainSite === String(siteId)) {
-    database.prepare(`INSERT INTO settings (key, value) VALUES ('main_site_id', ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(fallbackSite ? String(fallbackSite.id) : '');
-  }
-  database.prepare(`UPDATE products SET stock = (
-    SELECT COALESCE(SUM(stock), 0) FROM site_inventory WHERE site_inventory.product_id = products.id
-  )`).run();
 }

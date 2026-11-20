@@ -1132,8 +1132,6 @@ export default function App() {
   const [loginBarcode, setLoginBarcode] = useState('');
   const loginBarcodeAttempt = useRef('');
   const [notice, setNotice] = useState('');
-  const [noticeAction, setNoticeAction] = useState<{ label: string; run: () => void } | null>(null);
-  const noticeTimeoutRef = useRef<number | null>(null);
   const [lowStockNotifications, setLowStockNotifications] = useState<LowStockNotification[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState<LowStockNotification | null>(null);
@@ -1190,8 +1188,6 @@ export default function App() {
   const [homepageMediaDraft, setHomepageMediaDraft] = useState<{ home_image: string; home_video: string } | null>(null);
   const [siteAuthorization, setSiteAuthorization] = useState<{ site: Site; action: 'edit' | 'delete' } | null>(null);
   const [siteAuthorizationBarcode, setSiteAuthorizationBarcode] = useState('');
-  const [siteForceDelete, setSiteForceDelete] = useState<Site | null>(null);
-  const [siteForceDeleteBarcode, setSiteForceDeleteBarcode] = useState('');
   const [siteSaveAuthorizationOpen, setSiteSaveAuthorizationOpen] = useState(false);
   const [siteSaveAuthorizationBarcode, setSiteSaveAuthorizationBarcode] = useState('');
   const [siteEditorBarcode, setSiteEditorBarcode] = useState('');
@@ -1274,21 +1270,7 @@ export default function App() {
     setStatisticsSite((current) => current === 'Tutte' || data.sites.some((site) => site.name === current) ? current : 'Tutte');
     setUnsoldSite((current) => current === 'Tutto' || data.sites.some((site) => String(site.id) === current) ? current : 'Tutto');
   }, [data]);
-  const notify = (text: string) => {
-    if (noticeTimeoutRef.current !== null) window.clearTimeout(noticeTimeoutRef.current);
-    setNoticeAction(null);
-    setNotice(text);
-    noticeTimeoutRef.current = window.setTimeout(() => {
-      setNotice('');
-      noticeTimeoutRef.current = null;
-    }, 3600);
-  };
-  const notifyWithAction = (text: string, label: string, run: () => void) => {
-    if (noticeTimeoutRef.current !== null) window.clearTimeout(noticeTimeoutRef.current);
-    noticeTimeoutRef.current = null;
-    setNotice(text);
-    setNoticeAction({ label, run });
-  };
+  const notify = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 3600); };
   useEffect(() => {
     if (!data) return;
     const currentLowStock = new Map<string, LowStockNotification>();
@@ -1394,14 +1376,11 @@ export default function App() {
     ? data?.settings.main_site_id ?? ''
     : String([...warehouseSites].sort((a, b) => a.id - b.id)[0]?.id ?? '');
   const availableStockSites = section === 'available-stock' ? retailSites : warehouseSites;
-  const distributionDefaultFromSiteId = storeSites.some((site) => String(site.id) === mainStockSiteId)
-    ? mainStockSiteId
-    : String(storeSites[0]?.id ?? '');
   useEffect(() => {
-    if (section === 'stock-distribution' && !distributionFromSiteId && distributionDefaultFromSiteId) {
-      setDistributionFromSiteId(distributionDefaultFromSiteId);
+    if (section === 'stock-distribution' && !distributionFromSiteId && warehouseSites.length) {
+      setDistributionFromSiteId(mainStockSiteId);
     }
-  }, [distributionDefaultFromSiteId, distributionFromSiteId, section]);
+  }, [distributionFromSiteId, mainStockSiteId, section, warehouseSites.length]);
   const currencySymbol = new Intl.NumberFormat(language === 'ar' ? 'ar-EG-u-nu-latn' : 'it-IT', {
     style: 'currency',
     currency: data?.settings.currency ?? 'EUR',
@@ -1780,13 +1759,7 @@ export default function App() {
         setSiteEditorBarcode(barcode);
         navigateTo('site-create');
       } else {
-        const decision = await window.gestionale.confirmSiteDeletion(siteAuthorization.site.id, barcode);
-        if (decision === 'delete') {
-          await deleteSite(siteAuthorization.site, barcode);
-        } else if (decision === 'force') {
-          setSiteForceDelete(siteAuthorization.site);
-          setSiteForceDeleteBarcode('');
-        }
+        await deleteSite(siteAuthorization.site, barcode);
       }
       setSiteAuthorization(null);
       setSiteAuthorizationBarcode('');
@@ -1811,41 +1784,13 @@ export default function App() {
     }
   };
   const deleteSite = async (site: Site, requesterBarcode: string) => {
+    if (!window.confirm(`Eliminare la sede "${site.name}"? L’eliminazione è possibile solo dopo aver eliminato o riassegnato tutti i dati associati. Nessun dato verrà cancellato automaticamente.`)) return;
     try {
       await window.gestionale.deleteSite(site.id, requesterBarcode);
       await refresh();
       setSelectedSiteDetails(null);
       notify('Sede eliminata.');
-    } catch (error) {
-      const message = errorText(error);
-      if (message.startsWith('Impossibile eliminare la sede "')) {
-        notifyWithAction(message, 'Elimina comunque', () => {
-          setSiteForceDelete(site);
-          setSiteForceDeleteBarcode('');
-        });
-      } else {
-        notify(message);
-      }
-    }
-  };
-  const confirmForceDeleteSite = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!siteForceDelete) return;
-    const barcode = siteForceDeleteBarcode.trim();
-    try {
-      if (!await window.gestionale.authorizeSiteAction(barcode)) {
-        notify('Barcode del Proprietario non riconosciuto.');
-        return;
-      }
-      await window.gestionale.forceDeleteSite(siteForceDelete.id, barcode);
-      await refresh();
-      setSelectedSiteDetails(null);
-      setSiteForceDelete(null);
-      setSiteForceDeleteBarcode('');
-      notify('Sede eliminata e giacenza rimossa. Storico e dipendenti sono stati conservati.');
-    } catch (error) {
-      notify(errorText(error));
-    }
+    } catch (error) { notify(errorText(error)); }
   };
   const deleteProduct = async (product: Product) => {
     if (!window.confirm(`Eliminare l'articolo "${product.name}"?`)) return;
@@ -4684,7 +4629,7 @@ export default function App() {
       {section === 'stock-distribution' && <div className="page-content accounting-page">
         <div className="distribution-layout">
           <form className="panel distribution-form" onSubmit={(event) => { event.preventDefault(); addDistributionItem(); }}>
-            <SelectField label="Sede di partenza" value={distributionFromSiteId} onChange={(value) => { setDistributionFromSiteId(value); setDistributionOrder([]); setDistributionProductId(''); setDistributionProductSearch(''); setDistributionQuantity(''); }} options={['', ...storeSites.map((site) => String(site.id))]} labels={['Seleziona sede', ...storeSites.map((site) => site.name)]} />
+            <SelectField label="Sede di partenza" value={distributionFromSiteId} onChange={(value) => { setDistributionFromSiteId(value); setDistributionOrder([]); setDistributionProductId(''); setDistributionProductSearch(''); setDistributionQuantity(''); }} options={['', ...warehouseSites.map((site) => String(site.id))]} labels={['Seleziona sede', ...warehouseSites.map((site) => site.name)]} />
             <SelectField label="Sede di destinazione" value={distributionToSiteId} onChange={(value) => { setDistributionToSiteId(value); setDistributionRecipientEmployeeId(''); }} options={['', ...retailSites.map((site) => String(site.id))]} labels={['Seleziona sede', ...retailSites.map((site) => site.name)]} />
             <Field label="Persona che invia" value={currentUser ? `${currentUser.first_name} ${currentUser.last_name}`.trim() : ''} readOnly />
             <SelectField label="Persona che riceverà la merce" value={distributionRecipientEmployeeId} onChange={setDistributionRecipientEmployeeId} options={['', ...distributionRecipients.map((employee) => String(employee.id))]} labels={['Seleziona persona', ...distributionRecipients.map((employee) => `${employee.first_name} ${employee.last_name}`)]} />
@@ -4951,7 +4896,6 @@ export default function App() {
       <button className="button button-outline full-width" type="button" onClick={() => { setCheckoutOpen(false); setCart([]); setManualPromotionId(undefined); setAutomaticPromotionId(undefined); setVoucherCode(''); setVoucherMessage(''); setVoucherDiscountPercentage(0); }}><X size={16} /> Annulla</button>
     </div></Modal>}
     {siteAuthorization && <Modal title={`${siteAuthorization.action === 'edit' ? 'Modifica sede' : 'Elimina sede'} · ${siteAuthorization.site.name}`} close={() => { setSiteAuthorization(null); setSiteAuthorizationBarcode(''); }}><form className="site-authorization" onSubmit={(event) => void confirmSiteAuthorization(event)}><p>Scansiona il barcode del Proprietario per {siteAuthorization.action === 'edit' ? 'modificare' : 'eliminare'} la sede.</p><Field label="Barcode del Proprietario" value={siteAuthorizationBarcode} onChange={(event) => setSiteAuthorizationBarcode(event.target.value.trim())} autoFocus required /><div className="form-actions"><button className="button button-outline" type="button" onClick={() => { setSiteAuthorization(null); setSiteAuthorizationBarcode(''); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Verifica barcode</button></div></form></Modal>}
-    {siteForceDelete && <Modal title={`Elimina comunque · ${siteForceDelete.name}`} close={() => { setSiteForceDelete(null); setSiteForceDeleteBarcode(''); }}><form className="site-authorization" onSubmit={(event) => void confirmForceDeleteSite(event)}><p>La giacenza di questa sede verrà eliminata definitivamente e la sede rimossa. Vendite, rimborsi, spese, movimenti e distribuzioni, ordini e paghe saranno conservati; i dipendenti resteranno non assegnati.</p><Field label="Barcode del Proprietario" value={siteForceDeleteBarcode} onChange={(event) => setSiteForceDeleteBarcode(event.target.value.trim())} autoFocus required /><div className="form-actions"><button className="button button-outline" type="button" onClick={() => { setSiteForceDelete(null); setSiteForceDeleteBarcode(''); }}>Annulla</button><button className="button button-danger"><Trash2 size={16} /> Elimina sede e giacenza</button></div></form></Modal>}
     {siteSaveAuthorizationOpen && <Modal title="Autorizza salvataggio sede" close={() => { setSiteSaveAuthorizationOpen(false); setSiteSaveAuthorizationBarcode(''); }}><form className="site-authorization" onSubmit={(event) => void confirmSaveSite(event)}><p>Per salvare la sede, inserisci o scansiona il barcode del Proprietario.</p><Field label="Barcode del Proprietario" value={siteSaveAuthorizationBarcode} onChange={(event) => setSiteSaveAuthorizationBarcode(event.target.value.trim())} autoFocus required /><div className="form-actions"><button className="button button-outline" type="button" onClick={() => { setSiteSaveAuthorizationOpen(false); setSiteSaveAuthorizationBarcode(''); }}>Annulla</button><button className="button button-primary"><Check size={16} /> Verifica e salva</button></div></form></Modal>}
     {receipt && <Modal title={`Scontrino #${receipt.receipt_no}`} close={() => setReceipt(null)}><div className="receipt-print" id="receipt-print"><div className="receipt-shop"><span>{data.settings.shop_name}</span></div><div className="receipt-spacer" /><div className="receipt-datetime"><span>{receiptDate.format(new Date(receipt.created_at))}</span><span>{receiptTime.format(new Date(receipt.created_at))}</span></div><div className="receipt-number-line">Numero scontrino: {receipt.receipt_no}</div><div className="receipt-dash" /><div className="receipt-head"><span>Articolo</span><span>Qtà</span><span>Prezzo</span></div>{receipt.items.map((item, index) => <div className="receipt-item" key={`${item.code}-${index}`}><span>{item.name}</span><span>{receiptQuantity.format(item.quantity)}{item.unit === 'KG' ? ' kg' : item.unit === 'LITRO' ? ' L' : ''}</span><span>{money.format(item.unit_price * item.quantity)}</span></div>)}<div className="receipt-dash" /><div className="receipt-total"><strong>TOTALE</strong><strong>{money.format(receipt.total)}</strong></div><div className="receipt-payment-savings"><span>Pagamento: {receipt.payment_method}</span>{receipt.discount > 0 && <span>Risparmio: {money.format(receipt.discount)}</span>}</div><div className="receipt-dash" /><div className="receipt-spacer" /><svg id="receipt-barcode" /><div className="receipt-spacer" /><div className="receipt-thanks">Grazie per averci scelto!</div></div><div className="receipt-actions"><button className="button button-primary full-width" onClick={() => printReceipt('regular')}><Printer size={16} /> Stampa scontrino</button></div></Modal>}
     {saleAdjustment !== null && <Modal title="Modifica vendita completata" close={() => setSaleAdjustment(null)}><div className="sale-adjustment-message"><p>{saleAdjustment > 0 ? `Il cliente deve pagare ancora ${money.format(saleAdjustment)}.` : saleAdjustment < 0 ? `Devi rimborsare al cliente ${money.format(Math.abs(saleAdjustment))}.` : 'Non è necessario effettuare un rimborso o un pagamento aggiuntivo.'}</p><button className="button button-primary" onClick={() => setSaleAdjustment(null)}>Ok</button></div></Modal>}
@@ -4976,7 +4920,7 @@ export default function App() {
     {saleAddOpen && <div className="drawer-backdrop sale-add-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSaleAddOpen(false); }}><aside className="detail-drawer sale-add-drawer"><header className="drawer-header"><div><p className="eyebrow">MODIFICA VENDITA</p><h2>Aggiungi articoli</h2></div><button className="icon-button" onClick={() => setSaleAddOpen(false)} aria-label="Chiudi"><X size={18} /></button></header><div className="sale-add-content"><SearchInput value={saleProductSearch} onChange={setSaleProductSearch} placeholder="Cerca articolo o codice…" /><div className="sale-add-products">{availableSaleProducts.filter((product) => product.name.toLowerCase().includes(saleProductSearch.toLowerCase()) || product.code.includes(saleProductSearch)).map((product) => { const selected = saleCart.find((item) => item.product_id === product.id); return <button className={`sale-add-product${selected ? ' selected' : ''}`} key={product.id} onClick={() => addProductToSaleCart(product)}><span><strong>{product.name}</strong><small>{product.code} · {product.stock} {product.unit ?? 'PEZZO'} disponibili</small></span><span>{money.format(product.sale_price)} / {product.unit ?? 'PEZZO'}<b>{selected ? ` · ${selected.quantity}` : ''}</b></span></button>; })}</div><div className="sale-add-confirm-row"><button className="button button-primary full-width sale-add-confirm" disabled={!saleCart.length} onClick={addProductToSale}><ShoppingCart size={16} /> Conferma l'aggiunta</button><details className="sale-add-cart"><summary title="Mostra articoli aggiunti" aria-label="Mostra articoli aggiunti"><ShoppingCart size={18} /><span className="sale-add-cart-count">{quantityFormat.format(saleCart.reduce((sum, item) => sum + item.quantity, 0))}</span></summary><div className="sale-add-cart-items">{saleCart.map((item) => <div key={item.product_id}><strong>{item.name}</strong><div className="quantity-control"><button type="button" aria-label="Rimuovi uno" onClick={() => changeSaleCartQuantity(item.product_id, item.unit === 'PEZZO' ? -1 : -0.1)}><Minus size={13} /></button><span>{quantityFormat.format(item.quantity)}</span><button type="button" aria-label="Aggiungi uno" onClick={() => changeSaleCartQuantity(item.product_id, item.unit === 'PEZZO' ? 1 : 0.1)}><Plus size={13} /></button></div><b>{money.format(item.quantity * item.unit_price)}</b></div>)}</div></details></div></div></aside></div>}
     {selectedSiteDetails && <SiteDetailsDrawer site={selectedSiteDetails} data={data} close={() => setSelectedSiteDetails(null)} />}
     {camera && <CameraScanner close={() => setCamera(false)} scan={scanCameraCode} />}
-    {notice && <div className="toast"><span>{notice}</span>{noticeAction && <button className="button button-danger toast-action" type="button" onClick={() => { const { run } = noticeAction; setNotice(''); setNoticeAction(null); run(); }}>{noticeAction.label}</button>}</div>}
+    {notice && <div className="toast">{notice}</div>}
   </div></PageServicesProvider></LocalizedNodes></AppDynamicNamesContext.Provider></AppLanguageContext.Provider>;
 }
 

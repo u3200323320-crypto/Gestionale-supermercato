@@ -349,9 +349,7 @@ declare global {
     deleteExpense: (id: number) => Promise<void>;
     saveSite: (site: SiteInput, requesterBarcode: string) => Promise<void>;
     setupSite: (site: SiteInput) => Promise<void>;
-    confirmSiteDeletion: (siteId: number, requesterBarcode: string) => Promise<'cancel' | 'delete' | 'force'>;
     deleteSite: (siteId: number, requesterBarcode: string) => Promise<void>;
-    forceDeleteSite: (siteId: number, requesterBarcode: string) => Promise<void>;
     authorizeSiteAction: (requesterBarcode: string) => Promise<boolean>;
     exportAppData: () => Promise<AppDataBackup>;
     importAppData: (backup: AppDataBackup) => Promise<{ added: number; skipped: number }>;
