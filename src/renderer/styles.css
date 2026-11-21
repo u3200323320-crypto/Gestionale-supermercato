@@ -453,6 +453,8 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .supplier-order-folder { display: inline-flex; align-items: center; gap: 7px; padding: 4px 0; border: 0; background: transparent; color: var(--green-dark); cursor: pointer; font: inherit; font-weight: 700; }
 .supplier-order-folder svg:last-child { transition: transform .15s ease; }
 .supplier-order-folder[aria-expanded='true'] svg:last-child { transform: rotate(180deg); }
+.supplier-order-row { cursor: pointer; }
+.supplier-order-row:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
 .supplier-order-details-cell { padding: 0 !important; }
 .supplier-order-details { display: grid; gap: 0; padding: 12px 16px; border-left: 3px solid var(--green); background: #f7faf6; }
 .supplier-order-details-heading, .supplier-order-received-item { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; }
@@ -1542,7 +1544,8 @@ body svg text, body svg tspan { fill: #000 !important; }
 .reorder-list-modal-content .table-wrap { max-height: min(60vh, 500px); }
 .reorder-list-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 .reorder-list-actions .button { width: 100%; min-width: 0; }
-.site-inventory-panel + .distribution-history-panel { margin-top: 30px; }
+.distribution-history-panel { margin-top: 14px; }
+.distribution-history-panel + .site-inventory-panel { margin-top: 30px; }
 .distribution-history-row { cursor: default; }
 .distribution-history-actions { flex: 0 0 auto; justify-content: flex-end; }
 .distribution-history-actions > .button { width: auto; }
@@ -1557,7 +1560,8 @@ body svg text, body svg tspan { fill: #000 !important; }
 .data-management-actions { display: grid; max-width: 520px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
 .data-management-actions .button { min-height: 43px; }
 .data-management-actions input[type='file'] { display: none; }
-.supplier-order-item-actions { justify-content: flex-end; }
+.supplier-order-received-item > .supplier-order-item-actions { display: flex; flex-wrap: nowrap; justify-content: flex-end; overflow-x: auto; }
+.supplier-order-item-actions .button { flex: 0 0 auto; white-space: nowrap; }
 .supplier-order-item-actions .button-danger { flex: 0 0 auto; }
 .distribution-history-row > span { flex: 1 1 auto; }
 .distribution-history-actions .button-outline { border-color: #dce2dc; }

@@ -24,6 +24,8 @@ const storageKey = 'gestionale-web-preview';
 const previousHistorySeedKey = `${storageKey}:history-v1`;
 const historySeedKey = `${storageKey}:history-v2`;
 const supplierSeedKey = `${storageKey}:suppliers-v1`;
+const distributionSeedKey = `${storageKey}:distributions-v1`;
+const supplierOrdersSeedKey = `${storageKey}:supplier-orders-v1`;
 const warehouseProductSeedKey = `${storageKey}:warehouse-products-v1`;
 const demoOwnerBarcode = '0000000001';
 const siteRecognitionAlphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -258,7 +260,11 @@ function createDemoState(): AppState {
       ...demoHistorySeeds().stockMovements,
       ...additionalDemoStockMovements(),
     ],
-    stockDistributions: [],
+    stockDistributions: [
+      { id: 1, created_at: day(-1), from_site: 'Magazzino', to_site: 'Centro', sender: 'Alessandro Rossi', recipient: 'Giulia Bianchi', file_path: '' },
+      { id: 2, created_at: day(-3), from_site: 'Magazzino', to_site: 'Nord', sender: 'Giulia Bianchi', recipient: 'Marco Verdi', file_path: '' },
+      { id: 3, created_at: day(-7), from_site: 'Centro', to_site: 'Nord', sender: 'Marco Verdi', recipient: 'Giulia Bianchi', file_path: '' },
+    ],
     expenses: [
       { id: 1, description: 'Utenze punto vendita', category: 'Utenze', amount: 420, expense_date: localDay(-5), created_at: day(-5), site: 'Centro', receipt_data: '' },
       { id: 2, description: 'Materiale reparto', category: 'Materiali', amount: 145, expense_date: localDay(-3), created_at: day(-3), site: 'Nord', receipt_data: '' },
@@ -266,7 +272,35 @@ function createDemoState(): AppState {
     customers: [{ id: 1, first_name: 'Sara', last_name: 'Moretti', phone: '333 000 2001', email: 'sara@example.test', address: 'Via Manzoni 9', created_at: day(-20) }],
     loyaltyCards: [{ id: 1, code: 'DEMO0001', barcode: 'DEMO0001', discount_percentage: 5, customer_id: 1, customer_name: 'Sara Moretti', status: 'Attiva', points: 120, created_at: day(-15), activated_at: day(-14) }],
     suppliers: demoSuppliers(),
-    supplierOrders: [],
+    supplierOrders: [
+      {
+        id: 1, supplier_id: 1, supplier_name: 'Alimentari Lombardi', site_id: 3, site_name: 'Magazzino',
+        receiving_manager: 'Alessandro Rossi', created_at: day(-1), expected_arrival_date: localDay(3),
+        received_at: null, notes: 'Rifornimento settimanale',
+        items: [
+          { id: 1, product_id: 1, product_name: 'Pasta di semola', product_code: '800123450001', unit: 'PEZZO', quantity: 48, unit_cost: 0.72, received_at: null },
+          { id: 2, product_id: 7, product_name: 'Riso Carnaroli', product_code: '800123450007', unit: 'PEZZO', quantity: 24, unit_cost: 1.75, received_at: null },
+        ],
+      },
+      {
+        id: 2, supplier_id: 3, supplier_name: 'Latteria delle Alpi', site_id: 3, site_name: 'Magazzino',
+        receiving_manager: 'Giulia Bianchi', created_at: day(-8), expected_arrival_date: null,
+        received_at: day(-6), notes: 'Consegna completata',
+        items: [
+          { id: 3, product_id: 4, product_name: 'Latte intero', product_code: '800123450004', unit: 'LITRO', quantity: 36, unit_cost: 0.92, received_at: day(-6) },
+          { id: 4, product_id: 12, product_name: 'Yogurt bianco', product_code: '800123450012', unit: 'PEZZO', quantity: 24, unit_cost: 0.38, received_at: day(-6) },
+        ],
+      },
+      {
+        id: 3, supplier_id: 2, supplier_name: 'Ortofrutta Fresca S.r.l.', site_id: 3, site_name: 'Magazzino',
+        receiving_manager: 'Marco Verdi', created_at: day(-3), expected_arrival_date: localDay(1),
+        received_at: null, notes: 'Consegna parziale',
+        items: [
+          { id: 5, product_id: 3, product_name: 'Mele Golden', product_code: '800123450003', unit: 'KG', quantity: 18, unit_cost: 1.15, received_at: day(-2) },
+          { id: 6, product_id: 18, product_name: 'Banane', product_code: '800123450018', unit: 'KG', quantity: 12, unit_cost: 1.1, received_at: null },
+        ],
+      },
+    ],
   };
 }
 
@@ -521,6 +555,10 @@ function installWebPreview(): void {
     state.supplierOrders = [];
     migrationChanged = true;
   }
+  if (!Array.isArray(state.stockDistributions)) {
+    state.stockDistributions = [];
+    migrationChanged = true;
+  }
   for (const order of state.supplierOrders) {
     for (const item of order.items) {
       if (!Number.isSafeInteger(item.id)) {
@@ -532,6 +570,38 @@ function installWebPreview(): void {
         migrationChanged = true;
       }
     }
+  }
+  if (!window.localStorage.getItem(distributionSeedKey)) {
+    if (state.stockDistributions.length === 0) state.stockDistributions = createDemoState().stockDistributions;
+    window.localStorage.setItem(distributionSeedKey, 'true');
+    migrationChanged = true;
+  }
+  if (!window.localStorage.getItem(supplierOrdersSeedKey)) {
+    if (state.supplierOrders.length === 0) {
+      const demoOrders = createDemoState().supplierOrders;
+      let nextOrderId = Math.max(0, ...state.supplierOrders.map((order) => order.id)) + 1;
+      let nextItemId = Math.max(0, ...state.supplierOrders.flatMap((order) => order.items.map((item) => item.id))) + 1;
+      state.supplierOrders = demoOrders.flatMap((order) => {
+        const supplier = state.suppliers.find((item) => item.name === order.supplier_name);
+        const site = state.sites.find((item) => item.name === order.site_name);
+        const items = order.items.flatMap((item) => {
+          const product = state.products.find((candidate) => candidate.code === item.product_code);
+          return product ? [{ ...item, id: nextItemId++, product_id: product.id }] : [];
+        });
+        if (!supplier || !site || items.length !== order.items.length) return [];
+        return [{
+          ...order,
+          id: nextOrderId++,
+          supplier_id: supplier.id,
+          site_id: site.id,
+          supplier_name: supplier.name,
+          site_name: site.name,
+          items,
+        }];
+      });
+    }
+    window.localStorage.setItem(supplierOrdersSeedKey, 'true');
+    migrationChanged = true;
   }
   if (!state.settings.main_site_id || !state.sites.some((site) => String(site.id) === state.settings.main_site_id)) {
     state.settings.main_site_id = String([...state.sites].sort((a, b) => a.id - b.id)[0]?.id ?? '');
