@@ -21,6 +21,7 @@ export class SupplierOrderService {
     if (!input || typeof input !== 'object' || Array.isArray(input)
       || !Number.isSafeInteger(input.supplier_id) || input.supplier_id < 1
       || !Number.isSafeInteger(input.site_id) || input.site_id < 1
+      || !Number.isSafeInteger(input.receiving_manager_id) || input.receiving_manager_id < 1
       || typeof input.received !== 'boolean'
       || typeof input.notes !== 'string' || input.notes.length > 1000
       || !Array.isArray(input.items) || input.items.length < 1 || input.items.length > 100) {
@@ -31,6 +32,8 @@ export class SupplierOrderService {
     const site = this.repository.findSite(input.site_id);
     if (!site) throw new Error('Seleziona una sede valida per il ricevimento.');
     if (site.site_role !== 'Magazzino') throw new Error('Gli ordini dei fornitori devono essere ricevuti in una sede Magazzino.');
+    const receivingManager = this.repository.findEmployee(input.receiving_manager_id);
+    if (!receivingManager) throw new Error('Seleziona un responsabile di ricevimento valido.');
     if (typeof input.employee_barcode !== 'string' || input.employee_barcode.trim() !== session.barcode
       || !this.employeeForLogin(input.employee_barcode)) {
       throw new Error('Il barcode non corrisponde al dipendente autenticato.');
@@ -56,7 +59,8 @@ export class SupplierOrderService {
       return { ...item, ...product };
     });
     const createdAt = new Date().toISOString();
-    const orderId = this.repository.create(input, supplier.id, site, items, session, createdAt, this.recordMovement);
+    const orderId = this.repository.create(input, supplier.id, site,
+      `${receivingManager.first_name} ${receivingManager.last_name}`.trim(), items, session, createdAt, this.recordMovement);
     this.events.publish('supplier-order.created', {
       barcode: session.barcode,
       orderId,

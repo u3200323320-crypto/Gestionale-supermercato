@@ -3,6 +3,7 @@ import type { AuthenticatedEmployee, Product, SupplierOrder, SupplierOrderInput 
 
 type SupplierRecord = { id: number };
 type SiteRecord = { id: number; name: string; site_role: string };
+type EmployeeRecord = { id: number; first_name: string; last_name: string };
 type ProductRecord = { id: number; name: string; code: string; unit: Product['unit'] };
 type OrderRecord = { id: number; site_id: number | null; received_at: string | null; site_name: string | null; site_role: string | null };
 type PendingItemRecord = { id: number; product_id: number; product_name: string; quantity: number };
@@ -23,6 +24,7 @@ export class SupplierOrderRepository {
   initialize(): void {
     const columns = this.database.prepare('PRAGMA table_info(supplier_orders)').all() as Array<{ name: string }>;
     if (!columns.some((column) => column.name === 'site_id')) this.database.exec('ALTER TABLE supplier_orders ADD COLUMN site_id INTEGER');
+    if (!columns.some((column) => column.name === 'receiving_manager')) this.database.exec('ALTER TABLE supplier_orders ADD COLUMN receiving_manager TEXT');
     if (!columns.some((column) => column.name === 'expected_arrival_date')) this.database.exec('ALTER TABLE supplier_orders ADD COLUMN expected_arrival_date TEXT');
     if (!columns.some((column) => column.name === 'received_at')) this.database.exec('ALTER TABLE supplier_orders ADD COLUMN received_at TEXT');
     const itemColumns = this.database.prepare('PRAGMA table_info(supplier_order_items)').all() as Array<{ name: string }>;
@@ -38,7 +40,7 @@ export class SupplierOrderRepository {
   all(): SupplierOrder[] {
     const orders = this.database.prepare(`SELECT orders.id, orders.supplier_id, suppliers.name AS supplier_name,
         orders.site_id, sites.name AS site_name, orders.created_at, orders.expected_arrival_date,
-        orders.received_at, orders.notes
+        orders.received_at, orders.notes, orders.receiving_manager
       FROM supplier_orders orders JOIN suppliers ON suppliers.id = orders.supplier_id
       LEFT JOIN sites ON sites.id = orders.site_id
       ORDER BY orders.created_at DESC, orders.id DESC`).all() as Omit<SupplierOrder, 'items'>[];
@@ -58,6 +60,10 @@ export class SupplierOrderRepository {
     return this.database.prepare('SELECT id, name, site_role FROM sites WHERE id = ?').get(id) as SiteRecord | undefined;
   }
 
+  findEmployee(id: number): EmployeeRecord | undefined {
+    return this.database.prepare('SELECT id, first_name, last_name FROM employees WHERE id = ?').get(id) as EmployeeRecord | undefined;
+  }
+
   findProduct(id: number): ProductRecord | undefined {
     return this.database.prepare('SELECT id, name, code, unit FROM products WHERE id = ?').get(id) as ProductRecord | undefined;
   }
@@ -66,6 +72,7 @@ export class SupplierOrderRepository {
     input: SupplierOrderInput,
     supplierId: number,
     site: SiteRecord,
+    receivingManager: string,
     items: OrderItem[],
     employee: AuthenticatedEmployee,
     createdAt: string,
@@ -74,8 +81,8 @@ export class SupplierOrderRepository {
     return this.database.transaction(() => {
       const receivedAt = input.received ? createdAt : null;
       const result = this.database.prepare(`INSERT INTO supplier_orders
-        (supplier_id, site_id, expected_arrival_date, received_at, created_at, notes)
-        VALUES (?, ?, ?, ?, ?, ?)`).run(supplierId, site.id, input.expected_arrival_date, receivedAt, createdAt, input.notes.trim());
+        (supplier_id, site_id, receiving_manager, expected_arrival_date, received_at, created_at, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`).run(supplierId, site.id, receivingManager, input.expected_arrival_date, receivedAt, createdAt, input.notes.trim());
       const orderId = Number(result.lastInsertRowid);
       const insertItem = this.database.prepare(`INSERT INTO supplier_order_items
         (order_id, product_id, product_name, product_code, unit, quantity, unit_cost, received_at)

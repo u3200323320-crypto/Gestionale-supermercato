@@ -413,6 +413,7 @@ function stateForSession(session?: AuthenticatedEmployee): ReturnType<typeof sta
   }
 
   const ownEmployee = snapshot.employees.find((employee) => employee.id === session.id);
+  const ownerEmployee = snapshot.employees.find((employee) => normalizedEmployeeRole(employee.role) === 'proprietario');
   const ownSiteName = ownEmployee?.operational_site ?? '';
   const ownSales = (snapshot.sales as Sale[]).filter((sale) => sale.site === ownSiteName);
   const ownSite = snapshot.sites.find((site) => site.name === ownSiteName);
@@ -430,7 +431,14 @@ function stateForSession(session?: AuthenticatedEmployee): ReturnType<typeof sta
     expenses: [],
     promotions: [],
     voucherBatches: [],
-    employees: ownEmployee ? [maskedEmployee(ownEmployee)] : [],
+    employees: [
+      ...(ownEmployee ? [maskedEmployee(ownEmployee)] : []),
+      ...(ownerEmployee && ownerEmployee.id !== ownEmployee?.id ? [{
+        ...maskedEmployee(ownerEmployee),
+        first_name: ownerEmployee.first_name,
+        last_name: ownerEmployee.last_name,
+      }] : []),
+    ],
     employeeActivities: [],
     payrollPayments: [],
     sites: ownSite ? [ownSite] : [],
@@ -540,7 +548,7 @@ function initDatabase(): void {
     );
     CREATE TABLE IF NOT EXISTS supplier_orders (
       id INTEGER PRIMARY KEY AUTOINCREMENT, supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
-      site_id INTEGER, expected_arrival_date TEXT, received_at TEXT,
+      site_id INTEGER, receiving_manager TEXT, expected_arrival_date TEXT, received_at TEXT,
       created_at TEXT NOT NULL, notes TEXT NOT NULL DEFAULT ''
     );
     CREATE TABLE IF NOT EXISTS supplier_order_items (

@@ -552,8 +552,9 @@ function installWebPreview(): void {
   const saveSupplierOrder = async (input: SupplierOrderInput): Promise<void> => {
     const supplier = state.suppliers.find((item) => item.id === input.supplier_id);
     const site = state.sites.find((item) => item.id === input.site_id);
+    const receivingManager = state.employees.find((employee) => employee.id === input.receiving_manager_id);
     if (!supplier || !Array.isArray(input.items) || input.items.length < 1 || input.items.length > 100
-      || !site || typeof input.notes !== 'string' || input.notes.length > 1000) throw new Error('Dati dell’ordine non validi.');
+      || !site || !receivingManager || typeof input.notes !== 'string' || input.notes.length > 1000) throw new Error('Dati dell’ordine non validi.');
     const items: SupplierOrder['items'] = input.items.map((item) => {
       const product = state.products.find((candidate) => candidate.id === item.product_id);
       if (!product || !Number.isFinite(item.quantity) || item.quantity <= 0 || item.quantity > 1_000_000
@@ -567,7 +568,7 @@ function installWebPreview(): void {
       throw new Error('Il barcode non corrisponde al dipendente autenticato.');
     }
     if (input.received) items.forEach((item) => { item.received_at = createdAt; });
-    const order: SupplierOrder = { id: nextId(state.supplierOrders), supplier_id: supplier.id, supplier_name: supplier.name, site_id: site.id, site_name: site.name, created_at: createdAt, expected_arrival_date: input.expected_arrival_date, received_at: input.received ? createdAt : null, notes: input.notes.trim(), items };
+    const order: SupplierOrder = { id: nextId(state.supplierOrders), supplier_id: supplier.id, supplier_name: supplier.name, site_id: site.id, site_name: site.name, receiving_manager: `${receivingManager.first_name} ${receivingManager.last_name}`.trim(), created_at: createdAt, expected_arrival_date: input.expected_arrival_date, received_at: input.received ? createdAt : null, notes: input.notes.trim(), items };
     if (input.received) {
       for (const item of items) {
         const stock = stockAtSite(item.product_id, site.id);

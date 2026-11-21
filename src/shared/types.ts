@@ -71,6 +71,7 @@ export interface SupplierOrder {
   supplier_name: string;
   site_id: number | null;
   site_name: string | null;
+  receiving_manager: string | null;
   created_at: string;
   expected_arrival_date: string | null;
   received_at: string | null;
@@ -80,6 +81,7 @@ export interface SupplierOrder {
 export type SupplierOrderInput = {
   supplier_id: number;
   site_id: number;
+  receiving_manager_id: number;
   expected_arrival_date: string | null;
   received: boolean;
   employee_barcode: string;

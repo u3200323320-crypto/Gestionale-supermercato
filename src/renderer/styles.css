@@ -432,6 +432,15 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .supplier-order-layout { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); align-items: stretch; gap: 14px; }
 .supplier-order-form, .supplier-order-items { display: grid; gap: 12px; padding: 16px; }
 .supplier-order-form > .button { margin-top: 10px; }
+.supplier-article-picker { position: relative; }
+.supplier-article-picker-trigger { display: flex; width: 100%; height: 37px; align-items: center; justify-content: space-between; gap: 8px; padding: 0 10px; border: 1px solid #dfe4de; border-radius: 4px; background: white; color: #37433a; cursor: pointer; font-size: 11px; text-align: left; }
+.supplier-article-picker-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.supplier-article-picker-trigger svg { flex: 0 0 auto; color: #89928b; }
+.supplier-article-options { position: absolute; top: calc(100% + 4px); right: 0; left: 0; z-index: 20; display: grid; overflow-y: auto; max-height: 240px; padding: 5px; border: 1px solid var(--line); border-radius: 4px; background: white; box-shadow: var(--shadow); }
+.supplier-article-options button { min-height: 34px; padding: 7px 9px; border: 0; border-bottom: 1px solid var(--line); background: white; color: var(--ink); cursor: pointer; font: inherit; font-size: 11px; text-align: left; }
+.supplier-article-options button:last-child { border-bottom: 0; }
+.supplier-article-options button:hover { background: #f4f8fc; }
+.supplier-article-options .supplier-article-create-option { color: var(--green-dark); font-weight: 700; }
 .supplier-order-line-inputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .supplier-order-item-list { display: grid; }
 .supplier-order-item { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); }
@@ -448,6 +457,7 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .supplier-order-details { display: grid; gap: 0; padding: 12px 16px; border-left: 3px solid var(--green); background: #f7faf6; }
 .supplier-order-details-heading, .supplier-order-received-item { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; }
 .supplier-order-details-heading { padding-bottom: 10px; }
+.supplier-order-details-manager { margin: 0 0 8px; color: var(--muted); font-size: 10px; }
 .supplier-order-details-heading > strong, .supplier-order-received-item strong { color: var(--ink); font-size: 10px; }
 .supplier-order-received-item { padding: 9px 0; border-top: 1px solid var(--line); }
 .supplier-order-received-item > div { display: grid; min-width: 0; gap: 4px; }
@@ -1124,6 +1134,8 @@ body { color: var(--ink); }
 [data-theme='dark'] .payroll-summary-chip,
 [data-theme='dark'] .distribution-product-options,
 [data-theme='dark'] .distribution-product-options button,
+[data-theme='dark'] .supplier-article-options,
+[data-theme='dark'] .supplier-article-options button,
 [data-theme='dark'] .expiry-list button {
   background-color: var(--paper);
   color: var(--ink);
@@ -1169,6 +1181,9 @@ body { color: var(--ink); }
 [data-theme='dark'] .settings-nav button,
 [data-theme='dark'] .distribution-product-options,
 [data-theme='dark'] .distribution-product-options button,
+[data-theme='dark'] .supplier-article-picker-trigger,
+[data-theme='dark'] .supplier-article-options,
+[data-theme='dark'] .supplier-article-options button,
 [data-theme='dark'] .inventory-filter-dropdown .inventory-status-filters,
 [data-theme='dark'] .statistics-period-options {
   border-color: var(--line);
@@ -1191,6 +1206,9 @@ body { color: var(--ink); }
 [data-theme='dark'] .product-category-list > span,
 [data-theme='dark'] .distribution-product-options,
 [data-theme='dark'] .distribution-product-options button,
+[data-theme='dark'] .supplier-article-picker-trigger,
+[data-theme='dark'] .supplier-article-options,
+[data-theme='dark'] .supplier-article-options button,
 [data-theme='dark'] .expiry-list button { border-color: var(--line); }
 [data-theme='dark'] .button-quiet:hover,
 [data-theme='dark'] .icon-button:hover,
