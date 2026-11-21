@@ -165,6 +165,7 @@ const arabicUiTranslations: Record<string, string> = {
   'Scarica tutti i dati e le impostazioni in un file JSON.': 'نزّل جميع البيانات والإعدادات في ملف JSON.',
   'Rispetta il filtro di tempo': 'استخدم عامل تصفية الوقت', 'Tutte le vendite →': 'كل المبيعات ←', 'Tutti': 'الكل', 'Oggi': 'اليوم', 'Ieri': 'أمس',
   'Ultima settimana': 'الأسبوع الماضي', 'Ultimo mese': 'الشهر الماضي', 'Ultimi 3 mesi': 'آخر 3 أشهر', 'Ultimi 6 mesi': 'آخر 6 أشهر', 'Ultimo anno': 'العام الماضي', 'Da - A': 'من - إلى',
+  'Filtra vendite per categoria': 'تصفية المبيعات حسب الفئة', 'Filtra vendite per periodo': 'تصفية المبيعات حسب الفترة', 'Filtra vendite per sede': 'تصفية المبيعات حسب الفرع',
   'Vai al magazzino →': 'الانتقال إلى المخزن ←', 'Valore del magazzino': 'قيمة المخزون', 'Valorizzazione della giacenza attuale': 'قيمة المخزون الحالي',
   'Prodotti più e meno venduti': 'المنتجات الأكثر والأقل مبيعًا', 'Vendite giornaliere': 'المبيعات اليومية', 'Vendite per categoria': 'المبيعات حسب الفئة',
   'Calendario vendite': 'تقويم المبيعات', 'Andamento mensile': 'الاتجاه الشهري', 'Ricavi': 'الإيرادات', 'Costo merce': 'تكلفة البضائع',
@@ -388,6 +389,24 @@ const arabicUiTranslations: Record<string, string> = {
   'Cerca o scansiona barcode…': 'ابحث عن الرمز الشريطي أو امسحه…', 'Disponibili:': 'المتاح:',
   "Articoli nell'ordine": 'المنتجات في الطلب', 'articoli inseriti': 'منتجات مُضافة',
   'Gli articoli aggiunti compariranno qui.': 'ستظهر المنتجات المضافة هنا.', 'Conferma prelievo': 'تأكيد السحب',
+  'Per confermare il prelievo, scansiona o inserisci il barcode del dipendente autorizzato.': 'لتأكيد السحب، امسح الرمز الشريطي للموظف المخوّل أو أدخله.',
+  'Mittente': 'المرسل', 'Destinatario': 'المستلم', 'Barcode di conferma': 'رمز التأكيد الشريطي',
+  'Conferma distribuzione': 'تأكيد التوزيع',
+  'Scansiona il barcode del dipendente autorizzato.': 'امسح الرمز الشريطي للموظف المخوّل.',
+  'Per salvare la sede, inserisci o scansiona il barcode del Proprietario.': 'لحفظ الفرع، أدخل الرمز الشريطي للمالك أو امسحه.',
+  'Verifica e salva': 'تحقق واحفظ',
+  'Scansiona il barcode del Proprietario per modificare la sede.': 'امسح الرمز الشريطي للمالك لتعديل الفرع.',
+  'Scansiona il barcode del Proprietario per eliminare la sede.': 'امسح الرمز الشريطي للمالك لحذف الفرع.',
+  'Scansiona o inserisci il barcode del dipendente autorizzato per svuotare lo storico magazzino.': 'امسح الرمز الشريطي للموظف المخوّل أو أدخله لإفراغ سجل المخزن.',
+  'Scansiona o inserisci il barcode di riconoscimento del dipendente per modificare questo scontrino.': 'امسح الرمز التعريفي الشريطي للموظف أو أدخله لتعديل هذا الإيصال.',
+  'Scansiona o inserisci il barcode di riconoscimento del dipendente per eliminare questo scontrino.': 'امسح الرمز التعريفي الشريطي للموظف أو أدخله لحذف هذا الإيصال.',
+  'Verifica dipendente · scontrino #': 'التحقق من الموظف · الإيصال رقم ',
+  'Scansiona il codice': 'مسح الرمز',
+  'Scansiona codice': 'مسح الرمز',
+  'Scansione camera non supportata. Collega il lettore barcode USB.': 'مسح الكاميرا غير مدعوم. وصّل قارئ الرموز الشريطية عبر USB.',
+  'Verifica il barcode del dipendente per eliminare la distribuzione.': 'تحقق من الرمز الشريطي للموظف لحذف التوزيع.',
+  'Scansiona il barcode di un dipendente.': 'امسح الرمز الشريطي لأحد الموظفين.',
+  'Verifica il barcode del dipendente per registrare il ricevimento.': 'تحقق من الرمز الشريطي للموظف لتسجيل الاستلام.',
   'Scansiona il barcode del dipendente che sta effettuando il prelievo.': 'امسح الرمز الشريطي للموظف الذي يقوم بالسحب.',
   'Data di inizio': 'تاريخ البدء', 'Quantità di codici': 'عدد الرموز',
   'Nessun buono sconto': 'لا توجد قسائم خصم', 'Crea e conferma un gruppo di codici per visualizzarlo qui.': 'أنشئ مجموعة رموز وأكدها لعرضها هنا.',
@@ -477,8 +496,7 @@ const arabicUiTranslations: Record<string, string> = {
   'Nessuna notifica.': 'لا توجد إشعارات.',
   'Giacenza nei magazzini': 'المخزون في المستودعات',
   'Inserisci una quantità maggiore di zero.': 'أدخل كمية أكبر من صفر.',
-  'Scansiona codice': 'مسح الرمز', 'Inquadra il codice a barre': 'وجّه الكاميرا نحو الرمز الشريطي',
-  'Scansione camera non supportata. Collega il lettore barcode USB.': 'المسح بالكاميرا غير مدعوم. وصّل قارئ الرموز الشريطية USB.',
+  'Inquadra il codice a barre': 'وجّه الكاميرا نحو الرمز الشريطي',
   'Fotocamera non disponibile o permesso negato.': 'الكاميرا غير متاحة أو تم رفض الإذن.',
   'Nessun file selezionato': 'لم يتم اختيار أي ملف', 'Scegli file': 'اختيار ملف',
 
@@ -873,7 +891,7 @@ function Field({ label, fieldClassName, ...props }: InputHTMLAttributes<HTMLInpu
 
 function Modal({ title, close, children, wide = false, rightHalf = false, narrowPanel = false, portal = false }: { title: string; close: () => void; children: ReactNode; wide?: boolean; rightHalf?: boolean; narrowPanel?: boolean; portal?: boolean }) {
   const language = useContext(AppLanguageContext);
-  const content = <div className={`modal-backdrop${rightHalf ? ' modal-right-half' : ''}`} onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><section className={`modal${wide ? ' modal-wide' : ''}${rightHalf ? ' modal-payment-panel' : ''}${narrowPanel ? ' modal-payment-narrow' : ''}`} role="dialog" aria-modal="true"><header className="modal-header"><div><p className="eyebrow">GESTIONALE</p><h2>{localizedText(title, language)}</h2></div><button className="icon-button" onClick={close} aria-label={localizedText('Chiudi', language)}><X size={18} /></button></header><LocalizedNodes>{children}</LocalizedNodes></section></div>;
+  const content = <div className={`modal-backdrop${rightHalf ? ' modal-right-half' : ''}`} onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><section className={`modal${wide ? ' modal-wide' : ''}${rightHalf ? ' modal-payment-panel' : ''}${narrowPanel ? ' modal-payment-narrow' : ''}`} role="dialog" aria-modal="true" lang={language === 'ar' ? 'ar-EG' : 'it-IT'} dir={language === 'ar' ? 'rtl' : 'ltr'}><header className="modal-header"><div><p className="eyebrow">GESTIONALE</p><h2>{localizedText(title, language)}</h2></div><button className="icon-button" onClick={close} aria-label={localizedText('Chiudi', language)}><X size={18} /></button></header><LocalizedNodes>{children}</LocalizedNodes></section></div>;
   return portal ? createPortal(content, document.body) : content;
 }
 

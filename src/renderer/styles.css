@@ -329,6 +329,8 @@ tbody tr:not(:has(.empty-cell)):hover { background: #fafbf9; }
 .sale-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin: -2px 0 18px; }
 .sale-filters > .statistics-period-dropdown { min-width: 0; flex: 1 1 calc(50% - 5px); }
 .sale-filters > .statistics-period-dropdown > summary { width: 100%; }
+html[dir='rtl'] .sale-filters .statistics-period-options { right: 0; left: auto; }
+html[dir='rtl'] .sale-filters .statistics-period-options .status-filter { text-align: right; }
 .sale-category-filter { min-width: 0; flex: 1 1 calc(50% - 5px); }
 .sale-category-filter > .field { width: 100%; }
 .sale-filters > .field { min-width: 0; flex: 1 1 calc(50% - 5px); }
